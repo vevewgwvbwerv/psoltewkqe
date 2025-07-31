@@ -1,4 +1,4 @@
--- Force Visible Auto Pet Replacer - FORCE pet to be visible
+-- Automatic Pet Replacer - Auto-scan pet in hand and replace temporary models
 -- Services
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -24,7 +24,7 @@ local mainFrame = Instance.new("Frame", gui)
 mainFrame.Size = UDim2.new(0, 220, 0, 120)
 mainFrame.Position = UDim2.new(0.75, 0, 0.15, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-mainFrame.BorderColor3 = Color3.fromRGB(255, 0, 255)
+mainFrame.BorderColor3 = Color3.fromRGB(0, 200, 100)
 mainFrame.BorderSizePixel = 2
 mainFrame.Active = true
 mainFrame.Draggable = true
@@ -32,8 +32,8 @@ mainFrame.Draggable = true
 local titleLabel = Instance.new("TextLabel", mainFrame)
 titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "💥 FORCE Visible Replacer"
-titleLabel.TextColor3 = Color3.fromRGB(255, 0, 255)
+titleLabel.Text = "🔄 Auto Pet Replacer"
+titleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextScaled = true
 
@@ -45,7 +45,7 @@ toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
 toggleBtn.TextColor3 = Color3.new(1, 1, 1)
 toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.TextSize = 16
-toggleBtn.Text = "❌ Force Replace: OFF"
+toggleBtn.Text = "❌ Auto Replace: OFF"
 
 -- Status Label
 local statusLabel = Instance.new("TextLabel", mainFrame)
@@ -77,148 +77,148 @@ local petNames = {
     "Bee", "Honey Bee", "Bear Bee", "Petal Bee", "Queen Bee"
 }
 
--- Function: FORCE create visible pet from hand
-local function forceCreateVisiblePet()
+-- Function: Auto-scan pet in hand
+local function autoScanPetInHand()
     local character = LocalPlayer.Character
-    if not character then return nil end
+    if not character then
+        print("⚠️ No character found")
+        return nil
+    end
     
     local tool = character:FindFirstChildOfClass("Tool")
-    if not tool then return nil end
+    if not tool then
+        print("⚠️ No pet in hand")
+        return nil
+    end
     
-    print("💥 FORCE creating visible pet:", tool.Name)
+    print("🔍 Auto-scanning pet in hand:", tool.Name)
     
-    -- Create model
+    -- Create a proper model from the tool
     local petModel = Instance.new("Model")
     petModel.Name = tool.Name
     
-    -- Clone all children
+    -- Clone all children from tool to model
     for _, child in pairs(tool:GetChildren()) do
         local childClone = child:Clone()
         childClone.Parent = petModel
     end
     
-    -- FORCE VISIBILITY - make EVERYTHING visible and big
+    -- Ensure proper configuration for display
     for _, part in pairs(petModel:GetDescendants()) do
         if part:IsA("BasePart") then
-            -- FORCE visible properties
-            part.Transparency = 0
             part.CanCollide = false
             part.Anchored = true  -- ANCHOR to prevent falling
-            
-            -- FORCE bright color to make it obvious
-            part.BrickColor = BrickColor.new("Really red")
-            part.Material = Enum.Material.Neon
-            
-            -- FORCE bigger size if too small
-            if part.Size.Magnitude < 2 then
-                part.Size = Vector3.new(2, 2, 2)
-            end
-            
-            print("💥 FORCED part visible:", part.Name, "Size:", part.Size)
+            part.Transparency = 0
         end
     end
     
+    print("✅ Auto-scanned pet:", petModel.Name)
     return petModel
 end
 
--- Function: FORCE replacement with maximum visibility
-local function forceReplacement(tempModel)
+-- Function: Replace temporary model with auto-scanned pet
+local function replaceWithHandPet(tempModel)
     if not tempModel then return false end
     
-    print("💥 FORCE REPLACEMENT:", tempModel.Name)
+    print("🔄 Auto-replacing temporary model:", tempModel.Name)
     
-    -- Get FORCE visible pet
-    local forcePet = forceCreateVisiblePet()
-    if not forcePet then
-        print("❌ No force pet")
+    -- Auto-scan pet in hand
+    local handPet = autoScanPetInHand()
+    if not handPet then
+        print("❌ No pet in hand to replace with")
         return false
     end
     
-    -- Get temp model position
+    -- Get position of temporary model
     local tempPrimaryPart = tempModel.PrimaryPart or tempModel:FindFirstChildWhichIsA("BasePart")
     if not tempPrimaryPart then
-        print("❌ No temp primary")
+        print("❌ No BasePart found in temporary model")
         return false
     end
     
-    -- Position FORCE pet
-    local forcePrimaryPart = forcePet.PrimaryPart or forcePet:FindFirstChildWhichIsA("BasePart")
-    if forcePrimaryPart then
-        -- Position ABOVE the temp model to make sure it's visible
-        local targetCFrame = tempPrimaryPart.CFrame * CFrame.new(0, 5, 0)  -- 5 studs above
-        forcePrimaryPart.CFrame = targetCFrame
+    local targetPosition = tempPrimaryPart.CFrame
+    local targetSize = tempPrimaryPart.Size
+    
+    print("📍 Target position:", targetPosition)
+    print("📏 Target size:", targetSize)
+    
+    -- Position the hand pet clone
+    local clonePrimaryPart = handPet.PrimaryPart or handPet:FindFirstChildWhichIsA("BasePart")
+    if clonePrimaryPart then
+        clonePrimaryPart.CFrame = targetPosition
+        clonePrimaryPart.Size = targetSize  -- Match size of temporary model
         
-        print("💥 FORCE positioned at:", targetCFrame)
+        -- Make sure all parts match the temporary model's scale
+        local sizeRatio = targetSize.Magnitude / clonePrimaryPart.Size.Magnitude
+        for _, part in pairs(handPet:GetDescendants()) do
+            if part:IsA("BasePart") and part ~= clonePrimaryPart then
+                part.Size = part.Size * sizeRatio
+            end
+        end
+        
+        print("✅ Hand pet positioned and scaled")
     end
     
-    -- HIDE original COMPLETELY
-    tempModel:Destroy()  -- DESTROY instead of hiding
-    print("💥 DESTROYED original model")
+    -- Add to workspace FIRST
+    handPet.Parent = Workspace
+    print("✅ Hand pet added to Workspace")
     
-    -- ADD FORCE pet to workspace
-    forcePet.Parent = Workspace
-    print("💥 FORCE pet added to workspace")
-    
-    -- Make it FLASH to be extra visible
-    task.spawn(function()
-        for i = 1, 10 do
-            for _, part in pairs(forcePet:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.Transparency = i % 2 == 0 and 0 or 0.5
-                end
-            end
-            task.wait(0.1)
+    -- Hide the original temporary model
+    for _, part in pairs(tempModel:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 1
         end
-        
-        -- Make fully visible after flashing
-        for _, part in pairs(forcePet:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Transparency = 0
-            end
-        end
-    end)
+    end
+    print("🙈 Original temporary model hidden")
     
-    -- Clean up after 4 seconds
-    game:GetService("Debris"):AddItem(forcePet, 4)
+    -- Clean up after natural duration
+    game:GetService("Debris"):AddItem(handPet, 4)
     
-    print("💥 FORCE REPLACEMENT COMPLETE!")
-    debugLabel.Text = "Debug: FORCED " .. forcePet.Name
+    print("🎉 Auto-replacement successful!")
+    debugLabel.Text = "Debug: Replaced with " .. handPet.Name
     
     return true
 end
 
--- Monitor Workspace.Visuals for pets
+-- Monitor for temporary pet models in Workspace.Visuals
 local visuals = Workspace:FindFirstChild("Visuals")
 if visuals then
-    visuals.ChildAdded:Connect(function(child)
+    visuals.ChildAdded:Connect(function(descendant)
         if not isReplacementActive then return end
         
-        if child:IsA("Model") then
-            -- Check if pet model
+        if descendant:IsA("Model") then
+            print("🔍 New model in Visuals:", descendant.Name)
+            
+            -- Check if this is a pet model (not egg or effect)
             local isPetModel = false
             for _, petName in ipairs(petNames) do
-                if child.Name == petName then
+                if descendant.Name == petName then
                     isPetModel = true
                     break
                 end
             end
             
             if isPetModel then
-                print("💥 PET FOUND - FORCE REPLACING:", child.Name)
-                debugLabel.Text = "Debug: FORCING " .. child.Name
-                statusLabel.Text = "Status: FORCING " .. child.Name
+                print("🎯 Pet model detected:", descendant.Name)
+                debugLabel.Text = "Debug: Found " .. descendant.Name
                 
-                -- FORCE replacement
-                if forceReplacement(child) then
-                    statusLabel.Text = "Status: FORCED SUCCESS"
+                -- Small delay to ensure model is fully loaded
+                task.wait(0.1)
+                
+                -- Auto-replace with pet in hand
+                if replaceWithHandPet(descendant) then
+                    statusLabel.Text = "Status: Replaced " .. descendant.Name
                 else
-                    statusLabel.Text = "Status: FORCE FAILED"
+                    statusLabel.Text = "Status: Replacement failed"
                 end
+            else
+                print("⚠️ Ignoring non-pet model:", descendant.Name)
             end
         end
     end)
 else
-    print("⚠️ Workspace.Visuals not found")
+    print("⚠️ Workspace.Visuals not found - monitoring disabled!")
+    statusLabel.Text = "Status: Visuals not found"
 end
 
 -- Toggle Button Logic
@@ -226,27 +226,21 @@ toggleBtn.MouseButton1Click:Connect(function()
     isReplacementActive = not isReplacementActive
     
     if isReplacementActive then
-        toggleBtn.Text = "💥 Force Replace: ON"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 120)
-        statusLabel.Text = "Status: FORCE MODE ACTIVE"
-        debugLabel.Text = "Debug: FORCE ready"
+        toggleBtn.Text = "✅ Auto Replace: ON"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+        statusLabel.Text = "Status: Monitoring for pets..."
+        debugLabel.Text = "Debug: Active"
     else
-        toggleBtn.Text = "❌ Force Replace: OFF"
+        toggleBtn.Text = "❌ Auto Replace: OFF"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
         statusLabel.Text = "Status: Disabled"
         debugLabel.Text = "Debug: Inactive"
     end
 end)
 
-print("💥 FORCE VISIBLE Auto Pet Replacer loaded!")
-print("💥 EXTREME MEASURES:")
-print("  💥 BRIGHT RED NEON pets")
-print("  💥 BIGGER size if too small")
-print("  💥 POSITIONED ABOVE original")
-print("  💥 FLASHING effect")
-print("  💥 DESTROYS original instead of hiding")
+print("🔄 Auto Pet Replacer loaded!")
 print("📋 Instructions:")
-print("1. Hold pet in hand")
-print("2. Enable 'Force Replace'")
-print("3. Open egg")
-print("4. See BRIGHT RED FLASHING pet!")
+print("1. Hold any pet in your hand")
+print("2. Enable 'Auto Replace'")
+print("3. Open an egg")
+print("4. Watch automatic replacement!")
