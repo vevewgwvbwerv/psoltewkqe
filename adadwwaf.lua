@@ -1,4 +1,4 @@
--- Instant Auto Pet Replacer - IMMEDIATE replacement, no delays
+-- Debug Auto Pet Replacer - Find out what's wrong
 -- Services
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -21,51 +21,71 @@ gui.Parent = CoreGui
 gui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame", gui)
-mainFrame.Size = UDim2.new(0, 220, 0, 120)
+mainFrame.Size = UDim2.new(0, 250, 0, 150)
 mainFrame.Position = UDim2.new(0.75, 0, 0.15, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-mainFrame.BorderColor3 = Color3.fromRGB(0, 200, 100)
+mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 0)
 mainFrame.BorderSizePixel = 2
 mainFrame.Active = true
 mainFrame.Draggable = true
 
 local titleLabel = Instance.new("TextLabel", mainFrame)
-titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
+titleLabel.Size = UDim2.new(1, 0, 0.25, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "⚡ Instant Pet Replacer"
-titleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+titleLabel.Text = "🔍 Debug Pet Replacer"
+titleLabel.TextColor3 = Color3.fromRGB(255, 150, 0)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextScaled = true
 
 -- Toggle Button
 local toggleBtn = Instance.new("TextButton", mainFrame)
-toggleBtn.Size = UDim2.new(1, -10, 0, 35)
-toggleBtn.Position = UDim2.new(0, 5, 0.35, 0)
+toggleBtn.Size = UDim2.new(1, -10, 0, 30)
+toggleBtn.Position = UDim2.new(0, 5, 0.25, 0)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
 toggleBtn.TextColor3 = Color3.new(1, 1, 1)
 toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextSize = 16
-toggleBtn.Text = "❌ Instant Replace: OFF"
+toggleBtn.TextSize = 14
+toggleBtn.Text = "❌ Debug Replace: OFF"
 
 -- Status Label
 local statusLabel = Instance.new("TextLabel", mainFrame)
-statusLabel.Size = UDim2.new(1, -10, 0, 25)
-statusLabel.Position = UDim2.new(0, 5, 0.65, 0)
+statusLabel.Size = UDim2.new(1, -10, 0, 20)
+statusLabel.Position = UDim2.new(0, 5, 0.45, 0)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Status: Disabled"
 statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextScaled = true
 
--- Debug Label
-local debugLabel = Instance.new("TextLabel", mainFrame)
-debugLabel.Size = UDim2.new(1, -10, 0, 20)
-debugLabel.Position = UDim2.new(0, 5, 0.85, 0)
-debugLabel.BackgroundTransparency = 1
-debugLabel.Text = "Debug: Ready"
-debugLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-debugLabel.Font = Enum.Font.Gotham
-debugLabel.TextScaled = true
+-- Debug Label 1
+local debugLabel1 = Instance.new("TextLabel", mainFrame)
+debugLabel1.Size = UDim2.new(1, -10, 0, 20)
+debugLabel1.Position = UDim2.new(0, 5, 0.6, 0)
+debugLabel1.BackgroundTransparency = 1
+debugLabel1.Text = "Debug1: Ready"
+debugLabel1.TextColor3 = Color3.fromRGB(150, 255, 150)
+debugLabel1.Font = Enum.Font.Gotham
+debugLabel1.TextScaled = true
+
+-- Debug Label 2
+local debugLabel2 = Instance.new("TextLabel", mainFrame)
+debugLabel2.Size = UDim2.new(1, -10, 0, 20)
+debugLabel2.Position = UDim2.new(0, 5, 0.75, 0)
+debugLabel2.BackgroundTransparency = 1
+debugLabel2.Text = "Debug2: Ready"
+debugLabel2.TextColor3 = Color3.fromRGB(255, 255, 150)
+debugLabel2.Font = Enum.Font.Gotham
+debugLabel2.TextScaled = true
+
+-- Debug Label 3
+local debugLabel3 = Instance.new("TextLabel", mainFrame)
+debugLabel3.Size = UDim2.new(1, -10, 0, 20)
+debugLabel3.Position = UDim2.new(0, 5, 0.9, 0)
+debugLabel3.BackgroundTransparency = 1
+debugLabel3.Text = "Debug3: Ready"
+debugLabel3.TextColor3 = Color3.fromRGB(255, 150, 255)
+debugLabel3.Font = Enum.Font.Gotham
+debugLabel3.TextScaled = true
 
 -- List of known pet names
 local petNames = {
@@ -77,95 +97,130 @@ local petNames = {
     "Bee", "Honey Bee", "Bear Bee", "Petal Bee", "Queen Bee"
 }
 
--- Function: Get pet from hand INSTANTLY
-local function getHandPetInstant()
+-- Function: Debug pet scan
+local function debugScanHandPet()
+    debugLabel1.Text = "Debug1: Scanning hand..."
+    
     local character = LocalPlayer.Character
-    if not character then return nil end
+    if not character then
+        debugLabel1.Text = "Debug1: NO CHARACTER!"
+        return nil
+    end
     
     local tool = character:FindFirstChildOfClass("Tool")
-    if not tool then return nil end
+    if not tool then
+        debugLabel1.Text = "Debug1: NO TOOL IN HAND!"
+        return nil
+    end
     
-    print("⚡ INSTANT pet scan:", tool.Name)
+    debugLabel1.Text = "Debug1: Found " .. tool.Name
     
-    -- Create model from tool INSTANTLY
+    -- Create model
     local petModel = Instance.new("Model")
     petModel.Name = tool.Name
     
-    -- Clone all children INSTANTLY
+    -- Clone children
+    local childCount = 0
     for _, child in pairs(tool:GetChildren()) do
         local childClone = child:Clone()
         childClone.Parent = petModel
+        childCount = childCount + 1
     end
     
-    -- Configure for display INSTANTLY
+    debugLabel2.Text = "Debug2: Cloned " .. childCount .. " parts"
+    
+    -- Configure parts
+    local partCount = 0
     for _, part in pairs(petModel:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = false
             part.Anchored = false
             part.Transparency = 0
+            partCount = partCount + 1
         end
     end
+    
+    debugLabel3.Text = "Debug3: Config " .. partCount .. " parts"
     
     return petModel
 end
 
--- Function: INSTANT replacement - NO DELAYS!
-local function instantReplace(tempModel)
-    if not tempModel then return false end
-    
-    print("⚡ INSTANT REPLACE:", tempModel.Name)
-    
-    -- Get hand pet INSTANTLY
-    local handPet = getHandPetInstant()
-    if not handPet then
-        print("❌ No hand pet")
+-- Function: Debug replacement
+local function debugReplace(tempModel)
+    if not tempModel then
+        debugLabel1.Text = "Debug1: NO TEMP MODEL!"
         return false
     end
     
-    -- Get position INSTANTLY
+    debugLabel1.Text = "Debug1: Replacing " .. tempModel.Name
+    
+    -- Get hand pet
+    local handPet = debugScanHandPet()
+    if not handPet then
+        debugLabel1.Text = "Debug1: SCAN FAILED!"
+        return false
+    end
+    
+    -- Get positions
     local tempPrimaryPart = tempModel.PrimaryPart or tempModel:FindFirstChildWhichIsA("BasePart")
     if not tempPrimaryPart then
-        print("❌ No temp primary part")
+        debugLabel2.Text = "Debug2: NO TEMP PRIMARY!"
         return false
     end
     
-    local targetCFrame = tempPrimaryPart.CFrame
-    local targetSize = tempPrimaryPart.Size
-    
-    -- Position hand pet INSTANTLY
     local handPrimaryPart = handPet.PrimaryPart or handPet:FindFirstChildWhichIsA("BasePart")
-    if handPrimaryPart then
-        handPrimaryPart.CFrame = targetCFrame
-        handPrimaryPart.Size = targetSize
+    if not handPrimaryPart then
+        debugLabel2.Text = "Debug2: NO HAND PRIMARY!"
+        return false
     end
     
-    -- HIDE ORIGINAL FIRST (INSTANTLY!)
+    debugLabel2.Text = "Debug2: Positioning..."
+    
+    -- Position hand pet
+    handPrimaryPart.CFrame = tempPrimaryPart.CFrame
+    handPrimaryPart.Size = tempPrimaryPart.Size
+    
+    debugLabel3.Text = "Debug3: Hiding original..."
+    
+    -- Hide original
+    local hiddenCount = 0
     for _, part in pairs(tempModel:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Transparency = 1
+            hiddenCount = hiddenCount + 1
         end
     end
     
-    -- ADD REPLACEMENT IMMEDIATELY AFTER HIDING
+    debugLabel3.Text = "Debug3: Hidden " .. hiddenCount .. " parts"
+    
+    -- Add to workspace
     handPet.Parent = Workspace
     
-    print("⚡ INSTANT replacement done!")
-    debugLabel.Text = "Debug: INSTANT " .. handPet.Name
+    debugLabel1.Text = "Debug1: ADDED TO WORKSPACE!"
+    debugLabel2.Text = "Debug2: Pet in workspace: " .. handPet.Name
+    debugLabel3.Text = "Debug3: SUCCESS!"
     
-    -- Clean up after 4 seconds (normal duration)
+    -- Clean up after 4 seconds
     game:GetService("Debris"):AddItem(handPet, 4)
     
     return true
 end
 
--- Monitor Workspace.Visuals with INSTANT response
+-- Monitor Workspace.Visuals with detailed debugging
 local visuals = Workspace:FindFirstChild("Visuals")
 if visuals then
+    debugLabel1.Text = "Debug1: Visuals found!"
+    
     visuals.ChildAdded:Connect(function(descendant)
-        if not isReplacementActive then return end
+        debugLabel1.Text = "Debug1: New child: " .. descendant.Name
+        
+        if not isReplacementActive then
+            debugLabel2.Text = "Debug2: Replacement OFF"
+            return
+        end
         
         if descendant:IsA("Model") then
-            print("⚡ NEW MODEL DETECTED:", descendant.Name)
+            debugLabel2.Text = "Debug2: Model detected"
             
             -- Check if pet model
             local isPetModel = false
@@ -177,23 +232,24 @@ if visuals then
             end
             
             if isPetModel then
-                print("⚡ PET DETECTED - INSTANT REPLACE!")
-                debugLabel.Text = "Debug: INSTANT " .. descendant.Name
+                debugLabel3.Text = "Debug3: PET FOUND!"
                 
-                -- NO DELAYS! INSTANT REPLACEMENT!
-                if instantReplace(descendant) then
-                    statusLabel.Text = "Status: INSTANT " .. descendant.Name
+                -- Try to replace
+                if debugReplace(descendant) then
+                    statusLabel.Text = "Status: SUCCESS " .. descendant.Name
                 else
-                    statusLabel.Text = "Status: INSTANT failed"
+                    statusLabel.Text = "Status: FAILED " .. descendant.Name
                 end
             else
-                print("⚠️ Not a pet:", descendant.Name)
+                debugLabel3.Text = "Debug3: Not a pet: " .. descendant.Name
             end
+        else
+            debugLabel2.Text = "Debug2: Not a model: " .. descendant.ClassName
         end
     end)
 else
-    print("⚠️ Workspace.Visuals not found!")
-    statusLabel.Text = "Status: Visuals not found"
+    debugLabel1.Text = "Debug1: VISUALS NOT FOUND!"
+    statusLabel.Text = "Status: NO VISUALS!"
 end
 
 -- Toggle Button Logic
@@ -201,26 +257,29 @@ toggleBtn.MouseButton1Click:Connect(function()
     isReplacementActive = not isReplacementActive
     
     if isReplacementActive then
-        toggleBtn.Text = "⚡ Instant Replace: ON"
+        toggleBtn.Text = "🔍 Debug Replace: ON"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
-        statusLabel.Text = "Status: INSTANT mode active"
-        debugLabel.Text = "Debug: INSTANT ready"
+        statusLabel.Text = "Status: DEBUG MODE ACTIVE"
+        debugLabel1.Text = "Debug1: Monitoring..."
+        debugLabel2.Text = "Debug2: Waiting for egg..."
+        debugLabel3.Text = "Debug3: Ready to debug"
     else
-        toggleBtn.Text = "❌ Instant Replace: OFF"
+        toggleBtn.Text = "❌ Debug Replace: OFF"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
         statusLabel.Text = "Status: Disabled"
-        debugLabel.Text = "Debug: Inactive"
+        debugLabel1.Text = "Debug1: Inactive"
+        debugLabel2.Text = "Debug2: Inactive"
+        debugLabel3.Text = "Debug3: Inactive"
     end
 end)
 
-print("⚡ INSTANT Auto Pet Replacer loaded!")
-print("🚀 Features:")
-print("  ⚡ ZERO delays")
-print("  ⚡ INSTANT hide original")
-print("  ⚡ INSTANT show replacement")
-print("  ⚡ NO waiting periods")
+print("🔍 DEBUG Auto Pet Replacer loaded!")
+print("🔍 This version will show EXACTLY what happens:")
+print("  - Debug1: Main process status")
+print("  - Debug2: Secondary details")
+print("  - Debug3: Final results")
 print("📋 Instructions:")
 print("1. Hold pet in hand")
-print("2. Enable 'Instant Replace'")
+print("2. Enable 'Debug Replace'")
 print("3. Open egg")
-print("4. See INSTANT replacement!")
+print("4. Watch debug messages!")
