@@ -1,4 +1,4 @@
--- Full Model Positioning - Move ENTIRE pet model, not just one part
+-- Pose Matching - Copy exact pose and orientation from egg pet
 -- Services
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -7,8 +7,8 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer or Players:GetPlayers()[1]
 
 -- Clear previous GUI
-if CoreGui:FindFirstChild("FullModelPositioning_GUI") then 
-    CoreGui.FullModelPositioning_GUI:Destroy() 
+if CoreGui:FindFirstChild("PoseMatching_GUI") then 
+    CoreGui.PoseMatching_GUI:Destroy() 
 end
 
 -- Storage
@@ -16,15 +16,15 @@ local isReplacementActive = false
 
 -- GUI Setup
 local gui = Instance.new("ScreenGui")
-gui.Name = "FullModelPositioning_GUI"
+gui.Name = "PoseMatching_GUI"
 gui.Parent = CoreGui
 gui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame", gui)
-mainFrame.Size = UDim2.new(0, 240, 0, 130)
+mainFrame.Size = UDim2.new(0, 250, 0, 140)
 mainFrame.Position = UDim2.new(0.75, 0, 0.15, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(0, 40, 0)
-mainFrame.BorderColor3 = Color3.fromRGB(0, 255, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 60)
+mainFrame.BorderColor3 = Color3.fromRGB(0, 150, 255)
 mainFrame.BorderSizePixel = 2
 mainFrame.Active = true
 mainFrame.Draggable = true
@@ -32,8 +32,8 @@ mainFrame.Draggable = true
 local titleLabel = Instance.new("TextLabel", mainFrame)
 titleLabel.Size = UDim2.new(1, 0, 0.25, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "🎯 Full Model Positioning"
-titleLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+titleLabel.Text = "🎭 Pose Matching"
+titleLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextScaled = true
 
@@ -41,11 +41,11 @@ titleLabel.TextScaled = true
 local toggleBtn = Instance.new("TextButton", mainFrame)
 toggleBtn.Size = UDim2.new(1, -10, 0, 35)
 toggleBtn.Position = UDim2.new(0, 5, 0.3, 0)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 0, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
 toggleBtn.TextColor3 = Color3.new(1, 1, 1)
 toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.TextSize = 16
-toggleBtn.Text = "❌ Full Replace: OFF"
+toggleBtn.Text = "❌ Pose Match: OFF"
 
 -- Status Label
 local statusLabel = Instance.new("TextLabel", mainFrame)
@@ -77,51 +77,58 @@ local petNames = {
     "Bee", "Honey Bee", "Bear Bee", "Petal Bee", "Queen Bee"
 }
 
--- Function: Move ENTIRE model to new position
-local function moveEntireModel(model, targetCFrame)
-    print("🎯 Moving ENTIRE model:", model.Name, "to", targetCFrame)
+-- Function: Map parts by name between two models
+local function mapPartsByName(sourceModel, targetModel)
+    local sourceMap = {}
+    local targetMap = {}
     
-    -- Find current primary part or any visible part
-    local currentPrimaryPart = model.PrimaryPart
-    if not currentPrimaryPart then
-        -- Find first visible part
-        for _, part in pairs(model:GetDescendants()) do
-            if part:IsA("BasePart") and part.Transparency < 1 then
-                currentPrimaryPart = part
-                break
-            end
-        end
-    end
-    
-    if not currentPrimaryPart then
-        print("❌ No reference part found for positioning")
-        return false
-    end
-    
-    -- Calculate offset from current position
-    local currentCFrame = currentPrimaryPart.CFrame
-    local offset = targetCFrame * currentCFrame:Inverse()
-    
-    print("📍 Current position:", currentCFrame)
-    print("📍 Target position:", targetCFrame)
-    print("📍 Calculated offset:", offset)
-    
-    -- Move ALL parts by the same offset
-    local partsMoved = 0
-    for _, part in pairs(model:GetDescendants()) do
+    -- Build maps of part names
+    for _, part in pairs(sourceModel:GetDescendants()) do
         if part:IsA("BasePart") then
-            part.CFrame = offset * part.CFrame
-            partsMoved = partsMoved + 1
-            print("  ✅ Moved part:", part.Name, "to", part.CFrame.Position)
+            sourceMap[part.Name] = part
         end
     end
     
-    print("🎉 Moved", partsMoved, "parts of entire model!")
-    return true
+    for _, part in pairs(targetModel:GetDescendants()) do
+        if part:IsA("BasePart") then
+            targetMap[part.Name] = part
+        end
+    end
+    
+    return sourceMap, targetMap
 end
 
--- Function: Create full stable copy with proper positioning
-local function createFullStableCopy(targetCFrame)
+-- Function: Copy exact pose from egg pet to hand pet copy
+local function copyExactPose(eggPet, handPetCopy)
+    print("🎭 COPYING EXACT POSE from", eggPet.Name, "to", handPetCopy.Name)
+    
+    -- Map parts by name
+    local eggParts, handParts = mapPartsByName(eggPet, handPetCopy)
+    
+    local posesCopied = 0
+    local posesSkipped = 0
+    
+    -- Copy CFrame of each matching part
+    for partName, eggPart in pairs(eggParts) do
+        local handPart = handParts[partName]
+        if handPart then
+            -- Copy exact CFrame (position + rotation)
+            handPart.CFrame = eggPart.CFrame
+            posesCopied = posesCopied + 1
+            
+            print("  🎭 Copied pose:", partName, "CFrame:", eggPart.CFrame)
+        else
+            posesSkipped = posesSkipped + 1
+            print("  ⚠️ No matching part for:", partName)
+        end
+    end
+    
+    print("🎭 Pose copy complete:", posesCopied, "copied,", posesSkipped, "skipped")
+    return posesCopied > 0
+end
+
+-- Function: Create copy with exact pose matching
+local function createPoseMatchedCopy(eggPet)
     local character = LocalPlayer.Character
     if not character then
         print("❌ No character")
@@ -134,11 +141,11 @@ local function createFullStableCopy(targetCFrame)
         return nil
     end
     
-    print("✅ Creating FULL stable copy of:", tool.Name)
+    print("✅ Creating POSE-MATCHED copy of:", tool.Name)
     
     -- Clone the tool
     local toolClone = tool:Clone()
-    toolClone.Name = toolClone.Name .. "_FullCopy"
+    toolClone.Name = toolClone.Name .. "_PoseMatched"
     
     -- Anchor ALL parts and make them visible
     local partsProcessed = 0
@@ -148,8 +155,6 @@ local function createFullStableCopy(targetCFrame)
             part.CanCollide = false
             part.Transparency = 0  -- Force all parts visible
             partsProcessed = partsProcessed + 1
-            
-            print("🔧 Processed part:", part.Name, "Size:", part.Size, "Transparency:", part.Transparency)
         end
     end
     
@@ -161,51 +166,31 @@ local function createFullStableCopy(targetCFrame)
     -- Wait a moment for it to settle
     task.wait(0.1)
     
-    -- Now move ENTIRE model to target position
-    if moveEntireModel(toolClone, targetCFrame) then
-        print("🎉 FULL model positioned successfully!")
+    -- Copy EXACT pose from egg pet
+    if copyExactPose(eggPet, toolClone) then
+        print("🎭 POSE MATCHING SUCCESSFUL!")
         return toolClone
     else
-        print("❌ Failed to position full model")
+        print("❌ Failed to match pose")
         toolClone:Destroy()
         return nil
     end
 end
 
--- Function: Replace with FULL model positioning
-local function replaceWithFullModel(eggPet)
+-- Function: Replace with pose-matched copy
+local function replaceWithPoseMatching(eggPet)
     if not eggPet then return false end
     
-    print("🎯 REPLACING WITH FULL MODEL:", eggPet.Name)
+    print("🎭 REPLACING WITH POSE MATCHING:", eggPet.Name)
     
-    -- Find reference part in egg pet for target position
-    local eggReferencePart = eggPet.PrimaryPart
-    if not eggReferencePart then
-        -- Find first visible part
-        for _, part in pairs(eggPet:GetDescendants()) do
-            if part:IsA("BasePart") and part.Transparency < 1 then
-                eggReferencePart = part
-                break
-            end
-        end
-    end
-    
-    if not eggReferencePart then
-        print("❌ No reference part in egg pet")
+    -- Create pose-matched copy
+    local poseMatchedCopy = createPoseMatchedCopy(eggPet)
+    if not poseMatchedCopy then
+        print("❌ Failed to create pose-matched copy")
         return false
     end
     
-    local targetCFrame = eggReferencePart.CFrame
-    print("📍 Target CFrame from egg pet:", eggReferencePart.Name, targetCFrame)
-    
-    -- Create FULL stable copy at target position
-    local fullCopy = createFullStableCopy(targetCFrame)
-    if not fullCopy then
-        print("❌ Failed to create full copy")
-        return false
-    end
-    
-    -- Hide egg pet
+    -- Hide egg pet IMMEDIATELY (no delay)
     local partsHidden = 0
     for _, part in pairs(eggPet:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -213,13 +198,13 @@ local function replaceWithFullModel(eggPet)
             partsHidden = partsHidden + 1
         end
     end
-    print("🙈 Hidden", partsHidden, "parts of egg pet")
+    print("🙈 Hidden", partsHidden, "parts of egg pet IMMEDIATELY")
     
     -- Clean up after 4 seconds
-    game:GetService("Debris"):AddItem(fullCopy, 4)
+    game:GetService("Debris"):AddItem(poseMatchedCopy, 4)
     
-    print("🎯 FULL MODEL REPLACEMENT SUCCESSFUL!")
-    debugLabel.Text = "Debug: FULL " .. eggPet.Name
+    print("🎭 POSE MATCHING REPLACEMENT SUCCESSFUL!")
+    debugLabel.Text = "Debug: POSE " .. eggPet.Name
     
     return true
 end
@@ -241,18 +226,15 @@ if visuals then
             end
             
             if isPetModel then
-                print("🎯 EGG PET DETECTED:", child.Name)
+                print("🎭 EGG PET DETECTED:", child.Name)
                 debugLabel.Text = "Debug: Found " .. child.Name
-                statusLabel.Text = "Status: FULL replacing " .. child.Name
+                statusLabel.Text = "Status: POSE matching " .. child.Name
                 
-                -- Small delay
-                task.wait(0.1)
-                
-                -- Replace with FULL model
-                if replaceWithFullModel(child) then
-                    statusLabel.Text = "Status: FULL SUCCESS " .. child.Name
+                -- NO DELAY - immediate replacement
+                if replaceWithPoseMatching(child) then
+                    statusLabel.Text = "Status: POSE SUCCESS " .. child.Name
                 else
-                    statusLabel.Text = "Status: FULL FAILED " .. child.Name
+                    statusLabel.Text = "Status: POSE FAILED " .. child.Name
                 end
             end
         end
@@ -266,26 +248,27 @@ toggleBtn.MouseButton1Click:Connect(function()
     isReplacementActive = not isReplacementActive
     
     if isReplacementActive then
-        toggleBtn.Text = "🎯 Full Replace: ON"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
-        statusLabel.Text = "Status: FULL model active"
-        debugLabel.Text = "Debug: Moving entire models"
+        toggleBtn.Text = "🎭 Pose Match: ON"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 120)
+        statusLabel.Text = "Status: POSE matching active"
+        debugLabel.Text = "Debug: Copying exact poses"
     else
-        toggleBtn.Text = "❌ Full Replace: OFF"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 0, 0)
+        toggleBtn.Text = "❌ Pose Match: OFF"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
         statusLabel.Text = "Status: Disabled"
         debugLabel.Text = "Debug: Inactive"
     end
 end)
 
-print("🎯 Full Model Positioning loaded!")
+print("🎭 Pose Matching loaded!")
 print("✅ Key improvements:")
-print("  🎯 Moves ENTIRE model, not just one part")
-print("  🎯 Calculates offset and applies to ALL parts")
-print("  🎯 Preserves relative positions of all body parts")
-print("  🎯 Forces all parts visible (Transparency = 0)")
+print("  🎭 Copies EXACT pose from egg pet")
+print("  🎭 Maps parts by name between models")
+print("  🎭 Copies CFrame (position + rotation) of each part")
+print("  🎭 IMMEDIATE replacement (no delay)")
+print("  🎭 Should match standing pose perfectly!")
 print("📋 Instructions:")
 print("1. Hold pet in hand")
-print("2. Enable 'Full Replace'")
+print("2. Enable 'Pose Match'")
 print("3. Open egg")
-print("4. Should show COMPLETE pet with all textures!")
+print("4. Should show pet in EXACT same pose as egg!")
