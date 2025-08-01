@@ -1,4 +1,4 @@
--- Exact Working Method - Use EXACTLY the same code that worked in SimpleStableCopy
+-- Egg Replacement Diagnostic - Find out what's happening with egg pet
 -- Services
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -7,65 +7,86 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer or Players:GetPlayers()[1]
 
 -- Clear previous GUI
-if CoreGui:FindFirstChild("ExactWorkingMethod_GUI") then 
-    CoreGui.ExactWorkingMethod_GUI:Destroy() 
+if CoreGui:FindFirstChild("EggDiagnostic_GUI") then 
+    CoreGui.EggDiagnostic_GUI:Destroy() 
 end
 
 -- Storage
-local isReplacementActive = false
+local isMonitoring = false
 
 -- GUI Setup
 local gui = Instance.new("ScreenGui")
-gui.Name = "ExactWorkingMethod_GUI"
+gui.Name = "EggDiagnostic_GUI"
 gui.Parent = CoreGui
 gui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame", gui)
-mainFrame.Size = UDim2.new(0, 220, 0, 120)
-mainFrame.Position = UDim2.new(0.75, 0, 0.15, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-mainFrame.BorderColor3 = Color3.fromRGB(255, 215, 0)
+mainFrame.Size = UDim2.new(0, 300, 0, 200)
+mainFrame.Position = UDim2.new(0.7, 0, 0.1, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+mainFrame.BorderColor3 = Color3.fromRGB(255, 0, 0)
 mainFrame.BorderSizePixel = 2
 mainFrame.Active = true
 mainFrame.Draggable = true
 
 local titleLabel = Instance.new("TextLabel", mainFrame)
-titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
+titleLabel.Size = UDim2.new(1, 0, 0.15, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "⭐ Exact Working Method"
-titleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+titleLabel.Text = "🔍 Egg Replacement Diagnostic"
+titleLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextScaled = true
 
--- Toggle Button
-local toggleBtn = Instance.new("TextButton", mainFrame)
-toggleBtn.Size = UDim2.new(1, -10, 0, 35)
-toggleBtn.Position = UDim2.new(0, 5, 0.35, 0)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
-toggleBtn.TextColor3 = Color3.new(1, 1, 1)
-toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextSize = 16
-toggleBtn.Text = "❌ Exact Replace: OFF"
+-- Monitor Button
+local monitorBtn = Instance.new("TextButton", mainFrame)
+monitorBtn.Size = UDim2.new(1, -10, 0, 30)
+monitorBtn.Position = UDim2.new(0, 5, 0.18, 0)
+monitorBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+monitorBtn.TextColor3 = Color3.new(1, 1, 1)
+monitorBtn.Font = Enum.Font.GothamBold
+monitorBtn.TextSize = 14
+monitorBtn.Text = "🔍 START MONITORING"
 
--- Status Label
-local statusLabel = Instance.new("TextLabel", mainFrame)
-statusLabel.Size = UDim2.new(1, -10, 0, 25)
-statusLabel.Position = UDim2.new(0, 5, 0.65, 0)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: Disabled"
-statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextScaled = true
+-- Info Labels
+local infoLabel1 = Instance.new("TextLabel", mainFrame)
+infoLabel1.Size = UDim2.new(1, -10, 0, 25)
+infoLabel1.Position = UDim2.new(0, 5, 0.35, 0)
+infoLabel1.BackgroundTransparency = 1
+infoLabel1.Text = "Info1: Ready"
+infoLabel1.TextColor3 = Color3.fromRGB(255, 255, 255)
+infoLabel1.Font = Enum.Font.Code
+infoLabel1.TextSize = 12
+infoLabel1.TextXAlignment = Enum.TextXAlignment.Left
 
--- Debug Label
-local debugLabel = Instance.new("TextLabel", mainFrame)
-debugLabel.Size = UDim2.new(1, -10, 0, 20)
-debugLabel.Position = UDim2.new(0, 5, 0.85, 0)
-debugLabel.BackgroundTransparency = 1
-debugLabel.Text = "Debug: Ready"
-debugLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-debugLabel.Font = Enum.Font.Gotham
-debugLabel.TextScaled = true
+local infoLabel2 = Instance.new("TextLabel", mainFrame)
+infoLabel2.Size = UDim2.new(1, -10, 0, 25)
+infoLabel2.Position = UDim2.new(0, 5, 0.5, 0)
+infoLabel2.BackgroundTransparency = 1
+infoLabel2.Text = "Info2: Ready"
+infoLabel2.TextColor3 = Color3.fromRGB(255, 255, 255)
+infoLabel2.Font = Enum.Font.Code
+infoLabel2.TextSize = 12
+infoLabel2.TextXAlignment = Enum.TextXAlignment.Left
+
+local infoLabel3 = Instance.new("TextLabel", mainFrame)
+infoLabel3.Size = UDim2.new(1, -10, 0, 25)
+infoLabel3.Position = UDim2.new(0, 5, 0.65, 0)
+infoLabel3.BackgroundTransparency = 1
+infoLabel3.Text = "Info3: Ready"
+infoLabel3.TextColor3 = Color3.fromRGB(255, 255, 255)
+infoLabel3.Font = Enum.Font.Code
+infoLabel3.TextSize = 12
+infoLabel3.TextXAlignment = Enum.TextXAlignment.Left
+
+local infoLabel4 = Instance.new("TextLabel", mainFrame)
+infoLabel4.Size = UDim2.new(1, -10, 0, 25)
+infoLabel4.Position = UDim2.new(0, 5, 0.8, 0)
+infoLabel4.BackgroundTransparency = 1
+infoLabel4.Text = "Info4: Ready"
+infoLabel4.TextColor3 = Color3.fromRGB(255, 255, 255)
+infoLabel4.Font = Enum.Font.Code
+infoLabel4.TextSize = 12
+infoLabel4.TextXAlignment = Enum.TextXAlignment.Left
 
 -- List of known pet names
 local petNames = {
@@ -77,106 +98,103 @@ local petNames = {
     "Bee", "Honey Bee", "Bear Bee", "Petal Bee", "Queen Bee"
 }
 
--- EXACT COPY of working function from SimpleStableCopy.lua
-local function createStableCopy()
+-- Function: Analyze egg pet in detail
+local function analyzeEggPet(eggPet)
+    infoLabel1.Text = "Info1: Analyzing " .. eggPet.Name
+    
+    -- Count parts
+    local children = eggPet:GetChildren()
+    local descendants = eggPet:GetDescendants()
+    local baseParts = {}
+    
+    for _, desc in pairs(descendants) do
+        if desc:IsA("BasePart") then
+            table.insert(baseParts, desc)
+        end
+    end
+    
+    infoLabel2.Text = "Info2: Children=" .. #children .. " Descendants=" .. #descendants .. " Parts=" .. #baseParts
+    
+    -- Find primary part
+    local primaryPart = eggPet.PrimaryPart or eggPet:FindFirstChildWhichIsA("BasePart")
+    if primaryPart then
+        infoLabel3.Text = "Info3: Primary=" .. primaryPart.Name .. " Size=" .. tostring(primaryPart.Size)
+        infoLabel4.Text = "Info4: Pos=" .. tostring(primaryPart.CFrame.Position)
+    else
+        infoLabel3.Text = "Info3: NO PRIMARY PART FOUND!"
+        infoLabel4.Text = "Info4: Cannot get position"
+    end
+    
+    print("🔍 EGG PET ANALYSIS:")
+    print("  Name:", eggPet.Name)
+    print("  Children:", #children)
+    print("  Descendants:", #descendants)
+    print("  BaseParts:", #baseParts)
+    
+    for i, part in ipairs(baseParts) do
+        print("  Part[" .. i .. "]:", part.Name, "Size:", part.Size, "Transparency:", part.Transparency)
+    end
+    
+    if primaryPart then
+        print("  Primary Part:", primaryPart.Name)
+        print("  Position:", primaryPart.CFrame.Position)
+        print("  Size:", primaryPart.Size)
+    end
+end
+
+-- Function: Test replacement without actually replacing
+local function testReplacement(eggPet)
+    print("🧪 TESTING REPLACEMENT FOR:", eggPet.Name)
+    
+    -- Check hand pet
     local character = LocalPlayer.Character
     if not character then
         print("❌ No character")
-        return nil
+        return
     end
     
     local tool = character:FindFirstChildOfClass("Tool")
     if not tool then
         print("❌ No tool in hand")
-        return nil
+        return
     end
     
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then
-        print("❌ No HumanoidRootPart")
-        return nil
-    end
+    print("✅ Hand pet:", tool.Name)
     
-    print("✅ Creating stable copy of:", tool.Name)
+    -- Analyze both pets
+    print("📊 EGG PET ANALYSIS:")
+    analyzeEggPet(eggPet)
     
-    -- Clone the tool (EXACT SAME CODE)
-    local toolClone = tool:Clone()
-    toolClone.Name = toolClone.Name .. "_StableCopy"
+    print("📊 HAND PET ANALYSIS:")
+    local handChildren = tool:GetChildren()
+    local handDescendants = tool:GetDescendants()
+    local handBaseParts = {}
     
-    -- CRITICAL: Anchor ALL parts to prevent falling (EXACT SAME CODE)
-    for _, part in pairs(toolClone:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Anchored = true  -- ANCHOR - no falling!
-            part.CanCollide = false  -- No collision issues
-            part.Transparency = 0  -- Make visible
-            
-            print("🔧 Anchored:", part.Name, "Size:", part.Size)
+    for _, desc in pairs(handDescendants) do
+        if desc:IsA("BasePart") then
+            table.insert(handBaseParts, desc)
         end
     end
     
-    -- Add to workspace FIRST (EXACT SAME CODE)
-    toolClone.Parent = Workspace
+    print("  Hand pet children:", #handChildren)
+    print("  Hand pet descendants:", #handDescendants)
+    print("  Hand pet BaseParts:", #handBaseParts)
     
-    print("🎉 Stable copy created and positioned!")
+    -- Show what would happen
+    print("🔄 REPLACEMENT SIMULATION:")
+    print("  Would hide", #baseParts, "parts from egg pet")
+    print("  Would show", #handBaseParts, "parts from hand pet")
     
-    return toolClone
+    infoLabel1.Text = "Info1: TEST COMPLETE - Check console (F9)"
 end
 
--- Function: Replace egg pet using EXACT working method
-local function replaceWithExactMethod(eggPet)
-    if not eggPet then return false end
-    
-    print("⭐ REPLACING WITH EXACT METHOD:", eggPet.Name)
-    
-    -- Get egg pet position FIRST
-    local eggPrimaryPart = eggPet.PrimaryPart or eggPet:FindFirstChildWhichIsA("BasePart")
-    if not eggPrimaryPart then
-        print("❌ No primary part in egg pet")
-        return false
-    end
-    
-    local targetPosition = eggPrimaryPart.CFrame
-    print("📍 Target position:", targetPosition)
-    
-    -- Create stable copy using EXACT working method
-    local stableCopy = createStableCopy()
-    if not stableCopy then
-        print("❌ Failed to create stable copy")
-        return false
-    end
-    
-    -- Position it at egg location (EXACT SAME POSITIONING CODE)
-    local primaryPart = stableCopy.PrimaryPart or stableCopy:FindFirstChildWhichIsA("BasePart")
-    if primaryPart then
-        primaryPart.CFrame = targetPosition
-        print("✅ Positioned at:", targetPosition)
-    else
-        print("⚠️ No primary part found, using SetPrimaryPartCFrame")
-        stableCopy:SetPrimaryPartCFrame(targetPosition)
-    end
-    
-    -- Hide egg pet
-    for _, part in pairs(eggPet:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 1
-        end
-    end
-    print("🙈 Egg pet hidden")
-    
-    -- Clean up after 4 seconds
-    game:GetService("Debris"):AddItem(stableCopy, 4)
-    
-    print("⭐ EXACT METHOD REPLACEMENT SUCCESSFUL!")
-    debugLabel.Text = "Debug: EXACT " .. eggPet.Name
-    
-    return true
-end
-
--- Monitor Workspace.Visuals
+-- Monitor Workspace.Visuals with detailed analysis
 local visuals = Workspace:FindFirstChild("Visuals")
 if visuals then
+    infoLabel1.Text = "Info1: Visuals found, ready to monitor"
+    
     visuals.ChildAdded:Connect(function(child)
-        if not isReplacementActive then return end
+        if not isMonitoring then return end
         
         if child:IsA("Model") then
             -- Check if pet model
@@ -189,51 +207,49 @@ if visuals then
             end
             
             if isPetModel then
-                print("⭐ EGG PET DETECTED:", child.Name)
-                debugLabel.Text = "Debug: Found " .. child.Name
-                statusLabel.Text = "Status: EXACT replacing " .. child.Name
+                print("🎯 EGG PET DETECTED:", child.Name)
                 
-                -- Small delay
-                task.wait(0.1)
+                -- Wait a moment for it to load
+                task.wait(0.2)
                 
-                -- Replace using EXACT method
-                if replaceWithExactMethod(child) then
-                    statusLabel.Text = "Status: EXACT SUCCESS " .. child.Name
-                else
-                    statusLabel.Text = "Status: EXACT FAILED " .. child.Name
-                end
+                -- Test replacement
+                testReplacement(child)
+            else
+                print("⚠️ Non-pet model:", child.Name, child.ClassName)
             end
+        else
+            print("⚠️ Non-model object:", child.Name, child.ClassName)
         end
     end)
 else
-    print("⚠️ Workspace.Visuals not found")
+    infoLabel1.Text = "Info1: ERROR - Workspace.Visuals not found!"
 end
 
--- Toggle Button Logic
-toggleBtn.MouseButton1Click:Connect(function()
-    isReplacementActive = not isReplacementActive
+-- Button event
+monitorBtn.MouseButton1Click:Connect(function()
+    isMonitoring = not isMonitoring
     
-    if isReplacementActive then
-        toggleBtn.Text = "⭐ Exact Replace: ON"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 0)
-        statusLabel.Text = "Status: EXACT method active"
-        debugLabel.Text = "Debug: Using EXACT working code"
+    if isMonitoring then
+        monitorBtn.Text = "🔍 MONITORING ACTIVE"
+        monitorBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+        infoLabel1.Text = "Info1: Monitoring for egg pets..."
+        infoLabel2.Text = "Info2: Open an egg to see analysis"
+        infoLabel3.Text = "Info3: Check console (F9) for details"
+        infoLabel4.Text = "Info4: Ready"
     else
-        toggleBtn.Text = "❌ Exact Replace: OFF"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
-        statusLabel.Text = "Status: Disabled"
-        debugLabel.Text = "Debug: Inactive"
+        monitorBtn.Text = "🔍 START MONITORING"
+        monitorBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+        infoLabel1.Text = "Info1: Monitoring stopped"
+        infoLabel2.Text = "Info2: Ready"
+        infoLabel3.Text = "Info3: Ready"
+        infoLabel4.Text = "Info4: Ready"
     end
 end)
 
-print("⭐ Exact Working Method loaded!")
-print("✅ Uses EXACT SAME CODE from SimpleStableCopy:")
-print("  ✅ Same tool cloning")
-print("  ✅ Same anchoring loop")
-print("  ✅ Same workspace addition")
-print("  ✅ Same positioning method")
+print("🔍 Egg Replacement Diagnostic loaded!")
 print("📋 Instructions:")
 print("1. Hold pet in hand")
-print("2. Enable 'Exact Replace'")
+print("2. Click 'START MONITORING'")
 print("3. Open egg")
-print("4. Should work EXACTLY like SimpleStableCopy!")
+print("4. Check console (F9) for detailed analysis")
+print("5. This will show what's wrong with replacement!")
