@@ -125,37 +125,41 @@ local function replaceEggPet(eggPet)
         return false
     end
     
-    -- Get position from egg pet
+    -- Get position from egg pet BEFORE hiding it
     local eggPrimaryPart = eggPet.PrimaryPart or eggPet:FindFirstChildWhichIsA("BasePart")
     if not eggPrimaryPart then
         print("❌ No primary part in egg pet")
         return false
     end
     
+    -- SAVE EXACT POSITION BEFORE HIDING
     local targetPosition = eggPrimaryPart.CFrame
+    local targetSize = eggPrimaryPart.Size
     print("📍 Target position:", targetPosition)
+    print("📏 Target size:", targetSize)
     
-    -- HIDE EGG PET FIRST
+    -- ADD HAND PET COPY TO WORKSPACE FIRST
+    handPetCopy.Parent = Workspace
+    print("✅ Hand pet copy added to workspace")
+    
+    -- POSITION HAND PET COPY AT EXACT LOCATION
+    local handPrimaryPart = handPetCopy.PrimaryPart or handPetCopy:FindFirstChildWhichIsA("BasePart")
+    if handPrimaryPart then
+        handPrimaryPart.CFrame = targetPosition
+        handPrimaryPart.Size = targetSize  -- Match size too
+        print("✅ Hand pet positioned at exact location")
+    else
+        handPetCopy:SetPrimaryPartCFrame(targetPosition)
+        print("✅ Hand pet positioned (SetPrimaryPartCFrame)")
+    end
+    
+    -- NOW HIDE EGG PET AFTER POSITIONING
     for _, part in pairs(eggPet:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Transparency = 1
         end
     end
-    print("🙈 Egg pet hidden")
-    
-    -- ADD HAND PET COPY TO WORKSPACE
-    handPetCopy.Parent = Workspace
-    print("✅ Hand pet copy added to workspace")
-    
-    -- POSITION HAND PET COPY
-    local handPrimaryPart = handPetCopy.PrimaryPart or handPetCopy:FindFirstChildWhichIsA("BasePart")
-    if handPrimaryPart then
-        handPrimaryPart.CFrame = targetPosition
-        print("✅ Hand pet positioned")
-    else
-        handPetCopy:SetPrimaryPartCFrame(targetPosition)
-        print("✅ Hand pet positioned (SetPrimaryPartCFrame)")
-    end
+    print("🙈 Egg pet hidden AFTER positioning")
     
     -- Clean up after 4 seconds
     game:GetService("Debris"):AddItem(handPetCopy, 4)
