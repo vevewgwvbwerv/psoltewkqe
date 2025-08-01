@@ -143,9 +143,8 @@ local function createAnimatedReplacement(eggPet)
     if replacementPrimaryPart then
         replacementPrimaryPart.CFrame = targetPosition
         
-        -- Scale to match egg pet size
-        local currentSize = replacementPrimaryPart.Size
-        local scaleRatio = targetSize.Magnitude / currentSize.Magnitude
+        -- Scale to reasonable size (much smaller than before)
+        local scaleRatio = 0.3  -- Fixed small scale instead of calculated
         
         for _, part in pairs(replacementModel:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -153,7 +152,7 @@ local function createAnimatedReplacement(eggPet)
             end
         end
         
-        print("🔥 Scaled by ratio:", scaleRatio)
+        print("🔥 Scaled by fixed ratio:", scaleRatio)
     end
     
     -- Add to workspace
