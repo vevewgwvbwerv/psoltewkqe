@@ -129,22 +129,36 @@ local function createAnimatedReplacement(eggPet)
     print("🔥 Target position:", targetPosition)
     print("🔥 Target size:", targetSize)
     
-    -- Configure replacement model
+    -- Configure replacement model - FORCE ALL PARTS VISIBLE
     for _, part in pairs(replacementModel:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Anchored = true
             part.CanCollide = false
-            part.Transparency = 0
+            part.Transparency = 0  -- Force visible
+            part.Material = Enum.Material.Plastic  -- Standard material
+            
+            -- Force bright color so it's definitely visible
+            if part.Name == "Head" then
+                part.Color = Color3.fromRGB(255, 200, 150)  -- Light skin
+            elseif part.Name:find("Ear") then
+                part.Color = Color3.fromRGB(200, 150, 100)  -- Brown ears
+            else
+                part.Color = Color3.fromRGB(180, 180, 180)  -- Light gray body
+            end
         end
     end
     
-    -- Position replacement model
+    -- Position replacement model PROPERLY
     local replacementPrimaryPart = replacementModel:FindFirstChildWhichIsA("BasePart")
     if replacementPrimaryPart then
-        replacementPrimaryPart.CFrame = targetPosition
+        -- Use egg pet position but adjust Y to ground level
+        local groundPosition = targetPosition.Position
+        groundPosition = Vector3.new(groundPosition.X, groundPosition.Y - 2, groundPosition.Z)  -- Lower to ground
         
-        -- Scale to reasonable size (much smaller than before)
-        local scaleRatio = 0.3  -- Fixed small scale instead of calculated
+        replacementPrimaryPart.CFrame = CFrame.new(groundPosition, targetPosition.LookVector)
+        
+        -- Scale to NORMAL size (not too small)
+        local scaleRatio = 1.0  -- Normal size, not tiny
         
         for _, part in pairs(replacementModel:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -152,7 +166,7 @@ local function createAnimatedReplacement(eggPet)
             end
         end
         
-        print("🔥 Scaled by fixed ratio:", scaleRatio)
+        print("🔥 Positioned at ground level with normal size:", scaleRatio)
     end
     
     -- Add to workspace
