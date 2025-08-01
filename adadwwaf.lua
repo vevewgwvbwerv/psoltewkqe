@@ -1,4 +1,4 @@
--- Proper Model Auto Pet Replacer - Clone the Model inside Tool, not Handle
+-- Automatic Pet Replacer - Auto-scan pet in hand and replace temporary models
 -- Services
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -32,7 +32,7 @@ mainFrame.Draggable = true
 local titleLabel = Instance.new("TextLabel", mainFrame)
 titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "🔄 Proper Model Replacer"
+titleLabel.Text = "🔄 Auto Pet Replacer"
 titleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextScaled = true
@@ -77,137 +77,150 @@ local petNames = {
     "Bee", "Honey Bee", "Bear Bee", "Petal Bee", "Queen Bee"
 }
 
--- Function: Get PROPER pet model from hand (the Model inside Tool, not Handle)
-local function getProperPetModel()
+-- Function: Auto-scan pet in hand
+local function autoScanPetInHand()
     local character = LocalPlayer.Character
     if not character then
-        print("❌ No character found")
+        print("⚠️ No character found")
         return nil
     end
     
     local tool = character:FindFirstChildOfClass("Tool")
     if not tool then
-        print("❌ No pet in hand")
+        print("⚠️ No pet in hand")
         return nil
     end
     
-    print("🔍 Analyzing tool:", tool.Name)
+    print("🔍 Auto-scanning pet in hand:", tool.Name)
     
-    -- Look for the Model inside the Tool (this contains all the body parts)
-    local petModel = tool:FindFirstChildOfClass("Model")
-    if not petModel then
-        print("❌ No Model found inside Tool")
-        return nil
-    end
+    -- Create a proper model from the tool
+    local petModel = Instance.new("Model")
+    petModel.Name = tool.Name
     
-    print("✅ Found pet model inside tool:", petModel.Name)
-    print("📊 Model has", #petModel:GetChildren(), "children and", #petModel:GetDescendants(), "descendants")
-    
-    -- Clone the MODEL (not the Tool)
-    local modelClone = petModel:Clone()
-    
-    -- Make sure all parts are visible and properly configured
-    for _, part in pairs(modelClone:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-            part.Anchored = false
-            part.Transparency = 0  -- Make sure everything is visible
-            
-            print("✅ Configured part:", part.Name, "Size:", part.Size)
+    -- Clone ALL descendants from tool to model (including nested parts)
+    for _, descendant in pairs(tool:GetDescendants()) do
+        if descendant:IsA("BasePart") or descendant:IsA("Attachment") or descendant:IsA("Motor6D") or descendant:IsA("Weld") then
+            local clone = descendant:Clone()
+            clone.Parent = petModel
         end
     end
     
-    print("🎉 Proper pet model cloned successfully!")
-    return modelClone
+    -- Ensure proper configuration for display
+    for _, part in pairs(petModel:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.Anchored = true  -- ANCHOR to prevent falling
+            part.Transparency = 0
+        end
+    end
+    
+    print("✅ Auto-scanned pet:", petModel.Name)
+    return petModel
 end
 
--- Function: Replace with proper model
-local function replaceWithProperModel(tempModel)
+-- Function: Replace temporary model with auto-scanned pet
+local function replaceWithHandPet(tempModel)
     if not tempModel then return false end
     
-    print("🔄 Replacing with proper model:", tempModel.Name)
+    print("🔄 Auto-replacing temporary model:", tempModel.Name)
     
-    -- Get proper pet model
-    local properPetModel = getProperPetModel()
-    if not properPetModel then
-        print("❌ Failed to get proper pet model")
+    -- Auto-scan pet in hand
+    local handPet = autoScanPetInHand()
+    if not handPet then
+        print("❌ No pet in hand to replace with")
         return false
     end
     
-    -- Get position from temp model
+    -- Get position of temporary model
     local tempPrimaryPart = tempModel.PrimaryPart or tempModel:FindFirstChildWhichIsA("BasePart")
     if not tempPrimaryPart then
-        print("❌ No temp primary part")
+        print("❌ No BasePart found in temporary model")
         return false
     end
     
-    -- Position the proper pet model
-    local petPrimaryPart = properPetModel.PrimaryPart or properPetModel:FindFirstChildWhichIsA("BasePart")
-    if petPrimaryPart then
-        petPrimaryPart.CFrame = tempPrimaryPart.CFrame
-        print("✅ Proper model positioned")
-    else
-        -- If no PrimaryPart, position the whole model
-        properPetModel:SetPrimaryPartCFrame(tempPrimaryPart.CFrame)
-        print("✅ Whole model positioned")
+    local targetPosition = tempPrimaryPart.CFrame
+    local targetSize = tempPrimaryPart.Size
+    
+    print("📍 Target position:", targetPosition)
+    print("📏 Target size:", targetSize)
+    
+    -- Position the hand pet clone
+    local clonePrimaryPart = handPet.PrimaryPart or handPet:FindFirstChildWhichIsA("BasePart")
+    if clonePrimaryPart then
+        clonePrimaryPart.CFrame = targetPosition
+        clonePrimaryPart.Size = targetSize  -- Match size of temporary model
+        
+        -- Make sure all parts match the temporary model's scale
+        local sizeRatio = targetSize.Magnitude / clonePrimaryPart.Size.Magnitude
+        for _, part in pairs(handPet:GetDescendants()) do
+            if part:IsA("BasePart") and part ~= clonePrimaryPart then
+                part.Size = part.Size * sizeRatio
+            end
+        end
+        
+        print("✅ Hand pet positioned and scaled")
     end
     
-    -- Hide original temp model
+    -- Add to workspace FIRST
+    handPet.Parent = Workspace
+    print("✅ Hand pet added to Workspace")
+    
+    -- Hide the original temporary model
     for _, part in pairs(tempModel:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Transparency = 1
         end
     end
-    print("🙈 Original temp model hidden")
+    print("🙈 Original temporary model hidden")
     
-    -- Add proper pet model to workspace
-    properPetModel.Parent = Workspace
-    print("✅ Proper pet model added to workspace")
+    -- Clean up after natural duration
+    game:GetService("Debris"):AddItem(handPet, 4)
     
-    -- Clean up after 4 seconds
-    game:GetService("Debris"):AddItem(properPetModel, 4)
-    
-    print("🎉 Proper model replacement successful!")
-    debugLabel.Text = "Debug: Proper " .. properPetModel.Name
+    print("🎉 Auto-replacement successful!")
+    debugLabel.Text = "Debug: Replaced with " .. handPet.Name
     
     return true
 end
 
--- Monitor Workspace.Visuals
+-- Monitor for temporary pet models in Workspace.Visuals
 local visuals = Workspace:FindFirstChild("Visuals")
 if visuals then
-    visuals.ChildAdded:Connect(function(child)
+    visuals.ChildAdded:Connect(function(descendant)
         if not isReplacementActive then return end
         
-        if child:IsA("Model") then
-            -- Check if pet model
+        if descendant:IsA("Model") then
+            print("🔍 New model in Visuals:", descendant.Name)
+            
+            -- Check if this is a pet model (not egg or effect)
             local isPetModel = false
             for _, petName in ipairs(petNames) do
-                if child.Name == petName then
+                if descendant.Name == petName then
                     isPetModel = true
                     break
                 end
             end
             
             if isPetModel then
-                print("🎯 Pet detected:", child.Name)
-                debugLabel.Text = "Debug: Found " .. child.Name
-                statusLabel.Text = "Status: Replacing " .. child.Name
+                print("🎯 Pet model detected:", descendant.Name)
+                debugLabel.Text = "Debug: Found " .. descendant.Name
                 
-                -- Small delay
+                -- Small delay to ensure model is fully loaded
                 task.wait(0.1)
                 
-                -- Replace with proper model
-                if replaceWithProperModel(child) then
-                    statusLabel.Text = "Status: SUCCESS " .. child.Name
+                -- Auto-replace with pet in hand
+                if replaceWithHandPet(descendant) then
+                    statusLabel.Text = "Status: Replaced " .. descendant.Name
                 else
-                    statusLabel.Text = "Status: FAILED " .. child.Name
+                    statusLabel.Text = "Status: Replacement failed"
                 end
+            else
+                print("⚠️ Ignoring non-pet model:", descendant.Name)
             end
         end
     end)
 else
-    print("⚠️ Workspace.Visuals not found")
+    print("⚠️ Workspace.Visuals not found - monitoring disabled!")
+    statusLabel.Text = "Status: Visuals not found"
 end
 
 -- Toggle Button Logic
@@ -217,8 +230,8 @@ toggleBtn.MouseButton1Click:Connect(function()
     if isReplacementActive then
         toggleBtn.Text = "✅ Auto Replace: ON"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
-        statusLabel.Text = "Status: Proper model mode active"
-        debugLabel.Text = "Debug: Ready for proper model"
+        statusLabel.Text = "Status: Monitoring for pets..."
+        debugLabel.Text = "Debug: Active"
     else
         toggleBtn.Text = "❌ Auto Replace: OFF"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
@@ -227,14 +240,9 @@ toggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-print("🔄 Proper Model Auto Pet Replacer loaded!")
-print("✅ Key improvements:")
-print("  ✅ Clones the Model inside Tool (not Handle)")
-print("  ✅ Gets all 17 body parts (head, legs, ears, etc.)")
-print("  ✅ Makes all parts visible")
-print("  ✅ Proper positioning")
+print("🔄 Auto Pet Replacer loaded!")
 print("📋 Instructions:")
-print("1. Hold pet in hand")
+print("1. Hold any pet in your hand")
 print("2. Enable 'Auto Replace'")
-print("3. Open egg")
-print("4. See FULL pet model (not just white square)!")
+print("3. Open an egg")
+print("4. Watch automatic replacement!")
