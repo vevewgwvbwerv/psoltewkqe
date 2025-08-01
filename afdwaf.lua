@@ -1,28 +1,24 @@
 --[[
-    EXPLOIT PET REPLACER
-    Простая визуальная замена питомца из яйца на питомца из руки
-    Работает только для клиента (визуально для тебя)
+    EXPLOIT DIAGNOSTIC
+    Проверяем что происходит при открытии яйца
 ]]
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
-local isEnabled = true
 
--- GUI для управления
+-- GUI для диагностики
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ExploitPetReplacer"
+screenGui.Name = "ExploitDiagnostic"
 screenGui.Parent = CoreGui
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 300, 0, 150)
+frame.Size = UDim2.new(0, 400, 0, 300)
 frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.new(0, 0, 0)
-frame.BackgroundTransparency = 0.3
+frame.BackgroundTransparency = 0.2
 frame.BorderSizePixel = 0
 frame.Parent = screenGui
 
@@ -30,201 +26,139 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.Position = UDim2.new(0, 0, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "🔥 EXPLOIT PET REPLACER"
+title.Text = "🔍 EXPLOIT DIAGNOSTIC"
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.Parent = frame
 
-local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(0.8, 0, 0, 40)
-toggleButton.Position = UDim2.new(0.1, 0, 0, 40)
-toggleButton.BackgroundColor3 = Color3.new(0, 1, 0)
-toggleButton.Text = "✅ ENABLED"
-toggleButton.TextColor3 = Color3.new(1, 1, 1)
-toggleButton.TextScaled = true
-toggleButton.Font = Enum.Font.Gotham
-toggleButton.Parent = frame
+local logFrame = Instance.new("ScrollingFrame")
+logFrame.Size = UDim2.new(1, -10, 1, -40)
+logFrame.Position = UDim2.new(0, 5, 0, 35)
+logFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+logFrame.BorderSizePixel = 0
+logFrame.ScrollBarThickness = 8
+logFrame.Parent = frame
 
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, 0, 0, 30)
-statusLabel.Position = UDim2.new(0, 0, 0, 90)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: Ready"
-statusLabel.TextColor3 = Color3.new(1, 1, 1)
-statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.Parent = frame
+local logText = Instance.new("TextLabel")
+logText.Size = UDim2.new(1, -10, 1, 0)
+logText.Position = UDim2.new(0, 5, 0, 0)
+logText.BackgroundTransparency = 1
+logText.Text = "Starting diagnostic...\n"
+logText.TextColor3 = Color3.new(1, 1, 1)
+logText.TextSize = 12
+logText.Font = Enum.Font.Code
+logText.TextXAlignment = Enum.TextXAlignment.Left
+logText.TextYAlignment = Enum.TextYAlignment.Top
+logText.TextWrapped = true
+logText.Parent = logFrame
 
-local replacementCount = Instance.new("TextLabel")
-replacementCount.Size = UDim2.new(1, 0, 0, 30)
-replacementCount.Position = UDim2.new(0, 0, 0, 120)
-replacementCount.BackgroundTransparency = 1
-replacementCount.Text = "Replacements: 0"
-replacementCount.TextColor3 = Color3.new(1, 1, 1)
-replacementCount.TextScaled = true
-replacementCount.Font = Enum.Font.Gotham
-replacementCount.Parent = frame
+local function log(message)
+    local timestamp = os.date("%H:%M:%S")
+    logText.Text = logText.Text .. "[" .. timestamp .. "] " .. message .. "\n"
+    logFrame.CanvasSize = UDim2.new(0, 0, 0, logText.TextBounds.Y)
+    logFrame.CanvasPosition = Vector2.new(0, logFrame.CanvasSize.Y.Offset)
+end
 
-local replaceCount = 0
+-- Проверяем структуру Workspace
+log("=== WORKSPACE STRUCTURE ===")
+for _, child in ipairs(Workspace:GetChildren()) do
+    log("Workspace." .. child.Name .. " (" .. child.ClassName .. ")")
+end
 
--- Функция переключения
-toggleButton.MouseButton1Click:Connect(function()
-    isEnabled = not isEnabled
-    if isEnabled then
-        toggleButton.BackgroundColor3 = Color3.new(0, 1, 0)
-        toggleButton.Text = "✅ ENABLED"
-        statusLabel.Text = "Status: Ready"
-    else
-        toggleButton.BackgroundColor3 = Color3.new(1, 0, 0)
-        toggleButton.Text = "❌ DISABLED"
-        statusLabel.Text = "Status: Disabled"
+-- Проверяем есть ли Visuals
+if Workspace:FindFirstChild("Visuals") then
+    log("✅ Workspace.Visuals найден!")
+    log("Visuals содержит " .. #Workspace.Visuals:GetChildren() .. " объектов")
+    for _, child in ipairs(Workspace.Visuals:GetChildren()) do
+        log("  - " .. child.Name .. " (" .. child.ClassName .. ")")
     end
-end)
+else
+    log("❌ Workspace.Visuals НЕ найден!")
+    log("Ищем альтернативные папки...")
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if child:IsA("Folder") or child:IsA("Model") then
+            log("  Возможная папка: " .. child.Name)
+        end
+    end
+end
 
--- Функция получения питомца из руки
-local function getHandPetModel()
-    if not player.Character then return nil end
-    
+-- Проверяем питомца в руке
+log("\n=== PET IN HAND ===")
+if player.Character then
+    log("✅ Character найден: " .. player.Character.Name)
+    local foundTool = false
     for _, tool in ipairs(player.Character:GetChildren()) do
         if tool:IsA("Tool") then
+            foundTool = true
+            log("✅ Tool найден: " .. tool.Name)
             local model = tool:FindFirstChildWhichIsA("Model")
             if model then
-                local clone = model:Clone()
-                -- Убираем скрипты из клона
-                for _, script in ipairs(clone:GetDescendants()) do
-                    if script:IsA("BaseScript") or script:IsA("LocalScript") then
-                        script:Destroy()
+                log("✅ Model в Tool: " .. model.Name)
+                log("  Parts в модели: " .. #model:GetChildren())
+                for _, part in ipairs(model:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        log("    - " .. part.Name .. " (Size: " .. tostring(part.Size) .. ")")
                     end
                 end
-                return clone
+            else
+                log("❌ Model в Tool НЕ найден!")
+                log("  Содержимое Tool:")
+                for _, child in ipairs(tool:GetChildren()) do
+                    log("    - " .. child.Name .. " (" .. child.ClassName .. ")")
+                end
             end
         end
     end
-    return nil
+    if not foundTool then
+        log("❌ Tool НЕ найден в руке!")
+        log("Содержимое Character:")
+        for _, child in ipairs(player.Character:GetChildren()) do
+            log("  - " .. child.Name .. " (" .. child.ClassName .. ")")
+        end
+    end
+else
+    log("❌ Character НЕ найден!")
 end
 
--- Функция создания эффекта роста
-local function createGrowthEffect(model, targetPosition)
-    if not model or not model.PrimaryPart then return end
-    
-    -- Устанавливаем позицию
-    model:SetPrimaryPartCFrame(targetPosition)
-    
-    -- Сохраняем оригинальные размеры
-    local originalSizes = {}
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            originalSizes[part] = part.Size
-            part.Size = part.Size * 0.1 -- Начинаем с маленького размера
-            part.Transparency = 0.8
-        end
-    end
-    
-    -- Анимация роста
-    local growthTime = 1.5
-    local startTime = tick()
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        local elapsed = tick() - startTime
-        local progress = math.min(elapsed / growthTime, 1)
-        
-        -- Плавное увеличение размера и уменьшение прозрачности
-        local scale = 0.1 + (0.9 * progress)
-        local transparency = 0.8 - (0.8 * progress)
-        
-        for part, originalSize in pairs(originalSizes) do
-            if part.Parent then
-                part.Size = originalSize * scale
-                part.Transparency = transparency
-            end
-        end
-        
-        if progress >= 1 then
-            connection:Disconnect()
-            
-            -- Держим питомца видимым 3 секунды, затем удаляем
-            wait(3)
-            if model and model.Parent then
-                -- Анимация исчезновения
-                local fadeTime = 0.5
-                local fadeStart = tick()
-                
-                local fadeConnection
-                fadeConnection = RunService.Heartbeat:Connect(function()
-                    local fadeElapsed = tick() - fadeStart
-                    local fadeProgress = math.min(fadeElapsed / fadeTime, 1)
-                    
-                    for _, part in ipairs(model:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.Transparency = fadeProgress
-                        end
-                    end
-                    
-                    if fadeProgress >= 1 then
-                        fadeConnection:Disconnect()
-                        model:Destroy()
-                    end
-                end)
-            end
-        end
-    end)
-end
+-- Мониторим изменения в Workspace
+log("\n=== MONITORING CHANGES ===")
+log("Слушаем изменения в Workspace...")
 
--- Основная функция замены
-local function replacePet(eggPetModel)
-    if not isEnabled then return end
-    
-    statusLabel.Text = "Status: Replacing..."
-    
-    -- Получаем питомца из руки
-    local handPet = getHandPetModel()
-    if not handPet then
-        statusLabel.Text = "Status: No pet in hand!"
-        return
-    end
-    
-    -- Получаем позицию яичного питомца
-    local targetPosition = eggPetModel:GetModelCFrame()
-    
-    -- Скрываем оригинального питомца из яйца
-    for _, part in ipairs(eggPetModel:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 1
-            part.CanCollide = false
-        end
-    end
-    
-    -- Добавляем нашего питомца в мир
-    handPet.Parent = Workspace
-    
-    -- Создаем эффект роста
-    createGrowthEffect(handPet, targetPosition)
-    
-    -- Обновляем счетчик
-    replaceCount = replaceCount + 1
-    replacementCount.Text = "Replacements: " .. replaceCount
-    statusLabel.Text = "Status: Replaced!"
-    
-    -- Через 2 секунды возвращаем статус в Ready
-    wait(2)
-    if isEnabled then
-        statusLabel.Text = "Status: Ready"
-    end
-end
+Workspace.ChildAdded:Connect(function(child)
+    log("🔥 WORKSPACE ADD: " .. child.Name .. " (" .. child.ClassName .. ")")
+end)
 
--- Отслеживаем появление новых моделей в Workspace.Visuals
+Workspace.ChildRemoved:Connect(function(child)
+    log("🗑️ WORKSPACE REMOVE: " .. child.Name .. " (" .. child.ClassName .. ")")
+end)
+
+-- Мониторим Visuals если есть
 if Workspace:FindFirstChild("Visuals") then
     Workspace.Visuals.ChildAdded:Connect(function(child)
-        if child:IsA("Model") and isEnabled then
-            -- Небольшая задержка, чтобы модель полностью загрузилась
-            wait(0.1)
-            replacePet(child)
+        log("🎯 VISUALS ADD: " .. child.Name .. " (" .. child.ClassName .. ")")
+        if child:IsA("Model") then
+            log("  📦 Model details:")
+            log("    PrimaryPart: " .. (child.PrimaryPart and child.PrimaryPart.Name or "nil"))
+            log("    Parts count: " .. #child:GetChildren())
+            log("    Position: " .. tostring(child:GetModelCFrame().Position))
         end
     end)
-else
-    statusLabel.Text = "Status: Visuals folder not found!"
+    
+    Workspace.Visuals.ChildRemoved:Connect(function(child)
+        log("🗑️ VISUALS REMOVE: " .. child.Name .. " (" .. child.ClassName .. ")")
+    end)
 end
 
-print("🔥 Exploit Pet Replacer loaded! Toggle with GUI.")
+-- Мониторим все папки в Workspace
+for _, folder in ipairs(Workspace:GetChildren()) do
+    if folder:IsA("Folder") or folder:IsA("Model") then
+        folder.ChildAdded:Connect(function(child)
+            log("📁 " .. folder.Name .. " ADD: " .. child.Name .. " (" .. child.ClassName .. ")")
+        end)
+    end
+end
+
+log("✅ Diagnostic готов! Открой яйцо и смотри логи.")
+
+print("🔍 Exploit Diagnostic loaded! Check GUI for logs.")
