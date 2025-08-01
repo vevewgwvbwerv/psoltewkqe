@@ -1,4 +1,4 @@
--- Simple Copy Test - Just copy pet from hand and place it nearby
+-- Simple Stable Copy - Copy pet from hand, place nearby, NO FALLING
 -- Services
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -6,45 +6,45 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer or Players:GetPlayers()[1]
 
 -- Clear previous GUI
-if CoreGui:FindFirstChild("SimpleCopyTest_GUI") then 
-    CoreGui.SimpleCopyTest_GUI:Destroy() 
+if CoreGui:FindFirstChild("SimpleStableCopy_GUI") then 
+    CoreGui.SimpleStableCopy_GUI:Destroy() 
 end
 
 -- GUI Setup
 local gui = Instance.new("ScreenGui")
-gui.Name = "SimpleCopyTest_GUI"
+gui.Name = "SimpleStableCopy_GUI"
 gui.Parent = CoreGui
 gui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame", gui)
-mainFrame.Size = UDim2.new(0, 200, 0, 100)
+mainFrame.Size = UDim2.new(0, 200, 0, 80)
 mainFrame.Position = UDim2.new(0.75, 0, 0.15, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-mainFrame.BorderColor3 = Color3.fromRGB(255, 0, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+mainFrame.BorderColor3 = Color3.fromRGB(0, 255, 0)
 mainFrame.BorderSizePixel = 2
 mainFrame.Active = true
 mainFrame.Draggable = true
 
 local titleLabel = Instance.new("TextLabel", mainFrame)
-titleLabel.Size = UDim2.new(1, 0, 0.4, 0)
+titleLabel.Size = UDim2.new(1, 0, 0.5, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "🧪 Simple Copy Test"
+titleLabel.Text = "✅ Stable Copy Test"
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextScaled = true
 
 -- Copy Button
 local copyBtn = Instance.new("TextButton", mainFrame)
-copyBtn.Size = UDim2.new(1, -10, 0, 40)
+copyBtn.Size = UDim2.new(1, -10, 0, 30)
 copyBtn.Position = UDim2.new(0, 5, 0.5, 0)
-copyBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+copyBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
 copyBtn.TextColor3 = Color3.new(1, 1, 1)
 copyBtn.Font = Enum.Font.GothamBold
-copyBtn.TextSize = 14
-copyBtn.Text = "COPY PET FROM HAND"
+copyBtn.TextSize = 12
+copyBtn.Text = "COPY & PLACE STABLE"
 
--- Function: Simple copy test
-local function simpleCopyTest()
+-- Function: Create stable copy
+local function createStableCopy()
     local character = LocalPlayer.Character
     if not character then
         print("❌ No character")
@@ -57,84 +57,61 @@ local function simpleCopyTest()
         return
     end
     
-    print("🧪 SIMPLE COPY TEST - Tool:", tool.Name)
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then
+        print("❌ No HumanoidRootPart")
+        return
+    end
     
-    -- Method 1: Direct tool clone
-    print("🔄 Method 1: Direct tool clone")
+    print("✅ Creating stable copy of:", tool.Name)
+    
+    -- Clone the tool
     local toolClone = tool:Clone()
-    toolClone.Name = toolClone.Name .. "_Clone1"
+    toolClone.Name = toolClone.Name .. "_StableCopy"
+    
+    -- CRITICAL: Anchor ALL parts to prevent falling
+    for _, part in pairs(toolClone:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = true  -- ANCHOR - no falling!
+            part.CanCollide = false  -- No collision issues
+            part.Transparency = 0  -- Make visible
+            
+            print("🔧 Anchored:", part.Name, "Size:", part.Size)
+        end
+    end
+    
+    -- Add to workspace FIRST
     toolClone.Parent = Workspace
     
-    -- Position it in front of player
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if humanoidRootPart then
-        toolClone:SetPrimaryPartCFrame(humanoidRootPart.CFrame * CFrame.new(5, 0, 0))
-    end
+    -- Position it 5 studs in front of player, 2 studs above ground
+    local targetPosition = humanoidRootPart.CFrame * CFrame.new(0, 2, -5)
     
-    print("✅ Method 1 complete - Tool clone added to workspace")
-    
-    -- Method 2: Create model and copy all descendants
-    print("🔄 Method 2: Model with all descendants")
-    local model = Instance.new("Model")
-    model.Name = tool.Name .. "_Clone2"
-    
-    -- Copy ALL descendants
-    for _, descendant in pairs(tool:GetDescendants()) do
-        local clone = descendant:Clone()
-        clone.Parent = model
-        
-        if clone:IsA("BasePart") then
-            clone.CanCollide = false
-            clone.Anchored = false
-            clone.Transparency = 0
-        end
-    end
-    
-    model.Parent = Workspace
-    
-    -- Position it
-    if humanoidRootPart then
-        model:SetPrimaryPartCFrame(humanoidRootPart.CFrame * CFrame.new(-5, 0, 0))
-    end
-    
-    print("✅ Method 2 complete - Model with descendants added")
-    
-    -- Method 3: Find and clone inner model
-    print("🔄 Method 3: Find inner model")
-    local innerModel = tool:FindFirstChildOfClass("Model")
-    if innerModel then
-        local innerClone = innerModel:Clone()
-        innerClone.Name = innerClone.Name .. "_Clone3"
-        innerClone.Parent = Workspace
-        
-        -- Position it
-        if humanoidRootPart then
-            innerClone:SetPrimaryPartCFrame(humanoidRootPart.CFrame * CFrame.new(0, 0, 5))
-        end
-        
-        print("✅ Method 3 complete - Inner model cloned")
+    -- Set position for primary part
+    local primaryPart = toolClone.PrimaryPart or toolClone:FindFirstChildWhichIsA("BasePart")
+    if primaryPart then
+        primaryPart.CFrame = targetPosition
+        print("✅ Positioned at:", targetPosition)
     else
-        print("❌ Method 3 failed - No inner model found")
+        print("⚠️ No primary part found, using SetPrimaryPartCFrame")
+        toolClone:SetPrimaryPartCFrame(targetPosition)
     end
     
-    print("🧪 COPY TEST COMPLETE - Check around your character!")
+    print("🎉 Stable copy created and positioned!")
     
-    -- Clean up after 10 seconds
-    game:GetService("Debris"):AddItem(toolClone, 10)
-    game:GetService("Debris"):AddItem(model, 10)
-    if innerModel then
-        game:GetService("Debris"):AddItem(innerModel, 10)
-    end
+    -- Clean up after 15 seconds
+    game:GetService("Debris"):AddItem(toolClone, 15)
+    
+    return toolClone
 end
 
 -- Button event
 copyBtn.MouseButton1Click:Connect(function()
-    simpleCopyTest()
+    createStableCopy()
 end)
 
-print("🧪 Simple Copy Test loaded!")
+print("✅ Simple Stable Copy loaded!")
 print("📋 Instructions:")
 print("1. Hold pet in hand")
-print("2. Click 'COPY PET FROM HAND'")
-print("3. Look around your character for copies")
-print("4. This will test if basic copying works!")
+print("2. Click 'COPY & PLACE STABLE'")
+print("3. Pet should appear in front of you and NOT fall!")
+print("4. If this works, we can apply same logic to egg replacement!")
