@@ -1,190 +1,335 @@
---[[
-    FIXED TEST GROWTH ANIMATION
-    Исправленная версия под реальную структуру питомца
-    Питомец = Tool с BasePart объектами (не Model)
-]]
+-- 🔬 ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА
+-- Использует РАБОЧУЮ логику поиска из RealPetModelFinder.lua и PetTypeAnalyzer.lua
+-- Ищет питомцев по наличию MeshPart/SpecialMesh, а НЕ по UUID именам!
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
 
-print("🧪 Fixed Test Growth Animation загружен!")
+print("🔬 === ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА ===")
+print("=" .. string.rep("=", 70))
+print("🎯 Использует РАБОЧУЮ логику из RealPetModelFinder.lua")
+print("🔍 Ищет модели с MeshPart/SpecialMesh (визуальные элементы)")
+print()
 
--- Простой GUI с кнопкой
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FixedTestGrowthAnimation"
-screenGui.Parent = CoreGui
-
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 200, 0, 50)
-button.Position = UDim2.new(0, 10, 0, 130)
-button.BackgroundColor3 = Color3.new(0, 1, 0)
-button.Text = "🧪 FIXED TEST ANIMATION"
-button.TextColor3 = Color3.new(1, 1, 1)
-button.TextScaled = true
-button.Font = Enum.Font.GothamBold
-button.Parent = screenGui
-
--- Функция получения питомца из руки (исправленная)
-local function getHandPet()
-    if not player.Character then 
-        print("❌ Character не найден!")
-        return nil 
-    end
-    
-    for _, tool in pairs(player.Character:GetChildren()) do
-        if tool:IsA("Tool") then
-            print("✅ Найден Tool: " .. tool.Name)
-            return tool  -- Возвращаем сам Tool, не Model внутри
-        end
-    end
-    
-    print("❌ Tool не найден в руке!")
-    return nil
+-- Получаем позицию игрока
+local playerChar = player.Character
+if not playerChar then
+    print("❌ Персонаж игрока не найден!")
+    return
 end
 
--- Функция создания модели из Tool
-local function createModelFromTool(tool)
-    print("📦 Создаю модель из Tool: " .. tool.Name)
-    
-    -- Создаем новую модель
-    local model = Instance.new("Model")
-    model.Name = tool.Name
-    
-    -- Копируем все BasePart из Tool в модель
-    local partCount = 0
-    for _, child in pairs(tool:GetChildren()) do
-        if child:IsA("BasePart") and child.Name ~= "Handle" then
-            local partClone = child:Clone()
-            partClone.Parent = model
-            partCount = partCount + 1
-            print("  📦 Скопировал часть: " .. child.Name)
-        end
-    end
-    
-    -- Если есть Handle, тоже копируем
-    local handle = tool:FindFirstChild("Handle")
-    if handle then
-        local handleClone = handle:Clone()
-        handleClone.Name = "Body"  -- Переименовываем Handle в Body
-        handleClone.Parent = model
-        partCount = partCount + 1
-        print("  📦 Скопировал Handle как Body")
-    end
-    
-    print("📊 Создана модель с " .. partCount .. " частями")
-    return model
+local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+if not hrp then
+    print("❌ HumanoidRootPart не найден!")
+    return
 end
 
--- Функция тестовой анимации роста
-local function testGrowthAnimation()
-    print("\n🧪 === ТЕСТ АНИМАЦИИ РОСТА (ИСПРАВЛЕННЫЙ) ===")
+local playerPos = hrp.Position
+local SEARCH_RADIUS = 100 -- Увеличиваем радиус
+
+print("📍 Позиция игрока:", playerPos)
+print("🎯 Радиус поиска:", SEARCH_RADIUS)
+print()
+
+-- РАБОЧАЯ логика поиска из RealPetModelFinder.lua - поиск по MeshPart/SpecialMesh
+print("🔍 ПОИСК ПИТОМЦЕВ ПО ВИЗУАЛЬНЫМ ЭЛЕМЕНТАМ (как в RealPetModelFinder.lua)...")
+print("-" .. string.rep("-", 50))
+
+-- Функция проверки визуальных элементов питомца (из RealPetModelFinder.lua)
+local function hasPetVisuals(model)
+    local meshCount = 0
+    local petMeshes = {}
     
-    -- Получаем Tool из руки
-    local handTool = getHandPet()
-    if not handTool then return end
-    
-    -- Создаем модель из Tool
-    local model = createModelFromTool(handTool)
-    
-    -- Позиционируем модель рядом с игроком
-    local playerPosition = player.Character.HumanoidRootPart.Position
-    local testPosition = playerPosition + Vector3.new(5, 0, 0) -- 5 единиц вправо
-    
-    model:MoveTo(testPosition)
-    model.Parent = Workspace
-    print("🌍 Добавил модель в Workspace")
-    
-    -- Подготавливаем анимацию
-    local originalSizes = {}
-    local tweens = {}
-    local partCount = 0
-    
-    print("📊 Подготавливаю анимацию...")
-    
-    for _, part in pairs(model:GetChildren()) do
-        if part:IsA("BasePart") then
-            partCount = partCount + 1
-            originalSizes[part] = part.Size
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
             
-            -- Начинаем с размера 1/1.88 от оригинала (как в записи)
-            local startSize = part.Size / 1.88
-            part.Size = startSize
-            part.Transparency = 0.8  -- Полупрозрачный
-            part.Anchored = true     -- Фиксируем
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                textureId = obj.TextureId or ""
+            }
             
-            print("  📦 " .. part.Name .. ": " .. tostring(startSize) .. " → " .. tostring(originalSizes[part]))
-            
-            -- Создаем анимацию роста (точно как в записи)
-            local growTween = TweenService:Create(part, 
-                TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
-                {
-                    Size = originalSizes[part],
-                    Transparency = 0
-                }
-            )
-            
-            table.insert(tweens, growTween)
+            -- Проверяем, есть ли реальные ID (не пустые)
+            if meshData.meshId ~= "" or meshData.textureId ~= "" then
+                table.insert(petMeshes, meshData)
+            end
         end
     end
     
-    print("🎬 Найдено " .. partCount .. " частей для анимации")
-    print("📈 Запускаю рост в 1.88 раз...")
-    
-    -- Запускаем все анимации одновременно
-    for _, tween in pairs(tweens) do
-        tween:Play()
-    end
-    
-    print("⏰ Анимация запущена! Длительность: 1.5 секунд")
-    print("🔍 Смотри на модель рядом с собой!")
-    
-    -- Через 4 секунды удаляем модель
-    wait(4)
-    
-    print("💥 Удаляю тестовую модель...")
-    
-    -- Анимация исчезновения
-    local fadeTweens = {}
-    for _, part in pairs(model:GetChildren()) do
-        if part:IsA("BasePart") then
-            local fadeTween = TweenService:Create(part,
-                TweenInfo.new(0.5, Enum.EasingStyle.Quad),
-                { Transparency = 1 }
-            )
-            table.insert(fadeTweens, fadeTween)
-        end
-    end
-    
-    for _, tween in pairs(fadeTweens) do
-        tween:Play()
-    end
-    
-    wait(0.5)
-    model:Destroy()
-    
-    print("✅ Тест завершен!")
-    print("🎯 Если анимация выглядела правильно, можно использовать для замены питомца из яйца!")
+    return meshCount > 0, petMeshes
 end
 
--- Обработчик кнопки
-button.MouseButton1Click:Connect(function()
-    button.Text = "⏳ TESTING..."
-    button.BackgroundColor3 = Color3.new(1, 1, 0)
+-- Функция анализа потенциального питомца (из RealPetModelFinder.lua)
+local function analyzePotentialPet(model)
+    print("🐾 АНАЛИЗ ПОТЕНЦИАЛЬНОГО ПИТОМЦА: " .. model.Name)
     
-    spawn(function()
-        testGrowthAnimation()
+    local hasVisuals, meshes = hasPetVisuals(model)
+    
+    if hasVisuals then
+        print("    🎨 НАЙДЕНЫ ВИЗУАЛЬНЫЕ ЭЛЕМЕНТЫ ПИТОМЦА!")
+        for i, mesh in pairs(meshes) do
+            print(string.format("    🎨 Меш %d: %s (%s)", i, mesh.name, mesh.className))
+            if mesh.meshId ~= "" then
+                print("      🆔 MeshId: " .. mesh.meshId)
+            end
+            if mesh.textureId ~= "" then
+                print("      🖼️ TextureId: " .. mesh.textureId)
+            end
+        end
+        return true, meshes
+    else
+        print("    ❌ Визуальных элементов питомца не найдено")
+        return false, {}
+    end
+end
+
+local foundPetModels = {}
+
+-- Сканируем все модели в Workspace (как в RealPetModelFinder.lua)
+for _, obj in pairs(Workspace:GetDescendants()) do
+    if obj:IsA("Model") and obj ~= player.Character then
+        -- Проверяем расстояние
+        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+        if success then
+            local distance = (modelCFrame.Position - playerPos).Magnitude
+            if distance <= SEARCH_RADIUS then
+                -- Пропускаем EggExplode и модели инвентаря
+                if obj.Name == "EggExplode" or obj.Name:find("Inventory") then
+                    continue
+                end
+                
+                -- Проверяем на наличие визуала питомца
+                local isPet, meshes = analyzePotentialPet(obj)
+                
+                if isPet then
+                    print("🔥 НАСТОЯЩАЯ МОДЕЛЬ ПИТОМЦА НАЙДЕНА!")
+                    
+                    local petData = {
+                        model = obj,
+                        name = obj.Name,
+                        distance = distance,
+                        meshes = meshes
+                    }
+                    
+                    table.insert(foundPetModels, petData)
+                    
+                    print("    📊 Расстояние: " .. math.floor(distance) .. " единиц")
+                    print("    🎨 Визуальных элементов: " .. #meshes)
+                    
+                    -- Проверяем PrimaryPart
+                    if obj.PrimaryPart then
+                        print("    ✅ PrimaryPart: " .. obj.PrimaryPart.Name)
+                    else
+                        print("    ❌ PrimaryPart отсутствует")
+                    end
+                    print()
+                end
+            end
+        end
+    end
+end
+
+print()
+print("📈 НАЙДЕНО МОДЕЛЕЙ ПИТОМЦЕВ: " .. #foundPetModels)
+print()
+
+if #foundPetModels == 0 then
+    print("❌ Модели питомцев с визуальными элементами не найдены!")
+    print("💡 Убедитесь, что:")
+    print("  1. Вы находитесь рядом с питомцем")
+    print("  2. Питомец имеет MeshPart или SpecialMesh")
+    print("  3. Радиус поиска достаточен (" .. SEARCH_RADIUS .. " единиц)")
+    return
+end
+
+-- Выбираем первого найденного питомца для детального анализа
+local targetPet = foundPetModels[1].model
+print("🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ПИТОМЦА: " .. targetPet.Name)
+print("📍 Расстояние: " .. math.floor(foundPetModels[1].distance) .. " единиц")
+print("🎨 Визуальных элементов: " .. #foundPetModels[1].meshes)
+print("=" .. string.rep("=", 70))
+print()
+
+-- Функция для детального анализа объекта
+local function analyzeObject(obj, depth)
+    local indent = string.rep("  ", depth)
+    print(indent .. "📦 " .. obj.ClassName .. ": " .. obj.Name .. " (Parent: " .. (obj.Parent and obj.Parent.Name or "NIL") .. ")")
+    
+    -- Анализ BasePart
+    if obj:IsA("BasePart") then
+        print(indent .. "  📏 Size: " .. tostring(obj.Size))
+        print(indent .. "  📍 Position: " .. tostring(obj.Position))
+        print(indent .. "  🔄 CFrame: " .. tostring(obj.CFrame))
+        print(indent .. "  👻 Transparency: " .. obj.Transparency)
+        print(indent .. "  🎨 Material: " .. tostring(obj.Material))
+        print(indent .. "  🌈 Color: " .. tostring(obj.Color))
+        print(indent .. "  ⚓ Anchored: " .. tostring(obj.Anchored))
+        print(indent .. "  🏷️ CanCollide: " .. tostring(obj.CanCollide))
+        if obj.Shape then
+            print(indent .. "  🔺 Shape: " .. tostring(obj.Shape))
+        end
+    end
+    
+    -- Анализ Model
+    if obj:IsA("Model") then
+        print(indent .. "  🎯 PrimaryPart: " .. (obj.PrimaryPart and obj.PrimaryPart.Name or "NIL"))
+        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+        if success then
+            print(indent .. "  📍 ModelCFrame: " .. tostring(modelCFrame))
+        end
+        local success2, modelSize = pcall(function() return obj:GetExtentsSize() end)
+        if success2 then
+            print(indent .. "  📏 ModelSize: " .. tostring(modelSize))
+        end
+    end
+    
+    -- Анализ Motor6D
+    if obj:IsA("Motor6D") then
+        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
+        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
+        print(indent .. "  📐 C0: " .. tostring(obj.C0))
+        print(indent .. "  📐 C1: " .. tostring(obj.C1))
+        print(indent .. "  🎯 CurrentAngle: " .. obj.CurrentAngle)
+        print(indent .. "  🎯 DesiredAngle: " .. obj.DesiredAngle)
+        print(indent .. "  ⚡ MaxVelocity: " .. obj.MaxVelocity)
+    end
+    
+    -- Анализ Weld
+    if obj:IsA("Weld") or obj:IsA("WeldConstraint") then
+        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
+        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
+        if obj:IsA("Weld") then
+            print(indent .. "  📐 C0: " .. tostring(obj.C0))
+            print(indent .. "  📐 C1: " .. tostring(obj.C1))
+        end
+    end
+    
+    -- Анализ Attachment
+    if obj:IsA("Attachment") then
+        print(indent .. "  📍 Position: " .. tostring(obj.Position))
+        print(indent .. "  🔄 Orientation: " .. tostring(obj.Orientation))
+        print(indent .. "  📐 CFrame: " .. tostring(obj.CFrame))
+        print(indent .. "  👁️ Visible: " .. tostring(obj.Visible))
+    end
+    
+    -- Анализ Humanoid
+    if obj:IsA("Humanoid") then
+        print(indent .. "  ❤️ Health: " .. obj.Health .. "/" .. obj.MaxHealth)
+        print(indent .. "  🏃 WalkSpeed: " .. obj.WalkSpeed)
+        print(indent .. "  🦘 JumpPower: " .. obj.JumpPower)
+        print(indent .. "  🎭 DisplayDistanceType: " .. tostring(obj.DisplayDistanceType))
+        print(indent .. "  📊 RigType: " .. tostring(obj.RigType))
         
-        wait(1)
-        button.Text = "🧪 FIXED TEST ANIMATION"
-        button.BackgroundColor3 = Color3.new(0, 1, 0)
-    end)
-end)
+        -- Анализ активных анимаций
+        local animator = obj:FindFirstChild("Animator")
+        if animator then
+            print(indent .. "  🎬 Animator найден!")
+            local animTracks = animator:GetPlayingAnimationTracks()
+            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
+            for i, track in ipairs(animTracks) do
+                print(indent .. "    🎞️ Анимация #" .. i .. ":")
+                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
+                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
+                print(indent .. "      ⏱️ Length: " .. track.Length)
+                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
+                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
+                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
+                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
+                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
+                print(indent .. "      🏃 Speed: " .. track.Speed)
+            end
+        end
+    end
+    
+    -- Анализ AnimationController
+    if obj:IsA("AnimationController") then
+        print(indent .. "  🎮 AnimationController найден!")
+        local animator = obj:FindFirstChild("Animator")
+        if animator then
+            print(indent .. "  🎬 Animator найден!")
+            local animTracks = animator:GetPlayingAnimationTracks()
+            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
+            for i, track in ipairs(animTracks) do
+                print(indent .. "    🎞️ Анимация #" .. i .. ":")
+                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
+                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
+                print(indent .. "      ⏱️ Length: " .. track.Length)
+                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
+                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
+                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
+                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
+                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
+                print(indent .. "      🏃 Speed: " .. track.Speed)
+            end
+        end
+    end
+    
+    -- Анализ Animation объектов
+    if obj:IsA("Animation") then
+        print(indent .. "  🎞️ AnimationId: " .. obj.AnimationId)
+    end
+    
+    -- Анализ скриптов
+    if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+        print(indent .. "  📜 Скрипт: " .. obj.ClassName)
+        print(indent .. "  ✅ Enabled: " .. tostring(obj.Enabled or "N/A"))
+    end
+    
+    -- Анализ SpecialMesh
+    if obj:IsA("SpecialMesh") then
+        print(indent .. "  🎭 MeshType: " .. tostring(obj.MeshType))
+        print(indent .. "  📏 Scale: " .. tostring(obj.Scale))
+        print(indent .. "  📍 Offset: " .. tostring(obj.Offset))
+        if obj.MeshId ~= "" then
+            print(indent .. "  🆔 MeshId: " .. obj.MeshId)
+        end
+        if obj.TextureId ~= "" then
+            print(indent .. "  🖼️ TextureId: " .. obj.TextureId)
+        end
+    end
+end
 
-print("🎯 Готов к тестированию!")
-print("📋 1. Убедись что питомец в руке")
-print("📋 2. Нажми кнопку FIXED TEST ANIMATION")
-print("📋 3. Смотри на анимацию рядом с собой")
+-- Функция для рекурсивного анализа всех детей
+local function analyzeChildren(obj, depth, maxDepth)
+    if depth > maxDepth then
+        return
+    end
+    
+    analyzeObject(obj, depth)
+    
+    local children = obj:GetChildren()
+    if #children > 0 then
+        for _, child in ipairs(children) do
+            analyzeChildren(child, depth + 1, maxDepth)
+        end
+    end
+end
+
+-- ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ
+print("🔬 ПОЛНАЯ СТРУКТУРА ПИТОМЦА:")
+print("-" .. string.rep("-", 50))
+
+analyzeChildren(targetPet, 0, 10) -- Максимум 10 уровней вглубь
+
+print()
+print("📊 ДОПОЛНИТЕЛЬНАЯ СТАТИСТИКА:")
+print("-" .. string.rep("-", 30))
+
+-- Подсчет различных типов объектов
+local stats = {}
+for _, obj in ipairs(targetPet:GetDescendants()) do
+    local className = obj.ClassName
+    stats[className] = (stats[className] or 0) + 1
+end
+
+for className, count in pairs(stats) do
+    print("  " .. className .. ": " .. count)
+end
+
+print()
+print("🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ЗАВЕРШЕН")
+print("=" .. string.rep("=", 70))
