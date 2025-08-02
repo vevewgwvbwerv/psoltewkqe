@@ -1,186 +1,288 @@
---[[
-    PET ANIMATION PLAYER
-    Воспроизводит точную анимацию роста на питомце из руки
-    Основано на записанных данных: рост в 1.88 раз для всех частей
-]]
+-- 🔬 ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА
+-- Использует ТУ ЖЕ логику поиска, что и PetScanDiagnostic.lua + детальный анализ
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
-local isActive = true
 
-print("🎬 Pet Animation Player загружен!")
-print("📊 Данные анимации: рост в 1.88 раз, все части синхронно")
+print("🔬 === ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА ===")
+print("=" .. string.rep("=", 70))
 
--- Функция получения питомца из руки
-local function getHandPet()
-    if not player.Character then return nil end
-    
-    for _, tool in pairs(player.Character:GetChildren()) do
-        if tool:IsA("Tool") then
-            local model = tool:FindFirstChildWhichIsA("Model")
-            if model then
-                return model
+-- Получаем позицию игрока (ТОЧНО как в PetScanDiagnostic.lua)
+local playerChar = player.Character
+if not playerChar then
+    print("❌ Персонаж игрока не найден!")
+    return
+end
+
+local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+if not hrp then
+    print("❌ HumanoidRootPart не найден!")
+    return
+end
+
+local playerPos = hrp.Position
+local SEARCH_RADIUS = 50
+local petPartNames = {"Tail", "Mouth", "Jaw", "LeftEye", "RightEye", "LeftEar", "RightEar", "ColourSpot", "PetMover", "Head", "Body", "Ear", "Eye"}
+
+print("📍 Позиция игрока:", playerPos)
+print("🎯 Радиус поиска:", SEARCH_RADIUS)
+print()
+
+-- ТОЧНАЯ КОПИЯ логики поиска из PetScanDiagnostic.lua
+print("🔍 ПОИСК ПИТОМЦЕВ С UUID ИМЕНАМИ (как в PetScanDiagnostic.lua)...")
+print("-" .. string.rep("-", 50))
+
+local uuidModels = {}
+
+-- ТОЧНО та же логика поиска, что в PetScanDiagnostic.lua
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+        if success then
+            local distance = (modelCFrame.Position - playerPos).Magnitude
+            if distance <= SEARCH_RADIUS then
+                table.insert(uuidModels, {
+                    model = obj,
+                    name = obj.Name,
+                    distance = distance
+                })
+                
+                print("🎯 НАЙДЕН ПИТОМЕЦ: " .. obj.Name .. " | Расстояние: " .. math.floor(distance))
+                
+                -- Анализируем части модели (как в PetScanDiagnostic.lua)
+                local totalParts = 0
+                local visibleParts = 0
+                local petParts = {}
+                
+                for _, child in ipairs(obj:GetChildren()) do
+                    if child:IsA("BasePart") then
+                        totalParts = totalParts + 1
+                        if child.Transparency < 1 then
+                            visibleParts = visibleParts + 1
+                        end
+                        
+                        for _, petPartName in ipairs(petPartNames) do
+                            if child.Name == petPartName or child.Name:find(petPartName) then
+                                table.insert(petParts, child.Name)
+                                break
+                            end
+                        end
+                    end
+                end
+                
+                print("    📊 Частей всего:", totalParts, "| Видимых:", visibleParts, "| Частей питомца:", #petParts)
+                if #petParts > 0 then
+                    print("    🐾 Части питомца:", table.concat(petParts, ", "))
+                end
+                
+                -- Проверяем PrimaryPart
+                if obj.PrimaryPart then
+                    print("    ✅ PrimaryPart:", obj.PrimaryPart.Name)
+                else
+                    print("    ❌ PrimaryPart отсутствует")
+                end
             end
         end
     end
-    return nil
 end
 
--- Функция клонирования питомца
-local function clonePet(originalModel)
-    local clone = originalModel:Clone()
+print()
+print("📈 НАЙДЕНО UUID МОДЕЛЕЙ:", #uuidModels)
+print()
+
+if #uuidModels == 0 then
+    print("❌ UUID модели не найдены - проверьте:")
+    print("  1. Находитесь ли вы рядом с питомцами?")
+    print("  2. Правильно ли определяется позиция игрока?")
+    print("  3. Достаточен ли радиус поиска?")
+    return
+end
+
+-- Выбираем первого найденного питомца для детального анализа
+local targetPet = uuidModels[1].model
+print("🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ПИТОМЦА: " .. targetPet.Name)
+print("📍 Расстояние: " .. math.floor(uuidModels[1].distance) .. " единиц")
+print("=" .. string.rep("=", 70))
+print()
+
+-- Функция для детального анализа объекта
+local function analyzeObject(obj, depth)
+    local indent = string.rep("  ", depth)
+    print(indent .. "📦 " .. obj.ClassName .. ": " .. obj.Name .. " (Parent: " .. (obj.Parent and obj.Parent.Name or "NIL") .. ")")
     
-    -- Убираем скрипты из клона
-    for _, script in pairs(clone:GetDescendants()) do
-        if script:IsA("BaseScript") or script:IsA("LocalScript") then
-            script:Destroy()
+    -- Анализ BasePart
+    if obj:IsA("BasePart") then
+        print(indent .. "  📏 Size: " .. tostring(obj.Size))
+        print(indent .. "  📍 Position: " .. tostring(obj.Position))
+        print(indent .. "  🔄 CFrame: " .. tostring(obj.CFrame))
+        print(indent .. "  👻 Transparency: " .. obj.Transparency)
+        print(indent .. "  🎨 Material: " .. tostring(obj.Material))
+        print(indent .. "  🌈 Color: " .. tostring(obj.Color))
+        print(indent .. "  ⚓ Anchored: " .. tostring(obj.Anchored))
+        print(indent .. "  🏷️ CanCollide: " .. tostring(obj.CanCollide))
+        if obj.Shape then
+            print(indent .. "  🔺 Shape: " .. tostring(obj.Shape))
         end
     end
     
-    return clone
-end
-
--- Функция воспроизведения анимации роста
-local function playGrowthAnimation(model, targetPosition)
-    print("🎬 Начинаю анимацию роста для: " .. model.Name)
-    
-    -- Позиционируем модель
-    if model.PrimaryPart then
-        model:SetPrimaryPartCFrame(targetPosition)
-    else
-        model:MoveTo(targetPosition.Position)
-    end
-    
-    model.Parent = Workspace
-    
-    -- Список всех частей которые должны расти (из записанных данных)
-    local growingParts = {
-        "LeftEar", "FrontLegL", "RightEar", "LeftLegL", "Torso", 
-        "FrontLegR", "Jaw", "BackLegL", "BackLegR", "Tail", 
-        "Mouth", "RightEye", "LeftEye", "Head"
-    }
-    
-    -- Сохраняем оригинальные размеры и устанавливаем начальные
-    local originalSizes = {}
-    local tweens = {}
-    
-    for _, part in pairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            originalSizes[part] = part.Size
-            
-            -- Начинаем с маленького размера (1/1.88 от оригинала)
-            local startSize = part.Size / 1.88
-            part.Size = startSize
-            part.Transparency = 0.8  -- Начинаем полупрозрачными
-            part.Anchored = true     -- Фиксируем чтобы не падали
-            
-            -- Создаем анимацию роста
-            local growTween = TweenService:Create(part, 
-                TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
-                {
-                    Size = originalSizes[part],
-                    Transparency = 0
-                }
-            )
-            
-            table.insert(tweens, growTween)
+    -- Анализ Model
+    if obj:IsA("Model") then
+        print(indent .. "  🎯 PrimaryPart: " .. (obj.PrimaryPart and obj.PrimaryPart.Name or "NIL"))
+        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+        if success then
+            print(indent .. "  📍 ModelCFrame: " .. tostring(modelCFrame))
+        end
+        local success2, modelSize = pcall(function() return obj:GetExtentsSize() end)
+        if success2 then
+            print(indent .. "  📏 ModelSize: " .. tostring(modelSize))
         end
     end
     
-    -- Запускаем все анимации одновременно
-    print("📈 Запускаю рост всех частей в 1.88 раз...")
-    for _, tween in pairs(tweens) do
-        tween:Play()
+    -- Анализ Motor6D
+    if obj:IsA("Motor6D") then
+        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
+        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
+        print(indent .. "  📐 C0: " .. tostring(obj.C0))
+        print(indent .. "  📐 C1: " .. tostring(obj.C1))
+        print(indent .. "  🎯 CurrentAngle: " .. obj.CurrentAngle)
+        print(indent .. "  🎯 DesiredAngle: " .. obj.DesiredAngle)
+        print(indent .. "  ⚡ MaxVelocity: " .. obj.MaxVelocity)
     end
     
-    -- Через 4 секунды удаляем модель (как в оригинале)
-    wait(4)
-    
-    print("💥 Анимация завершена, удаляю модель")
-    
-    -- Анимация исчезновения
-    local fadeTweens = {}
-    for _, part in pairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            local fadeTween = TweenService:Create(part,
-                TweenInfo.new(0.5, Enum.EasingStyle.Quad),
-                { Transparency = 1 }
-            )
-            table.insert(fadeTweens, fadeTween)
+    -- Анализ Weld
+    if obj:IsA("Weld") or obj:IsA("WeldConstraint") then
+        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
+        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
+        if obj:IsA("Weld") then
+            print(indent .. "  📐 C0: " .. tostring(obj.C0))
+            print(indent .. "  📐 C1: " .. tostring(obj.C1))
         end
     end
     
-    for _, tween in pairs(fadeTweens) do
-        tween:Play()
+    -- Анализ Attachment
+    if obj:IsA("Attachment") then
+        print(indent .. "  📍 Position: " .. tostring(obj.Position))
+        print(indent .. "  🔄 Orientation: " .. tostring(obj.Orientation))
+        print(indent .. "  📐 CFrame: " .. tostring(obj.CFrame))
+        print(indent .. "  👁️ Visible: " .. tostring(obj.Visible))
     end
     
-    wait(0.5)
-    model:Destroy()
+    -- Анализ Humanoid
+    if obj:IsA("Humanoid") then
+        print(indent .. "  ❤️ Health: " .. obj.Health .. "/" .. obj.MaxHealth)
+        print(indent .. "  🏃 WalkSpeed: " .. obj.WalkSpeed)
+        print(indent .. "  🦘 JumpPower: " .. obj.JumpPower)
+        print(indent .. "  🎭 DisplayDistanceType: " .. tostring(obj.DisplayDistanceType))
+        print(indent .. "  📊 RigType: " .. tostring(obj.RigType))
+        
+        -- Анализ активных анимаций
+        local animator = obj:FindFirstChild("Animator")
+        if animator then
+            print(indent .. "  🎬 Animator найден!")
+            local animTracks = animator:GetPlayingAnimationTracks()
+            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
+            for i, track in ipairs(animTracks) do
+                print(indent .. "    🎞️ Анимация #" .. i .. ":")
+                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
+                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
+                print(indent .. "      ⏱️ Length: " .. track.Length)
+                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
+                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
+                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
+                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
+                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
+                print(indent .. "      🏃 Speed: " .. track.Speed)
+            end
+        end
+    end
+    
+    -- Анализ AnimationController
+    if obj:IsA("AnimationController") then
+        print(indent .. "  🎮 AnimationController найден!")
+        local animator = obj:FindFirstChild("Animator")
+        if animator then
+            print(indent .. "  🎬 Animator найден!")
+            local animTracks = animator:GetPlayingAnimationTracks()
+            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
+            for i, track in ipairs(animTracks) do
+                print(indent .. "    🎞️ Анимация #" .. i .. ":")
+                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
+                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
+                print(indent .. "      ⏱️ Length: " .. track.Length)
+                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
+                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
+                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
+                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
+                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
+                print(indent .. "      🏃 Speed: " .. track.Speed)
+            end
+        end
+    end
+    
+    -- Анализ Animation объектов
+    if obj:IsA("Animation") then
+        print(indent .. "  🎞️ AnimationId: " .. obj.AnimationId)
+    end
+    
+    -- Анализ скриптов
+    if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+        print(indent .. "  📜 Скрипт: " .. obj.ClassName)
+        print(indent .. "  ✅ Enabled: " .. tostring(obj.Enabled or "N/A"))
+    end
+    
+    -- Анализ SpecialMesh
+    if obj:IsA("SpecialMesh") then
+        print(indent .. "  🎭 MeshType: " .. tostring(obj.MeshType))
+        print(indent .. "  📏 Scale: " .. tostring(obj.Scale))
+        print(indent .. "  📍 Offset: " .. tostring(obj.Offset))
+        if obj.MeshId ~= "" then
+            print(indent .. "  🆔 MeshId: " .. obj.MeshId)
+        end
+        if obj.TextureId ~= "" then
+            print(indent .. "  🖼️ TextureId: " .. obj.TextureId)
+        end
+    end
 end
 
--- Функция замены питомца из яйца
-local function replacePetWithAnimation(eggPetModel)
-    if not isActive then return end
-    
-    print("🎯 Обнаружен питомец из яйца: " .. eggPetModel.Name)
-    
-    -- Получаем питомца из руки
-    local handPet = getHandPet()
-    if not handPet then
-        print("❌ Питомец в руке не найден!")
+-- Функция для рекурсивного анализа всех детей
+local function analyzeChildren(obj, depth, maxDepth)
+    if depth > maxDepth then
         return
     end
     
-    print("✅ Питомец в руке найден: " .. handPet.Name)
+    analyzeObject(obj, depth)
     
-    -- Получаем позицию яичного питомца
-    local targetPosition = eggPetModel:GetModelCFrame()
-    
-    -- Скрываем оригинального питомца из яйца
-    for _, part in pairs(eggPetModel:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 1
-            part.CanCollide = false
+    local children = obj:GetChildren()
+    if #children > 0 then
+        for _, child in ipairs(children) do
+            analyzeChildren(child, depth + 1, maxDepth)
         end
     end
-    
-    print("🫥 Скрыл оригинального питомца из яйца")
-    
-    -- Клонируем питомца из руки
-    local clonedPet = clonePet(handPet)
-    
-    -- Запускаем анимацию роста на клоне
-    spawn(function()
-        playGrowthAnimation(clonedPet, targetPosition)
-    end)
-    
-    print("🚀 Запустил анимацию роста на клоне!")
 end
 
--- Отслеживаем появление питомцев в Visuals
-local visuals = Workspace:FindFirstChild("Visuals")
-if visuals then
-    print("✅ Найдена папка Visuals")
-    
-    visuals.ChildAdded:Connect(function(child)
-        if child:IsA("Model") and isActive then
-            local name = child.Name or "Unknown"
-            
-            -- Проверяем что это питомец (не эффект)
-            if not name:find("Egg") and not name:find("Explode") and not name:find("Poof") then
-                wait(0.1) -- Небольшая задержка для загрузки модели
-                replacePetWithAnimation(child)
-            end
-        end
-    end)
-else
-    print("❌ Папка Visuals не найдена!")
+-- ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ
+print("🔬 ПОЛНАЯ СТРУКТУРА ПИТОМЦА:")
+print("-" .. string.rep("-", 50))
+
+analyzeChildren(targetPet, 0, 10) -- Максимум 10 уровней вглубь
+
+print()
+print("📊 ДОПОЛНИТЕЛЬНАЯ СТАТИСТИКА:")
+print("-" .. string.rep("-", 30))
+
+-- Подсчет различных типов объектов
+local stats = {}
+for _, obj in ipairs(targetPet:GetDescendants()) do
+    local className = obj.ClassName
+    stats[className] = (stats[className] or 0) + 1
 end
 
-print("🎯 Pet Animation Player готов!")
-print("📋 Возьми питомца в руку и открой яйцо")
-print("🎬 Твой питомец появится с точной анимацией роста!")
+for className, count in pairs(stats) do
+    print("  " .. className .. ": " .. count)
+end
+
+print()
+print("🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ЗАВЕРШЕН")
+print("=" .. string.rep("=", 70))
