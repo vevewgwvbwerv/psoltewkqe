@@ -1,131 +1,214 @@
---[[
-    SIMPLE DEBUG TEST
-    Максимально простая версия для отладки анимации
-]]
+-- 🔍 ДИАГНОСТИКА КОПИИ ПИТОМЦА - Анализ Motor6D и анимации
+-- Сравнивает оригинал и копию для выявления проблем
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
 
-print("🔍 Simple Debug Test загружен!")
+print("🔍 === ДИАГНОСТИКА КОПИИ ПИТОМЦА ===")
+print("=" .. string.rep("=", 50))
 
--- Простой GUI с кнопкой
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "SimpleDebugTest"
-screenGui.Parent = CoreGui
-
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 200, 0, 50)
-button.Position = UDim2.new(0, 10, 0, 250)
-button.BackgroundColor3 = Color3.new(1, 0.5, 0)
-button.Text = "🔍 SIMPLE DEBUG"
-button.TextColor3 = Color3.new(1, 1, 1)
-button.TextScaled = true
-button.Font = Enum.Font.GothamBold
-button.Parent = screenGui
-
--- Функция простого теста
-local function simpleDebugTest()
-    print("\n🔍 === ПРОСТОЙ ТЕСТ ОТЛАДКИ ===")
+-- Функция анализа модели
+local function analyzeModel(model, modelType)
+    print("\n📊 АНАЛИЗ " .. modelType .. ": " .. model.Name)
+    print("-" .. string.rep("-", 40))
     
-    -- Получаем Tool
-    local tool = nil
-    for _, child in pairs(player.Character:GetChildren()) do
-        if child:IsA("Tool") then
-            tool = child
-            break
+    -- Анализ BasePart
+    local parts = {}
+    local anchoredParts = {}
+    local freeParts = {}
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
+            if obj.Anchored then
+                table.insert(anchoredParts, obj.Name)
+            else
+                table.insert(freeParts, obj.Name)
+            end
         end
     end
     
-    if not tool then
-        print("❌ Tool не найден!")
-        return
+    print("🧩 Всего частей:", #parts)
+    print("⚓ Заякоренных частей:", #anchoredParts)
+    if #anchoredParts > 0 then
+        print("   Заякоренные:", table.concat(anchoredParts, ", "))
+    end
+    print("🎭 Свободных частей:", #freeParts)
+    if #freeParts > 0 and #freeParts <= 10 then
+        print("   Свободные:", table.concat(freeParts, ", "))
+    elseif #freeParts > 10 then
+        print("   Свободные: (слишком много для вывода)")
     end
     
-    print("✅ Tool найден: " .. tool.Name)
-    
-    -- Находим Handle
-    local handle = tool:FindFirstChild("Handle")
-    if not handle then
-        print("❌ Handle не найден в Tool!")
-        return
+    -- Анализ Motor6D
+    local motor6ds = {}
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motor6ds, {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "nil",
+                part1 = obj.Part1 and obj.Part1.Name or "nil",
+                enabled = obj.Enabled
+            })
+        end
     end
     
-    print("✅ Handle найден: " .. handle.Name .. " (Size: " .. tostring(handle.Size) .. ")")
-    
-    -- Клонируем только Handle
-    local clone = handle:Clone()
-    clone.Name = "TestClone"
-    
-    -- Позиционируем клон
-    local playerPos = player.Character.HumanoidRootPart.Position
-    clone.Position = playerPos + Vector3.new(3, 3, 0)  -- 3 вправо, 3 вверх
-    clone.Anchored = true
-    clone.CanCollide = false
-    clone.Parent = Workspace
-    
-    print("🌍 Клон добавлен в Workspace на позиции: " .. tostring(clone.Position))
-    
-    -- Сохраняем оригинальный размер
-    local originalSize = clone.Size
-    print("📏 Оригинальный размер: " .. tostring(originalSize))
-    
-    -- Устанавливаем маленький размер
-    local smallSize = originalSize / 1.88
-    clone.Size = smallSize
-    clone.Transparency = 0.8
-    
-    print("📏 Установлен маленький размер: " .. tostring(smallSize))
-    print("💫 Установлена прозрачность: 0.8")
-    
-    -- Ждем 1 секунду чтобы увидеть маленький размер
-    wait(1)
-    print("⏰ Прошла 1 секунда, начинаю анимацию...")
-    
-    -- Простая анимация - меняем размер каждые 0.1 секунды
-    local steps = 15  -- 15 шагов по 0.1 секунды = 1.5 секунды
-    local sizeStep = (originalSize - smallSize) / steps
-    local transparencyStep = 0.8 / steps
-    
-    for i = 1, steps do
-        local currentSize = smallSize + (sizeStep * i)
-        local currentTransparency = 0.8 - (transparencyStep * i)
-        
-        clone.Size = currentSize
-        clone.Transparency = currentTransparency
-        
-        print("🔄 Шаг " .. i .. "/" .. steps .. ": Size=" .. tostring(currentSize) .. ", Trans=" .. string.format("%.2f", currentTransparency))
-        
-        wait(0.1)
+    print("🔧 Motor6D соединений:", #motor6ds)
+    for i, motor in ipairs(motor6ds) do
+        local status = motor.enabled and "✅" or "❌"
+        print(string.format("   %s %s: %s → %s", status, motor.name, motor.part0, motor.part1))
     end
     
-    print("✅ Анимация завершена!")
-    print("📏 Финальный размер: " .. tostring(clone.Size))
-    print("💫 Финальная прозрачность: " .. clone.Transparency)
+    -- Анализ Animator и анимации
+    local animator = model:FindFirstChildOfClass("Animator", true)
+    if animator then
+        print("🎬 Animator найден:", animator.Parent.Name)
+        
+        -- Проверяем активные анимации
+        local animationTracks = animator:GetPlayingAnimationTracks()
+        print("🎭 Активных анимаций:", #animationTracks)
+        
+        for i, track in ipairs(animationTracks) do
+            print(string.format("   🎵 %s (ID: %s, Playing: %s, Looped: %s)", 
+                track.Name or "Unnamed", 
+                track.Animation.AnimationId,
+                tostring(track.IsPlaying),
+                tostring(track.Looped)
+            ))
+        end
+    else
+        print("❌ Animator не найден!")
+    end
     
-    -- Ждем 3 секунды и удаляем
-    wait(3)
-    clone:Destroy()
-    print("💥 Клон удален")
+    -- Анализ Humanoid
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        print("👤 Humanoid найден")
+        print("   PlatformStand:", humanoid.PlatformStand)
+        print("   Sit:", humanoid.Sit)
+        print("   Health:", humanoid.Health .. "/" .. humanoid.MaxHealth)
+    else
+        print("❌ Humanoid не найден")
+    end
+    
+    return {
+        parts = #parts,
+        anchoredParts = #anchoredParts,
+        freeParts = #freeParts,
+        motor6ds = #motor6ds,
+        hasAnimator = animator ~= nil,
+        activeAnimations = animator and #animator:GetPlayingAnimationTracks() or 0
+    }
 end
 
--- Обработчик кнопки
-button.MouseButton1Click:Connect(function()
-    button.Text = "⏳ TESTING..."
-    button.BackgroundColor3 = Color3.new(1, 1, 0)
+-- Функция поиска моделей
+local function findModels()
+    local originalModels = {}
+    local copyModels = {}
     
-    spawn(function()
-        simpleDebugTest()
-        
-        wait(1)
-        button.Text = "🔍 SIMPLE DEBUG"
-        button.BackgroundColor3 = Color3.new(1, 0.5, 0)
-    end)
-end)
+    -- Ищем все модели в Workspace
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") then
+            -- Проверяем UUID формат (36 символов с дефисами)
+            if string.match(obj.Name, "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+                table.insert(originalModels, obj)
+            elseif string.find(obj.Name, "_SCALED_COPY") then
+                table.insert(copyModels, obj)
+            end
+        end
+    end
+    
+    return originalModels, copyModels
+end
 
-print("🎯 Simple Debug Test готов!")
-print("📋 Этот тест покажет каждый шаг анимации в консоли")
-print("📋 Нажми кнопку и смотри подробные логи!")
+-- Основная функция
+local function main()
+    local originals, copies = findModels()
+    
+    print("🔍 Найдено оригинальных моделей:", #originals)
+    print("📋 Найдено копий:", #copies)
+    
+    if #originals == 0 then
+        print("❌ Оригинальные модели не найдены!")
+        return
+    end
+    
+    if #copies == 0 then
+        print("❌ Копии не найдены! Сначала создайте копию с помощью PetScaler")
+        return
+    end
+    
+    -- Анализируем первую пару
+    local original = originals[1]
+    local copy = copies[1]
+    
+    local originalStats = analyzeModel(original, "ОРИГИНАЛ")
+    local copyStats = analyzeModel(copy, "КОПИЯ")
+    
+    -- Сравнение
+    print("\n🔍 === СРАВНЕНИЕ ===")
+    print("-" .. string.rep("-", 30))
+    
+    local function compareField(field, name, unit)
+        unit = unit or ""
+        if originalStats[field] == copyStats[field] then
+            print("✅ " .. name .. ": " .. originalStats[field] .. unit .. " (одинаково)")
+        else
+            print("⚠️ " .. name .. ": " .. originalStats[field] .. unit .. " → " .. copyStats[field] .. unit .. " (РАЗНЫЕ!)")
+        end
+    end
+    
+    compareField("parts", "Частей")
+    compareField("anchoredParts", "Заякоренных частей")
+    compareField("freeParts", "Свободных частей")
+    compareField("motor6ds", "Motor6D соединений")
+    compareField("hasAnimator", "Есть Animator")
+    compareField("activeAnimations", "Активных анимаций")
+    
+    -- Рекомендации
+    print("\n💡 === РЕКОМЕНДАЦИИ ===")
+    print("-" .. string.rep("-", 30))
+    
+    if copyStats.anchoredParts > 1 then
+        print("⚠️ У копии слишком много заякоренных частей (" .. copyStats.anchoredParts .. ")")
+        print("   Рекомендация: Только 1 часть должна быть заякорена")
+    end
+    
+    if copyStats.freeParts == 0 then
+        print("❌ У копии нет свободных частей для анимации!")
+        print("   Рекомендация: Все части кроме основной должны быть Anchored=false")
+    end
+    
+    if copyStats.motor6ds == 0 then
+        print("❌ У копии нет Motor6D соединений!")
+        print("   Рекомендация: Motor6D должны копироваться вместе с моделью")
+    end
+    
+    if not copyStats.hasAnimator then
+        print("❌ У копии нет Animator!")
+        print("   Рекомендация: Animator должен копироваться вместе с моделью")
+    end
+    
+    if copyStats.activeAnimations == 0 and originalStats.activeAnimations > 0 then
+        print("❌ У копии нет активных анимаций!")
+        print("   Рекомендация: Анимации должны автоматически запускаться в копии")
+    end
+    
+    print("\n🎯 === ЗАКЛЮЧЕНИЕ ===")
+    if copyStats.freeParts > 0 and copyStats.motor6ds > 0 and copyStats.hasAnimator then
+        print("✅ Основные компоненты для анимации присутствуют")
+        if copyStats.activeAnimations == 0 then
+            print("⚠️ Но анимации не запущены - возможно нужно запустить их вручную")
+        else
+            print("✅ Анимации активны!")
+        end
+    else
+        print("❌ Отсутствуют критические компоненты для анимации")
+    end
+end
+
+-- Запуск диагностики
+main()
+print("=" .. string.rep("=", 50))
