@@ -1,7 +1,6 @@
 --[[
-    ANIMATION RECORDER
-    Записывает ВСЕ анимации питомца из яйца
-    Включая рост, позицию, прозрачность, взрыв
+    FIXED ANIMATION RECORDER
+    Исправленная версия без ошибок
 ]]
 
 local Players = game:GetService("Players")
@@ -13,10 +12,11 @@ local player = Players.LocalPlayer
 local isRecording = false
 local animationData = {}
 local currentRecording = nil
+local recordingConnection = nil
 
 -- GUI для управления
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AnimationRecorder"
+screenGui.Name = "FixedAnimationRecorder"
 screenGui.Parent = CoreGui
 
 local frame = Instance.new("Frame")
@@ -31,7 +31,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.Position = UDim2.new(0, 0, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "🎬 ANIMATION RECORDER"
+title.Text = "🎬 FIXED ANIMATION RECORDER"
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
@@ -85,40 +85,56 @@ local function log(message)
     logFrame.CanvasPosition = Vector2.new(0, logFrame.CanvasSize.Y.Offset)
 end
 
--- Функция записи состояния модели
+-- Безопасная функция записи состояния модели
 local function recordModelState(model, frameTime)
     local state = {
         time = frameTime,
-        parts = {}
+        parts = {},
+        modelExists = true
     }
     
-    -- Записываем состояние каждой части
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            state.parts[part.Name] = {
-                size = part.Size,
-                cframe = part.CFrame,
-                transparency = part.Transparency,
-                canCollide = part.CanCollide,
-                color = part.Color,
-                material = part.Material
-            }
-        elseif part:IsA("SpecialMesh") then
-            state.parts[part.Parent.Name .. "_Mesh"] = {
-                scale = part.Scale,
-                meshType = part.MeshType.Name
-            }
-        elseif part:IsA("Decal") or part:IsA("Texture") then
-            state.parts[part.Parent.Name .. "_" .. part.Name] = {
-                transparency = part.Transparency,
-                color3 = part.Color3
-            }
-        end
+    -- Проверяем что модель существует
+    if not model or not model.Parent then
+        state.modelExists = false
+        return state
     end
     
-    -- Записываем общие свойства модели
-    state.modelCFrame = model:GetModelCFrame()
-    state.modelSize = model:GetExtentsSize()
+    -- Безопасно записываем состояние каждой части
+    local success, error = pcall(function()
+        for _, part in ipairs(model:GetDescendants()) do
+            if part and part:IsA("BasePart") and part.Parent then
+                local partName = part.Name or "UnknownPart"
+                state.parts[partName] = {
+                    size = part.Size or Vector3.new(1,1,1),
+                    position = part.Position or Vector3.new(0,0,0),
+                    transparency = part.Transparency or 0,
+                    canCollide = part.CanCollide or false
+                }
+            end
+        end
+        
+        -- Записываем общие свойства модели
+        if model.PrimaryPart then
+            state.primaryPart = {
+                size = model.PrimaryPart.Size,
+                position = model.PrimaryPart.Position,
+                transparency = model.PrimaryPart.Transparency
+            }
+        end
+        
+        -- Пытаемся получить размер модели
+        local success2, modelSize = pcall(function()
+            return model:GetExtentsSize()
+        end)
+        if success2 then
+            state.modelSize = modelSize
+        end
+        
+    end)
+    
+    if not success then
+        log("⚠️ Ошибка записи кадра: " .. tostring(error))
+    end
     
     return state
 end
@@ -127,30 +143,28 @@ end
 local function startRecording(model)
     if isRecording then return end
     
+    log("🎬 Начинаю запись модели: " .. (model.Name or "Unknown"))
+    
     isRecording = true
     currentRecording = {
         startTime = tick(),
         frames = {},
-        model = model
+        model = model,
+        modelName = model.Name or "Unknown"
     }
     
-    statusLabel.Text = "🔴 RECORDING: " .. model.Name
+    statusLabel.Text = "🔴 RECORDING: " .. currentRecording.modelName
     recordButton.Text = "⏹️ STOP RECORDING"
     recordButton.BackgroundColor3 = Color3.new(0, 1, 0)
-    
-    log("🎬 Начинаю запись анимации: " .. model.Name)
-    log("📊 Записываю все части модели...")
     
     -- Записываем начальное состояние
     local initialState = recordModelState(model, 0)
     table.insert(currentRecording.frames, initialState)
+    log("📊 Записал начальное состояние")
     
     -- Запускаем запись каждый кадр
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRecording or not model.Parent then
-            connection:Disconnect()
-            stopRecording()
+    recordingConnection = RunService.Heartbeat:Connect(function()
+        if not isRecording then
             return
         end
         
@@ -158,17 +172,20 @@ local function startRecording(model)
         local state = recordModelState(model, frameTime)
         table.insert(currentRecording.frames, state)
         
-        -- Обновляем статус
-        statusLabel.Text = string.format("🔴 RECORDING: %.1fs (%d frames)", frameTime, #currentRecording.frames)
-    end)
-    
-    -- Останавливаем запись когда модель исчезает
-    local disappearConnection
-    disappearConnection = model.AncestryChanged:Connect(function()
-        if not model.Parent then
+        -- Обновляем статус каждые 10 кадров
+        if #currentRecording.frames % 10 == 0 then
+            statusLabel.Text = string.format("🔴 REC: %.1fs (%d frames)", frameTime, #currentRecording.frames)
+        end
+        
+        -- Останавливаем если модель исчезла
+        if not state.modelExists then
             log("💥 Модель исчезла - останавливаю запись")
-            disappearConnection:Disconnect()
-            connection:Disconnect()
+            stopRecording()
+        end
+        
+        -- Автостоп через 10 секунд
+        if frameTime > 10 then
+            log("⏰ Автостоп через 10 секунд")
             stopRecording()
         end
     end)
@@ -179,6 +196,12 @@ function stopRecording()
     if not isRecording then return end
     
     isRecording = false
+    
+    if recordingConnection then
+        recordingConnection:Disconnect()
+        recordingConnection = nil
+    end
+    
     local duration = tick() - currentRecording.startTime
     
     statusLabel.Text = "✅ Recording complete"
@@ -190,7 +213,7 @@ function stopRecording()
     log("🎞️ Кадров записано: " .. #currentRecording.frames)
     
     -- Сохраняем данные
-    animationData[currentRecording.model.Name] = currentRecording
+    animationData[currentRecording.modelName] = currentRecording
     
     -- Анализируем записанные данные
     analyzeAnimation(currentRecording)
@@ -200,24 +223,34 @@ end
 local function analyzeAnimation(recording)
     log("\n=== АНАЛИЗ АНИМАЦИИ ===")
     
+    if #recording.frames < 2 then
+        log("❌ Недостаточно кадров для анализа")
+        return
+    end
+    
     local firstFrame = recording.frames[1]
     local lastFrame = recording.frames[#recording.frames]
     
+    log("📊 Анализирую " .. #recording.frames .. " кадров...")
+    
     -- Анализируем изменения размера
     for partName, firstState in pairs(firstFrame.parts) do
-        if firstState.size and lastFrame.parts[partName] and lastFrame.parts[partName].size then
+        if lastFrame.parts[partName] then
             local startSize = firstState.size
             local endSize = lastFrame.parts[partName].size
-            local sizeChange = endSize / startSize
             
-            if sizeChange.Magnitude > 1.1 then
-                log("📈 " .. partName .. " увеличился в " .. string.format("%.2f", sizeChange.Magnitude) .. " раз")
+            if startSize and endSize then
+                local sizeChange = endSize.Magnitude / startSize.Magnitude
+                
+                if sizeChange > 1.2 then
+                    log("📈 " .. partName .. " увеличился в " .. string.format("%.2f", sizeChange) .. " раз")
+                elseif sizeChange < 0.8 then
+                    log("📉 " .. partName .. " уменьшился в " .. string.format("%.2f", 1/sizeChange) .. " раз")
+                end
             end
-        end
-        
-        if firstState.transparency and lastFrame.parts[partName] and lastFrame.parts[partName].transparency then
-            local startTrans = firstState.transparency
-            local endTrans = lastFrame.parts[partName].transparency
+            
+            local startTrans = firstState.transparency or 0
+            local endTrans = lastFrame.parts[partName].transparency or 0
             
             if math.abs(endTrans - startTrans) > 0.1 then
                 log("💫 " .. partName .. " прозрачность: " .. string.format("%.2f", startTrans) .. " → " .. string.format("%.2f", endTrans))
@@ -225,13 +258,7 @@ local function analyzeAnimation(recording)
         end
     end
     
-    -- Анализируем общие изменения модели
-    local startModelSize = firstFrame.modelSize
-    local endModelSize = lastFrame.modelSize
-    local modelGrowth = endModelSize / startModelSize
-    
-    log("🔍 Общий рост модели: " .. string.format("%.2f", modelGrowth.Magnitude) .. "x")
-    log("📍 Позиция изменилась: " .. tostring((lastFrame.modelCFrame.Position - firstFrame.modelCFrame.Position).Magnitude > 1))
+    log("🎯 Анализ завершен!")
 end
 
 -- Кнопка переключения записи
@@ -244,47 +271,32 @@ recordButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Отслеживаем появление моделей
-local function monitorWorkspace()
-    -- Ищем папку Visuals
-    local visuals = Workspace:FindFirstChild("Visuals")
-    if visuals then
-        log("✅ Найдена папка Visuals")
-        
-        visuals.ChildAdded:Connect(function(child)
-            if child:IsA("Model") and not isRecording then
-                log("🎯 Обнаружена новая модель: " .. child.Name)
-                wait(0.1) -- Небольшая задержка для загрузки
+-- Отслеживаем появление моделей в Visuals
+local visuals = Workspace:FindFirstChild("Visuals")
+if visuals then
+    log("✅ Найдена папка Visuals")
+    
+    visuals.ChildAdded:Connect(function(child)
+        if child:IsA("Model") and not isRecording then
+            log("🎯 Обнаружена модель: " .. (child.Name or "Unknown"))
+            
+            -- Проверяем что это питомец (не эффект)
+            if child.Name and not child.Name:find("Egg") and not child.Name:find("Explode") and not child.Name:find("Poof") then
+                wait(0.1) -- Небольшая задержка
                 
-                if recordButton.Text == "⏹️ STOP RECORDING" or statusLabel.Text:find("Waiting") then
+                if statusLabel.Text:find("Waiting") or recordButton.Text == "⏹️ STOP RECORDING" then
                     startRecording(child)
                 end
+            else
+                log("⚠️ Пропускаю эффект: " .. (child.Name or "Unknown"))
             end
-        end)
-    else
-        log("❌ Папка Visuals не найдена")
-        log("🔍 Мониторю весь Workspace...")
-        
-        Workspace.ChildAdded:Connect(function(child)
-            if child:IsA("Model") and not isRecording then
-                log("🎯 Обнаружена модель в Workspace: " .. child.Name)
-                wait(0.1)
-                
-                if recordButton.Text == "⏹️ STOP RECORDING" or statusLabel.Text:find("Waiting") then
-                    startRecording(child)
-                end
-            end
-        end)
-    end
+        end
+    end)
+else
+    log("❌ Папка Visuals не найдена")
 end
 
-monitorWorkspace()
+log("🎬 Fixed Animation Recorder готов!")
+log("📋 Нажми START RECORDING и открой яйцо")
 
-log("🎬 Animation Recorder готов!")
-log("📋 Инструкция:")
-log("1. Нажми 'START RECORDING'")
-log("2. Открой яйцо")
-log("3. Запись автоматически остановится")
-log("4. Получишь полный анализ анимации")
-
-print("🎬 Animation Recorder loaded!")
+print("🎬 Fixed Animation Recorder loaded!")
