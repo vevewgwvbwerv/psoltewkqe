@@ -1,279 +1,319 @@
--- 🧠 SMART MOTOR COPIER - Умное копирование с управлением Anchored
--- Временно снимает Anchored для анимации, но не дает копии упасть
+-- 🎭 ANIMATION FIXER - Исправляет анимацию в масштабированных копиях питомцев
+-- Работает ПОСЛЕ PetScaler - находит копии и исправляет только Anchored состояния
+-- НЕ ТРОГАЕТ оригинальный PetScaler!
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 
-print("🧠 === SMART MOTOR COPIER ===")
-print("=" .. string.rep("=", 50))
+local player = Players.LocalPlayer
 
--- Функция поиска моделей
-local function findModels()
-    local original = nil
-    local copy = nil
-    local copyUUID = nil
+print("🎭 === ANIMATION FIXER - ИСПРАВЛЕНИЕ АНИМАЦИИ ===")
+print("=" .. string.rep("=", 60))
+
+-- Функция поиска масштабированных копий
+local function findScaledCopies()
+    local copies = {}
     
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") and obj.Name:find("_SCALED_COPY") then
-            copy = obj
-            copyUUID = obj.Name:gsub("_SCALED_COPY", "")
-            break
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") and string.find(obj.Name, "_SCALED_COPY") then
+            table.insert(copies, obj)
+            print("📋 Найдена копия:", obj.Name)
         end
     end
     
-    if copy then
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name == copyUUID then
-                original = obj
-                break
-            end
-        end
-    end
-    
-    return original, copy
+    return copies
 end
 
--- Функция получения всех BasePart из модели
-local function getAllParts(model)
-    local parts = {}
+-- Функция анализа текущих Anchored состояний
+local function analyzeAnchoredStates(model)
+    local anchoredParts = {}
+    local freeParts = {}
+    local totalParts = 0
     
     for _, obj in pairs(model:GetDescendants()) do
         if obj:IsA("BasePart") then
-            table.insert(parts, obj)
+            totalParts = totalParts + 1
+            if obj.Anchored then
+                table.insert(anchoredParts, obj.Name)
+            else
+                table.insert(freeParts, obj.Name)
+            end
         end
     end
     
-    return parts
+    print("📊 Анализ Anchored состояний для:", model.Name)
+    print("   🧩 Всего частей:", totalParts)
+    print("   ⚓ Заякоренных:", #anchoredParts)
+    print("   🎭 Свободных:", #freeParts)
+    
+    if #anchoredParts > 0 then
+        print("   ⚓ Заякоренные части:", table.concat(anchoredParts, ", "))
+    end
+    
+    return totalParts, #anchoredParts, #freeParts
 end
 
--- Функция получения всех Motor6D из модели
-local function getMotor6Ds(model)
-    local motors = {}
+-- Функция проверки наличия компонентов анимации
+local function checkAnimationComponents(model)
+    local hasAnimator = false
+    local hasMotor6D = false
+    local animatorLocation = "не найден"
+    local motor6dCount = 0
     
+    -- Проверяем Animator
+    local animator = model:FindFirstChildOfClass("Animator", true)
+    if animator then
+        hasAnimator = true
+        animatorLocation = animator.Parent.Name
+    end
+    
+    -- Проверяем Motor6D
     for _, obj in pairs(model:GetDescendants()) do
         if obj:IsA("Motor6D") then
-            table.insert(motors, obj)
+            motor6dCount = motor6dCount + 1
+            hasMotor6D = true
         end
     end
     
-    return motors
+    print("🔍 Компоненты анимации:")
+    print("   🎬 Animator:", hasAnimator and ("✅ найден в " .. animatorLocation) or "❌ отсутствует")
+    print("   🔧 Motor6D:", hasMotor6D and ("✅ найдено " .. motor6dCount .. " соединений") or "❌ отсутствуют")
+    
+    return hasAnimator, hasMotor6D, motor6dCount
 end
 
--- Функция создания карты Motor6D
-local function createMotorMap(motors)
-    local map = {}
+-- Основная функция исправления Anchored состояний
+local function fixAnchoredStates(model)
+    print("\n🔧 Исправляю Anchored состояния для анимации...")
+    print("   Модель:", model.Name)
     
-    for _, motor in ipairs(motors) do
-        local key = motor.Name
-        if motor.Part0 then
-            key = key .. "_" .. motor.Part0.Name
-        end
-        if motor.Part1 then
-            key = key .. "_" .. motor.Part1.Name
-        end
-        
-        map[key] = motor
-    end
+    -- Находим основную часть для якорения
+    local anchorPart = nil
+    local anchorPartName = "не найдена"
     
-    return map
-end
-
--- Функция анализа Anchored состояний
-local function analyzeAnchored(model, modelName)
-    print("⚓ Анализ Anchored в " .. modelName .. ":")
-    
-    local parts = getAllParts(model)
-    local anchoredCount = 0
-    local unanchoredCount = 0
-    
-    for _, part in ipairs(parts) do
-        if part.Anchored then
-            anchoredCount = anchoredCount + 1
-        else
-            unanchoredCount = unanchoredCount + 1
-        end
-    end
-    
-    print("  Всего частей: " .. #parts)
-    print("  Anchored: " .. anchoredCount)
-    print("  Unanchored: " .. unanchoredCount)
-    
-    if anchoredCount > 0 then
-        print("  ⚠️ Anchored части блокируют движение!")
+    -- Приоритет поиска основной части
+    if model:FindFirstChild("RootPart") then
+        anchorPart = model.RootPart
+        anchorPartName = "RootPart"
+    elseif model.PrimaryPart then
+        anchorPart = model.PrimaryPart
+        anchorPartName = "PrimaryPart (" .. model.PrimaryPart.Name .. ")"
+    elseif model:FindFirstChild("Torso") then
+        anchorPart = model.Torso
+        anchorPartName = "Torso"
+    elseif model:FindFirstChild("HumanoidRootPart") then
+        anchorPart = model.HumanoidRootPart
+        anchorPartName = "HumanoidRootPart"
     else
-        print("  ✅ Все части могут двигаться")
-    end
-    
-    return parts, anchoredCount, unanchoredCount
-end
-
--- Функция умного управления Anchored
-local function smartAnchoredManagement(copyParts)
-    print("🧠 Умное управление Anchored...")
-    
-    -- Находим "корневую" часть (обычно Torso или HumanoidRootPart)
-    local rootPart = nil
-    local rootCandidates = {"Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
-    
-    for _, candidate in ipairs(rootCandidates) do
-        for _, part in ipairs(copyParts) do
-            if part.Name == candidate then
-                rootPart = part
+        -- Если ничего не найдено, берем первую найденную часть
+        for _, obj in pairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                anchorPart = obj
+                anchorPartName = obj.Name .. " (первая найденная)"
                 break
             end
         end
-        if rootPart then break end
     end
     
-    if not rootPart then
-        -- Берем первую часть как корневую
-        rootPart = copyParts[1]
-        print("  ⚠️ Корневая часть не найдена, использую: " .. rootPart.Name)
-    else
-        print("  ✅ Корневая часть: " .. rootPart.Name)
-    end
-    
-    -- Стратегия: только корневая часть остается Anchored
-    for _, part in ipairs(copyParts) do
-        if part == rootPart then
-            part.Anchored = true  -- Корневая остается заякоренной
-        else
-            part.Anchored = false -- Остальные могут двигаться
-        end
-    end
-    
-    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
-    return rootPart
-end
-
--- Функция копирования состояния Motor6D
-local function copyMotorState(originalMotor, copyMotor)
-    if not originalMotor or not copyMotor then
+    if not anchorPart then
+        print("❌ Не найдена подходящая часть для якорения!")
         return false
     end
     
-    copyMotor.Transform = originalMotor.Transform
-    copyMotor.C0 = originalMotor.C0
-    copyMotor.C1 = originalMotor.C1
+    print("⚓ Выбрана основная часть для якорения:", anchorPartName)
+    
+    -- Применяем правильные Anchored состояния
+    local fixedParts = 0
+    local anchoredCount = 0
+    local freeCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            if obj == anchorPart then
+                obj.Anchored = true
+                anchoredCount = anchoredCount + 1
+                print("   ⚓ Заякорена:", obj.Name)
+            else
+                obj.Anchored = false
+                freeCount = freeCount + 1
+            end
+            fixedParts = fixedParts + 1
+        end
+    end
+    
+    print("✅ Исправлено частей:", fixedParts)
+    print("   ⚓ Заякоренных:", anchoredCount)
+    print("   🎭 Свободных для анимации:", freeCount)
     
     return true
 end
 
--- Функция живого копирования с умным Anchored
-local function startSmartLiveCopying(original, copy)
-    print("🔄 Запуск умного живого копирования...")
+-- Функция попытки запуска анимации
+local function tryStartAnimation(model)
+    print("\n🎬 Попытка запуска анимации...")
     
-    -- Анализируем состояние частей
-    local originalParts, origAnchored, origUnanchored = analyzeAnchored(original, "ОРИГИНАЛ")
-    local copyParts, copyAnchored, copyUnanchored = analyzeAnchored(copy, "КОПИЯ")
-    
-    -- Настраиваем умный Anchored для копии
-    local rootPart = smartAnchoredManagement(copyParts)
-    
-    -- Получаем Motor6D
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
-    
-    print("  Motor6D - Оригинал: " .. #originalMotors .. ", Копия: " .. #copyMotors)
-    
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
-    
-    -- Проверяем что части теперь могут двигаться
-    wait(0.1)
-    local _, newAnchored, newUnanchored = analyzeAnchored(copy, "КОПИЯ ПОСЛЕ НАСТРОЙКИ")
-    
-    if newUnanchored == 0 then
-        print("❌ Все части все еще заякорены! Анимация не будет работать")
-        return nil
+    local animator = model:FindFirstChildOfClass("Animator", true)
+    if not animator then
+        print("❌ Animator не найден - анимация невозможна")
+        return false
     end
     
-    print("✅ Настройка завершена, запускаю живое копирование...")
+    print("✅ Animator найден в:", animator.Parent.Name)
     
-    local connection = nil
-    local isRunning = true
-    local frameCount = 0
+    -- Проверяем активные анимации
+    local activeAnimations = animator:GetPlayingAnimationTracks()
+    print("🎭 Активных анимаций:", #activeAnimations)
     
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRunning then
-            connection:Disconnect()
-            return
+    if #activeAnimations > 0 then
+        print("✅ Анимации уже запущены!")
+        for i, track in ipairs(activeAnimations) do
+            print(string.format("   🎵 %s (Playing: %s, Looped: %s)", 
+                track.Name or "Unnamed",
+                tostring(track.IsPlaying),
+                tostring(track.Looped)
+            ))
         end
-        
-        frameCount = frameCount + 1
-        
-        -- Проверяем существование моделей
-        if not original.Parent or not copy.Parent then
-            print("⚠️ Модель удалена, останавливаю")
-            isRunning = false
-            return
-        end
-        
-        -- Копируем состояния Motor6D
-        local copiedCount = 0
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                if copyMotorState(originalMotor, copyMotor) then
-                    copiedCount = copiedCount + 1
-                end
-            end
-        end
-        
-        -- Каждые 60 кадров выводим статус
-        if frameCount % 60 == 0 then
-            print("📊 Кадр " .. frameCount .. ": скопировано " .. copiedCount .. " Motor6D")
-        end
-    end)
-    
-    print("✅ Умное живое копирование запущено!")
-    print("💡 Копия должна двигаться, но не падать")
-    print("⏰ Автостоп через 30 секунд")
-    
-    -- Автостоп
-    spawn(function()
-        wait(30)
-        isRunning = false
-        print("⏰ Умное копирование остановлено")
-    end)
-    
-    return connection
+        return true
+    else
+        print("⚠️ Нет активных анимаций")
+        print("💡 Анимации должны запускаться автоматически, если все настроено правильно")
+        return false
+    end
 end
 
 -- Основная функция
 local function main()
-    local original, copy = findModels()
+    print("🔍 Поиск масштабированных копий...")
     
-    if not original or not copy then
-        print("❌ Модели не найдены!")
-        print("💡 Убедись что есть копия с _SCALED_COPY")
+    local copies = findScaledCopies()
+    
+    if #copies == 0 then
+        print("❌ Масштабированные копии не найдены!")
+        print("💡 Сначала создайте копию с помощью PetScaler")
         return
     end
     
-    print("🎯 Найдены модели:")
-    print("  Оригинал:", original.Name)
-    print("  Копия:", copy.Name)
+    print("📊 Найдено копий:", #copies)
     print()
     
-    print("📊 ДИАГНОСТИКА:")
-    analyzeAnchored(original, "ОРИГИНАЛ")
-    analyzeAnchored(copy, "КОПИЯ ДО НАСТРОЙКИ")
-    print()
-    
-    print("🚀 ЗАПУСК УМНОГО КОПИРОВАНИЯ:")
-    local connection = startSmartLiveCopying(original, copy)
-    
-    if connection then
-        print("🎉 Умное копирование активно!")
-        print("🎮 Теперь подвигай оригинального питомца")
-        print("👀 Копия должна повторять движения, но не падать")
-    else
-        print("❌ Не удалось запустить умное копирование")
+    -- Обрабатываем каждую копию
+    for i, copy in ipairs(copies) do
+        print("🎯 === ОБРАБОТКА КОПИИ " .. i .. " ===")
+        print("📋 Модель:", copy.Name)
+        
+        -- Анализируем текущее состояние
+        local totalParts, anchoredParts, freeParts = analyzeAnchoredStates(copy)
+        local hasAnimator, hasMotor6D, motor6dCount = checkAnimationComponents(copy)
+        
+        -- Проверяем, нужно ли исправление
+        if anchoredParts == totalParts then
+            print("⚠️ ВСЕ части заякорены - анимация заблокирована!")
+            print("🔧 Требуется исправление Anchored состояний")
+            
+            -- Исправляем Anchored состояния
+            if fixAnchoredStates(copy) then
+                print("✅ Anchored состояния исправлены!")
+                
+                -- Пробуем запустить анимацию
+                wait(1) -- Небольшая задержка
+                tryStartAnimation(copy)
+            else
+                print("❌ Не удалось исправить Anchored состояния")
+            end
+        elseif anchoredParts == 1 then
+            print("✅ Anchored состояния уже правильные (1 заякоренная часть)")
+            tryStartAnimation(copy)
+        else
+            print("⚠️ Необычное состояние Anchored - проверяю...")
+            fixAnchoredStates(copy)
+            wait(1)
+            tryStartAnimation(copy)
+        end
+        
+        print("-" .. string.rep("-", 50))
     end
     
-    print("=" .. string.rep("=", 50))
+    print("\n🎉 === ОБРАБОТКА ЗАВЕРШЕНА ===")
+    print("💡 Если анимация все еще не работает, проблема может быть в:")
+    print("   • Отсутствии или повреждении Motor6D соединений")
+    print("   • Проблемах с Animator или анимационными треками")
+    print("   • Неправильном копировании анимационных данных")
 end
 
--- Запуск
-main()
+-- Создание GUI с кнопкой
+local function createGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Удаляем старый GUI если есть
+    local oldGui = playerGui:FindFirstChild("AnimationFixerGUI")
+    if oldGui then
+        oldGui:Destroy()
+    end
+    
+    -- Создаем ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AnimationFixerGUI"
+    screenGui.Parent = playerGui
+    
+    -- Создаем Frame для кнопки
+    local frame = Instance.new("Frame")
+    frame.Name = "MainFrame"
+    frame.Size = UDim2.new(0, 220, 0, 80)
+    frame.Position = UDim2.new(0, 270, 0, 50) -- Рядом с PetScaler
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(255, 100, 100) -- Красная рамка
+    frame.Parent = screenGui
+    
+    -- Создаем кнопку
+    local button = Instance.new("TextButton")
+    button.Name = "FixButton"
+    button.Size = UDim2.new(0, 200, 0, 40)
+    button.Position = UDim2.new(0, 10, 0, 20)
+    button.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+    button.BorderSizePixel = 0
+    button.Text = "🎭 Исправить Анимацию"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Font = Enum.Font.SourceSansBold
+    button.Parent = frame
+    
+    -- Обработчик нажатия кнопки
+    button.MouseButton1Click:Connect(function()
+        button.Text = "⏳ Исправляю..."
+        button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        
+        -- Запускаем основную функцию
+        spawn(function()
+            main()
+            
+            -- Возвращаем кнопку в исходное состояние
+            wait(2)
+            button.Text = "🎭 Исправить Анимацию"
+            button.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+        end)
+    end)
+    
+    -- Эффект наведения
+    button.MouseEnter:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(255, 100, 100) then
+            button.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
+        end
+    end)
+    
+    button.MouseLeave:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(220, 80, 80) then
+            button.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+        end
+    end)
+    
+    print("🖥️ AnimationFixer GUI создан! Кнопка появится рядом с PetScaler")
+end
+
+-- Запуск GUI
+createGUI()
+print("=" .. string.rep("=", 60))
+print("💡 ИНСТРУКЦИЯ:")
+print("1. Сначала используйте PetScaler для создания увеличенной копии")
+print("2. Затем нажмите 'Исправить Анимацию' для включения анимации в копии")
+print("=" .. string.rep("=", 60))
