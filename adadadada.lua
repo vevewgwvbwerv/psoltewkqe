@@ -1,251 +1,406 @@
--- ⚙️ MOTOR6D COPIER - Копирование состояний Motor6D вместо анимаций
--- Анимации rbxasset защищены, но состояния Motor6D можно копировать!
+-- 🔥 PET SCALER - Плавное увеличение питомца с сохранением анимации
+-- Находит UUID модель питомца, копирует её и плавно увеличивает
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
-print("⚙️ === MOTOR6D COPIER ===")
-print("=" .. string.rep("=", 40))
+local player = Players.LocalPlayer
 
--- Функция поиска моделей
-local function findModels()
-    local original = nil
-    local copy = nil
-    local copyUUID = nil
-    
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") and obj.Name:find("_SCALED_COPY") then
-            copy = obj
-            copyUUID = obj.Name:gsub("_SCALED_COPY", "")
-            break
-        end
-    end
-    
-    if copy then
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name == copyUUID then
-                original = obj
-                break
-            end
-        end
-    end
-    
-    return original, copy
+print("🔥 === PET SCALER - ПЛАВНОЕ УВЕЛИЧЕНИЕ ПИТОМЦА ===")
+print("=" .. string.rep("=", 60))
+
+-- Конфигурация
+local CONFIG = {
+    SEARCH_RADIUS = 100,
+    SCALE_FACTOR = 3.0,  -- Во сколько раз увеличиваем
+    TWEEN_TIME = 3.0,    -- Время анимации увеличения (секунды)
+    EASING_STYLE = Enum.EasingStyle.Quad,
+    EASING_DIRECTION = Enum.EasingDirection.Out
+}
+
+-- Получаем позицию игрока
+local playerChar = player.Character
+if not playerChar then
+    print("❌ Персонаж игрока не найден!")
+    return
 end
 
--- Функция получения всех Motor6D из модели
-local function getMotor6Ds(model)
-    local motors = {}
+local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+if not hrp then
+    print("❌ HumanoidRootPart не найден!")
+    return
+end
+
+local playerPos = hrp.Position
+print("📍 Позиция игрока:", playerPos)
+print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
+print("📏 Коэффициент увеличения:", CONFIG.SCALE_FACTOR .. "x")
+print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
+print()
+
+-- Функция проверки визуальных элементов питомца
+local function hasPetVisuals(model)
+    local meshCount = 0
+    local petMeshes = {}
     
     for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            table.insert(motors, obj)
-        end
-    end
-    
-    return motors
-end
-
--- Функция создания карты Motor6D по именам
-local function createMotorMap(motors)
-    local map = {}
-    
-    for _, motor in ipairs(motors) do
-        -- Используем имя Motor6D + имена Part0 и Part1 как ключ
-        local key = motor.Name
-        if motor.Part0 then
-            key = key .. "_" .. motor.Part0.Name
-        end
-        if motor.Part1 then
-            key = key .. "_" .. motor.Part1.Name
-        end
-        
-        map[key] = motor
-    end
-    
-    return map
-end
-
--- Функция копирования состояния одного Motor6D
-local function copyMotorState(originalMotor, copyMotor)
-    if not originalMotor or not copyMotor then
-        return false
-    end
-    
-    -- Копируем Transform (основное состояние)
-    copyMotor.Transform = originalMotor.Transform
-    
-    -- Копируем C0 и C1 (позиции соединения)
-    copyMotor.C0 = originalMotor.C0
-    copyMotor.C1 = originalMotor.C1
-    
-    -- Копируем CurrentAngle и DesiredAngle если есть
-    if originalMotor:FindFirstChild("CurrentAngle") then
-        copyMotor.CurrentAngle = originalMotor.CurrentAngle
-    end
-    if originalMotor:FindFirstChild("DesiredAngle") then
-        copyMotor.DesiredAngle = originalMotor.DesiredAngle
-    end
-    
-    return true
-end
-
--- Функция анализа Motor6D состояний
-local function analyzeMotorStates(model, modelName)
-    print("🔍 Анализ Motor6D в " .. modelName .. ":")
-    
-    local motors = getMotor6Ds(model)
-    print("  Найдено Motor6D: " .. #motors)
-    
-    for i, motor in ipairs(motors) do
-        print("  [" .. i .. "] " .. motor.Name)
-        if motor.Part0 then
-            print("    Part0: " .. motor.Part0.Name)
-        end
-        if motor.Part1 then
-            print("    Part1: " .. motor.Part1.Name)
-        end
-        print("    Transform: " .. tostring(motor.Transform))
-        print("    C0: " .. tostring(motor.C0))
-        print("    C1: " .. tostring(motor.C1))
-        print()
-    end
-    
-    return motors
-end
-
--- Функция однократного копирования состояний
-local function copyMotorStatesOnce(original, copy)
-    print("📋 Копирование состояний Motor6D (однократно)...")
-    
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
-    
-    print("  Оригинал: " .. #originalMotors .. " Motor6D")
-    print("  Копия: " .. #copyMotors .. " Motor6D")
-    
-    if #originalMotors == 0 or #copyMotors == 0 then
-        print("❌ Недостаточно Motor6D для копирования!")
-        return false
-    end
-    
-    -- Создаем карты для сопоставления
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
-    
-    local successCount = 0
-    
-    -- Копируем состояния
-    for key, originalMotor in pairs(originalMap) do
-        local copyMotor = copyMap[key]
-        if copyMotor then
-            local success = copyMotorState(originalMotor, copyMotor)
-            if success then
-                successCount = successCount + 1
-                print("  ✅ " .. key)
-            else
-                print("  ❌ " .. key)
+        if obj:IsA("MeshPart") then
+            meshCount = meshCount + 1
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or ""
+            }
+            if meshData.meshId ~= "" then
+                table.insert(petMeshes, meshData)
             end
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                textureId = obj.TextureId or ""
+            }
+            if meshData.meshId ~= "" or meshData.textureId ~= "" then
+                table.insert(petMeshes, meshData)
+            end
+        end
+    end
+    
+    return meshCount > 0, petMeshes
+end
+
+-- Функция глубокого копирования модели (ИСПРАВЛЕНО: стоит НА ЗЕМЛЕ)
+local function deepCopyModel(originalModel)
+    print("📋 Создаю глубокую копию модели:", originalModel.Name)
+    
+    local copy = originalModel:Clone()
+    copy.Name = originalModel.Name .. "_SCALED_COPY"
+    copy.Parent = Workspace
+    
+    -- ИСПРАВЛЕНО: Правильное позиционирование копии НА ЗЕМЛЕ
+    if copy.PrimaryPart and originalModel.PrimaryPart then
+        local originalCFrame = originalModel.PrimaryPart.CFrame
+        local offset = Vector3.new(15, 0, 0) -- 15 единиц в сторону по X
+        
+        -- Вычисляем позицию рядом с оригиналом
+        local targetPosition = originalCFrame.Position + offset
+        
+        -- Используем Raycast чтобы найти землю под копией
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {copy, originalModel}
+        
+        -- Луч вниз с высокой позиции
+        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            -- Найдена земля - ставим копию НА землю
+            local groundY = raycastResult.Position.Y
+            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
+            
+            -- Устанавливаем копию на землю с правильной ориентацией
+            local newCFrame = CFrame.new(finalPosition) * (originalCFrame - originalCFrame.Position)
+            copy:SetPrimaryPartCFrame(newCFrame)
+            
+            print("📍 Копия размещена НА ЗЕМЛЕ")
+            print("  Оригинал:", originalCFrame.Position)
+            print("  Копия:", finalPosition)
+            print("  Высота земли:", groundY)
         else
-            print("  ⚠️ Не найден в копии: " .. key)
+            -- Если земля не найдена, используем высоту оригинала
+            local newCFrame = originalCFrame + offset
+            copy:SetPrimaryPartCFrame(newCFrame)
+            print("📍 Копия размещена на уровне оригинала (земля не найдена)")
+        end
+        
+    elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
+        -- Fallback если нет PrimaryPart
+        local originalPos = originalModel.RootPart.Position
+        local offset = Vector3.new(15, 0, 0)
+        local targetPos = originalPos + offset
+        
+        -- Raycast для RootPart
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {copy, originalModel}
+        
+        local rayOrigin = Vector3.new(targetPos.X, targetPos.Y + 100, targetPos.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            copy.RootPart.Position = Vector3.new(targetPos.X, raycastResult.Position.Y, targetPos.Z)
+            print("📍 Копия размещена через RootPart НА ЗЕМЛЕ")
+        else
+            copy.RootPart.Position = targetPos
+            print("📍 Копия размещена через RootPart на уровне оригинала")
+        end
+    else
+        print("⚠️ Не удалось точно позиционировать копию")
+    end
+    
+    -- Дополнительно: устанавливаем Anchored для всех частей чтобы копия не падала
+    for _, part in pairs(copy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = true
         end
     end
     
-    print("✅ Скопировано состояний: " .. successCount .. "/" .. #originalMotors)
-    return successCount > 0
+    print("✅ Копия создана и закреплена:", copy.Name)
+    return copy
 end
 
--- Функция непрерывного копирования состояний (живая анимация)
-local function startLiveMotorCopying(original, copy)
-    print("🔄 Запуск живого копирования Motor6D состояний...")
-    
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
-    
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
-    
-    local connection = nil
-    local isRunning = true
-    
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRunning then
-            connection:Disconnect()
-            return
+-- Функция получения всех BasePart в модели
+local function getAllParts(model)
+    local parts = {}
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
         end
-        
-        -- Проверяем что модели еще существуют
-        if not original.Parent or not copy.Parent then
-            print("⚠️ Одна из моделей удалена, останавливаю копирование")
-            isRunning = false
-            return
-        end
-        
-        -- Копируем состояния всех Motor6D
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                copyMotorState(originalMotor, copyMotor)
-            end
-        end
-    end)
-    
-    print("✅ Живое копирование запущено!")
-    print("💡 Копия должна повторять движения оригинала в реальном времени")
-    
-    -- Останавливаем через 30 секунд для теста
-    spawn(function()
-        wait(30)
-        isRunning = false
-        print("⏰ Живое копирование остановлено через 30 секунд")
-    end)
-    
-    return connection
+    end
+    return parts
 end
 
--- Основная функция
-local function main()
-    local original, copy = findModels()
+-- Функция плавного масштабирования модели (ИСПРАВЛЕНО: через CFrame)
+local function scaleModelSmoothly(model, scaleFactor, tweenTime)
+    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
+    print("📏 Коэффициент:", scaleFactor .. "x")
+    print("⏱️ Время:", tweenTime .. " сек")
     
-    if not original or not copy then
-        print("❌ Модели не найдены!")
+    local parts = getAllParts(model)
+    print("🧩 Найдено частей для масштабирования:", #parts)
+    
+    if #parts == 0 then
+        print("❌ Нет частей для масштабирования!")
         return
     end
     
-    print("🎯 Найдены модели:")
-    print("  Оригинал:", original.Name)
-    print("  Копия:", copy.Name)
-    print()
-    
-    -- Анализируем Motor6D в обеих моделях
-    print("📊 АНАЛИЗ MOTOR6D:")
-    analyzeMotorStates(original, "ОРИГИНАЛ")
-    analyzeMotorStates(copy, "КОПИЯ")
-    
-    -- Тест 1: Однократное копирование
-    print("🧪 ТЕСТ 1: Однократное копирование состояний")
-    local success = copyMotorStatesOnce(original, copy)
-    
-    if success then
-        print("✅ Однократное копирование успешно!")
-        
-        wait(2)
-        
-        -- Тест 2: Живое копирование
-        print()
-        print("🧪 ТЕСТ 2: Живое копирование (30 секунд)")
-        print("💡 Теперь подвигай оригинального питомца - копия должна повторять!")
-        
-        local connection = startLiveMotorCopying(original, copy)
-        
+    -- Определяем центр масштабирования
+    local centerCFrame
+    if model.PrimaryPart then
+        centerCFrame = model.PrimaryPart.CFrame
+        print("🎯 Центр масштабирования: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
     else
-        print("❌ Однократное копирование не удалось")
-        print("💡 Возможно проблема в структуре Motor6D")
+        -- Если нет PrimaryPart, используем центр модели
+        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
+        if success then
+            centerCFrame = modelCFrame
+            print("🎯 Центр масштабирования: Центр модели")
+        else
+            print("❌ Не удалось определить центр масштабирования!")
+            return
+        end
     end
     
-    print("=" .. string.rep("=", 40))
+    print("📍 Центр масштабирования:", centerCFrame.Position)
+    
+    -- Сохраняем исходные данные всех частей
+    local originalData = {}
+    for _, part in ipairs(parts) do
+        originalData[part] = {
+            size = part.Size,
+            cframe = part.CFrame
+        }
+    end
+    
+    -- Создаем TweenInfo
+    local tweenInfo = TweenInfo.new(
+        tweenTime,
+        CONFIG.EASING_STYLE,
+        CONFIG.EASING_DIRECTION,
+        0, -- Повторений
+        false, -- Обратная анимация
+        0 -- Задержка
+    )
+    
+    -- ИСПРАВЛЕНО: Масштабирование через CFrame чтобы части не разлетались
+    local tweens = {}
+    local completedTweens = 0
+    
+    for _, part in ipairs(parts) do
+        local originalSize = originalData[part].size
+        local originalCFrame = originalData[part].cframe
+        
+        -- Вычисляем новый размер
+        local newSize = originalSize * scaleFactor
+        
+        -- Вычисляем новый CFrame относительно центра
+        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
+        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
+        local newCFrame = centerCFrame * scaledRelativeCFrame
+        
+        -- Создаем твин для размера и CFrame
+        local tween = TweenService:Create(part, tweenInfo, {
+            Size = newSize,
+            CFrame = newCFrame
+        })
+        
+        -- Обработчик завершения твина
+        tween.Completed:Connect(function()
+            completedTweens = completedTweens + 1
+            if completedTweens == #parts then
+                print("✅ Масштабирование завершено!")
+                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
+            end
+        end)
+        
+        table.insert(tweens, tween)
+        tween:Play()
+    end
+    
+    print("🚀 Запущено " .. #tweens .. " твинов для плавного масштабирования")
 end
 
--- Запуск
-main()
+-- Основная функция поиска и масштабирования
+local function findAndScalePet()
+    print("🔍 Поиск UUID моделей питомцев...")
+    print("-" .. string.rep("-", 40))
+    
+    local foundPets = {}
+    
+    -- Ищем UUID модели в Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            if success then
+                local distance = (modelCFrame.Position - playerPos).Magnitude
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    print("🎯 Найдена UUID модель:", obj.Name)
+                    print("📍 Расстояние:", math.floor(distance) .. " единиц")
+                    
+                    -- Проверяем визуальные элементы
+                    local hasVisuals, meshes = hasPetVisuals(obj)
+                    if hasVisuals then
+                        print("✅ Модель имеет визуальные элементы питомца!")
+                        print("🎨 Визуальных элементов:", #meshes)
+                        
+                        table.insert(foundPets, {
+                            model = obj,
+                            distance = distance,
+                            meshes = meshes
+                        })
+                    else
+                        print("❌ Модель без визуальных элементов питомца")
+                    end
+                    print()
+                end
+            end
+        end
+    end
+    
+    print("📊 Найдено подходящих питомцев:", #foundPets)
+    
+    if #foundPets == 0 then
+        print("❌ Питомцы с UUID именами и визуальными элементами не найдены!")
+        print("💡 Убедитесь что вы рядом с размещенным питомцем")
+        return
+    end
+    
+    -- Берем первого найденного питомца
+    local targetPet = foundPets[1]
+    print("🎯 Выбран питомец для масштабирования:", targetPet.model.Name)
+    print("📍 Расстояние:", math.floor(targetPet.distance) .. " единиц")
+    print()
+    
+    return targetPet.model
+end
+
+-- Основная функция скрипта
+local function main()
+    print("🚀 ПетСкалер запущен!")
+    print("🔍 Поиск питомца в радиусе " .. CONFIG.SEARCH_RADIUS .. " единиц...")
+    
+    local petModel = findAndScalePet()
+    if not petModel then
+        print("❌ Питомец не найден!")
+        return
+    end
+    
+    local petCopy = deepCopyModel(petModel)
+    if not petCopy then
+        print("❌ Не удалось создать копию!")
+        return
+    end
+    
+    -- Небольшая задержка перед масштабированием
+    wait(0.5)
+    
+    scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+end
+
+-- Создание GUI с кнопкой
+local function createGUI()
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Создаем ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PetScalerGUI"
+    screenGui.Parent = playerGui
+    
+    -- Создаем Frame для кнопки
+    local frame = Instance.new("Frame")
+    frame.Name = "MainFrame"
+    frame.Size = UDim2.new(0, 200, 0, 80)
+    frame.Position = UDim2.new(0, 50, 0, 50)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(0, 162, 255)
+    frame.Parent = screenGui
+    
+    -- Создаем кнопку
+    local button = Instance.new("TextButton")
+    button.Name = "ScaleButton"
+    button.Size = UDim2.new(0, 180, 0, 40)
+    button.Position = UDim2.new(0, 10, 0, 20)
+    button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+    button.BorderSizePixel = 0
+    button.Text = "🔥 Увеличить Питомца"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Font = Enum.Font.SourceSansBold
+    button.Parent = frame
+    
+    -- Обработчик нажатия кнопки
+    button.MouseButton1Click:Connect(function()
+        button.Text = "⏳ Обработка..."
+        button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        
+        -- Запускаем основную функцию
+        spawn(function()
+            main()
+            
+            -- Возвращаем кнопку в исходное состояние
+            wait(2)
+            button.Text = "🔥 Увеличить Питомца"
+            button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+        end)
+    end)
+    
+    -- Эффект наведения
+    button.MouseEnter:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(0, 162, 255) then
+            button.BackgroundColor3 = Color3.fromRGB(0, 140, 220)
+        end
+    end)
+    
+    button.MouseLeave:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(0, 140, 220) then
+            button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+        end
+    end)
+    
+    print("🖥️ GUI создан! Нажмите кнопку для увеличения питомца")
+end
+
+-- Запуск GUI
+createGUI()
+print("=" .. string.rep("=", 60))
