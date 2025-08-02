@@ -1,195 +1,220 @@
---[[
-    SIMPLE MODEL LISTER
-    Показывает ВСЕ модели рядом с игроком - без всякой фильтрации
-]]
+-- 🔍 ДИАГНОСТИКА СКАНИРОВАНИЯ ПИТОМЦЕВ
+-- Детальный анализ того, что происходит при поиске моделей в Workspace
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
-local foundModels = {}
 
-print("📋 Simple Model Lister загружен!")
+print("🔍 === ДИАГНОСТИКА СКАНИРОВАНИЯ ПИТОМЦЕВ ===")
+print("=" .. string.rep("=", 60))
 
--- GUI с фиксированной позицией
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "SimpleModelLister"
-screenGui.Parent = CoreGui
+-- Получаем позицию игрока
+local playerChar = player.Character
+if not playerChar then
+    print("❌ Персонаж игрока не найден!")
+    return
+end
 
-local listButton = Instance.new("TextButton")
-listButton.Size = UDim2.new(0, 180, 0, 40)
-listButton.Position = UDim2.new(0, 10, 0, 100)  -- ФИКСИРОВАННАЯ позиция
-listButton.BackgroundColor3 = Color3.new(1, 0.5, 0)
-listButton.Text = "📋 LIST ALL MODELS"
-listButton.TextColor3 = Color3.new(1, 1, 1)
-listButton.TextScaled = true
-listButton.Font = Enum.Font.GothamBold
-listButton.Parent = screenGui
+local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+if not hrp then
+    print("❌ HumanoidRootPart не найден!")
+    return
+end
 
-local copyButton = Instance.new("TextButton")
-copyButton.Size = UDim2.new(0, 180, 0, 40)
-copyButton.Position = UDim2.new(0, 200, 0, 100)  -- ФИКСИРОВАННАЯ позиция
-copyButton.BackgroundColor3 = Color3.new(0, 1, 0)
-copyButton.Text = "🎯 COPY MODEL #1"
-copyButton.TextColor3 = Color3.new(1, 1, 1)
-copyButton.TextScaled = true
-copyButton.Font = Enum.Font.GothamBold
-copyButton.Parent = screenGui
+local playerPos = hrp.Position
+print("📍 Позиция игрока:", playerPos)
 
--- Функция показа ВСЕХ моделей рядом
-local function listAllModels()
-    print("\n📋 === ВСЕ МОДЕЛИ РЯДОМ С ИГРОКОМ ===")
+-- Настройки поиска
+local SEARCH_RADIUS = 50
+local petPartNames = {"Tail", "Mouth", "Jaw", "LeftEye", "RightEye", "LeftEar", "RightEar", "ColourSpot", "PetMover", "Head", "Body", "Ear", "Eye"}
+
+print("🎯 Радиус поиска:", SEARCH_RADIUS)
+print("🔍 Ищем части:", table.concat(petPartNames, ", "))
+print()
+
+-- Этап 1: Анализ всех объектов в Workspace
+print("📊 ЭТАП 1: АНАЛИЗ ВСЕХ ОБЪЕКТОВ В WORKSPACE")
+print("-" .. string.rep("-", 50))
+
+local totalObjects = 0
+local modelsFound = 0
+local partsFound = 0
+local nearbyObjects = 0
+
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    totalObjects = totalObjects + 1
     
-    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-        print("❌ Character не найден!")
-        return
-    end
-    
-    local playerPos = player.Character.HumanoidRootPart.Position
-    foundModels = {}
-    
-    -- Показываем ВСЕ модели в радиусе 30 единиц
-    for i, child in pairs(Workspace:GetChildren()) do
-        if child:IsA("Model") and child ~= player.Character then
-            
-            local modelPos = nil
-            local partCount = 0
-            
-            -- Находим любую BasePart для определения позиции
-            for _, part in pairs(child:GetChildren()) do
-                if part:IsA("BasePart") then
-                    if not modelPos then
-                        modelPos = part.Position
+    if obj:IsA("Model") then
+        modelsFound = modelsFound + 1
+        
+        -- Проверяем расстояние для моделей
+        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+        if success then
+            local distance = (modelCFrame.Position - playerPos).Magnitude
+            if distance <= SEARCH_RADIUS then
+                nearbyObjects = nearbyObjects + 1
+                print("  📦 Модель рядом:", obj.Name, "| Расстояние:", math.floor(distance))
+                
+                -- Анализируем части модели
+                local modelParts = {}
+                for _, child in ipairs(obj:GetChildren()) do
+                    if child:IsA("BasePart") then
+                        table.insert(modelParts, child.Name .. " (T:" .. math.floor(child.Transparency * 100) .. "%)")
                     end
-                    partCount = partCount + 1
+                end
+                
+                if #modelParts > 0 then
+                    print("    🧩 Части:", table.concat(modelParts, ", "))
                 end
             end
-            
-            if modelPos then
-                local distance = (modelPos - playerPos).Magnitude
+        end
+    elseif obj:IsA("BasePart") then
+        partsFound = partsFound + 1
+        
+        local distance = (obj.Position - playerPos).Magnitude
+        if distance <= SEARCH_RADIUS then
+            -- Проверяем, является ли это частью питомца
+            for _, petPartName in ipairs(petPartNames) do
+                if obj.Name == petPartName or obj.Name:find(petPartName) then
+                    print("  🎯 НАЙДЕНА ЧАСТЬ ПИТОМЦА:", obj.Name, "| Родитель:", obj.Parent and obj.Parent.Name or "НЕТ", "| Расстояние:", math.floor(distance))
+                    break
+                end
+            end
+        end
+    end
+end
+
+print()
+print("📈 СТАТИСТИКА WORKSPACE:")
+print("  📊 Всего объектов:", totalObjects)
+print("  📦 Моделей:", modelsFound)
+print("  🧩 Частей:", partsFound)
+print("  📍 Объектов рядом:", nearbyObjects)
+print()
+
+-- Этап 2: Поиск моделей с UUID именами
+print("📊 ЭТАП 2: ПОИСК МОДЕЛЕЙ С UUID ИМЕНАМИ")
+print("-" .. string.rep("-", 50))
+
+local uuidModels = {}
+
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+        if success then
+            local distance = (modelCFrame.Position - playerPos).Magnitude
+            if distance <= SEARCH_RADIUS then
+                table.insert(uuidModels, {
+                    model = obj,
+                    name = obj.Name,
+                    distance = distance
+                })
                 
-                if distance < 30 then  -- В радиусе 30 единиц
-                    table.insert(foundModels, child)
-                    
-                    print("📦 #" .. #foundModels .. ": " .. child.Name)
-                    print("   📏 Расстояние: " .. string.format("%.1f", distance))
-                    print("   🧱 Частей: " .. partCount)
-                    
-                    -- Показываем первые 3 части
-                    local showCount = 0
-                    for _, part in pairs(child:GetChildren()) do
-                        if part:IsA("BasePart") and showCount < 3 then
-                            showCount = showCount + 1
-                            print("     - " .. part.Name .. " (" .. tostring(part.Size) .. ")")
+                print("  🆔 UUID Модель:", obj.Name, "| Расстояние:", math.floor(distance))
+                
+                -- Детальный анализ частей
+                local petParts = {}
+                local visibleParts = 0
+                local totalParts = 0
+                
+                for _, child in ipairs(obj:GetChildren()) do
+                    if child:IsA("BasePart") then
+                        totalParts = totalParts + 1
+                        if child.Transparency < 1 then
+                            visibleParts = visibleParts + 1
+                        end
+                        
+                        for _, petPartName in ipairs(petPartNames) do
+                            if child.Name == petPartName or child.Name:find(petPartName) then
+                                table.insert(petParts, child.Name)
+                                break
+                            end
                         end
                     end
-                    print("")
+                end
+                
+                print("    📊 Частей всего:", totalParts, "| Видимых:", visibleParts, "| Частей питомца:", #petParts)
+                if #petParts > 0 then
+                    print("    🐾 Части питомца:", table.concat(petParts, ", "))
+                end
+                
+                -- Проверяем PrimaryPart
+                if obj.PrimaryPart then
+                    print("    ✅ PrimaryPart:", obj.PrimaryPart.Name)
+                else
+                    print("    ❌ PrimaryPart отсутствует")
+                end
+            end
+        end
+    end
+end
+
+print()
+print("📈 НАЙДЕНО UUID МОДЕЛЕЙ:", #uuidModels)
+print()
+
+-- Этап 3: Тестирование логики определения питомцев
+print("📊 ЭТАП 3: ТЕСТИРОВАНИЕ ЛОГИКИ ОПРЕДЕЛЕНИЯ ПИТОМЦЕВ")
+print("-" .. string.rep("-", 50))
+
+for i, modelInfo in ipairs(uuidModels) do
+    local obj = modelInfo.model
+    print("🧪 Тестируем модель #" .. i .. ":", obj.Name)
+    
+    -- Применяем ту же логику, что и в основном скрипте
+    local hasPetParts = false
+    local petPartNames_check = {"Tail", "Mouth", "Jaw", "Eye", "Ear", "Body", "Head", "PetMover"}
+    local visibleParts = 0
+    
+    for _, child in ipairs(obj:GetChildren()) do
+        if child:IsA("BasePart") then
+            if child.Transparency < 1 then
+                visibleParts = visibleParts + 1
+            end
+            
+            for _, petPartName in ipairs(petPartNames_check) do
+                if child.Name:find(petPartName) then
+                    hasPetParts = true
+                    print("    ✅ Найдена часть питомца:", child.Name, "| Прозрачность:", child.Transparency)
+                    break
                 end
             end
         end
     end
     
-    print("📊 Найдено моделей: " .. #foundModels)
+    print("    📊 Результат: hasPetParts =", hasPetParts, "| visibleParts =", visibleParts)
     
-    if #foundModels > 0 then
-        print("✅ Теперь можешь скопировать любую модель!")
-        print("🎯 Нажми COPY MODEL #1 чтобы скопировать первую модель")
+    if hasPetParts and visibleParts >= 5 then
+        print("    ✅ МОДЕЛЬ ПРОШЛА ПРОВЕРКУ - это питомец!")
     else
-        print("❌ Модели рядом не найдены!")
-    end
-end
-
--- Функция копирования первой найденной модели
-local function copyFirstModel()
-    print("\n🎯 === КОПИРОВАНИЕ ПЕРВОЙ МОДЕЛИ ===")
-    
-    if #foundModels == 0 then
-        print("❌ Сначала найди модели!")
-        return
-    end
-    
-    local model = foundModels[1]
-    print("📦 Копирую модель: " .. model.Name)
-    
-    -- Клонируем модель
-    local clone = model:Clone()
-    clone.Name = "TestClone"
-    
-    -- Ставим рядом с игроком
-    local playerPos = player.Character.HumanoidRootPart.Position
-    local targetPos = playerPos + Vector3.new(3, 3, 0)
-    
-    if clone.PrimaryPart then
-        clone:SetPrimaryPartCFrame(CFrame.new(targetPos))
-    else
-        clone:MoveTo(targetPos)
-    end
-    
-    clone.Parent = Workspace
-    print("🌍 Клон добавлен в Workspace")
-    
-    -- Простая анимация роста
-    local parts = {}
-    local originalSizes = {}
-    
-    for _, part in pairs(clone:GetDescendants()) do
-        if part:IsA("BasePart") then
-            table.insert(parts, part)
-            originalSizes[part] = part.Size
-            part.Size = part.Size / 1.88
-            part.Transparency = 0.8
-            part.Anchored = true
-            part.CanCollide = false
+        print("    ❌ Модель НЕ прошла проверку")
+        if not hasPetParts then
+            print("      - Не найдены части питомца")
+        end
+        if visibleParts < 5 then
+            print("      - Недостаточно видимых частей (" .. visibleParts .. " < 5)")
         end
     end
-    
-    print("📊 Анимирую " .. #parts .. " частей...")
-    
-    -- Анимация
-    for i = 1, 15 do
-        local progress = i / 15
-        local sizeMultiplier = (1/1.88) + ((1 - 1/1.88) * progress)
-        local transparency = 0.8 - (0.8 * progress)
-        
-        for _, part in pairs(parts) do
-            if part and part.Parent then
-                part.Size = originalSizes[part] * sizeMultiplier
-                part.Transparency = transparency
-            end
-        end
-        
-        wait(0.1)
-    end
-    
-    print("✅ Анимация завершена!")
-    
-    -- Удаляем через 3 секунды
-    wait(3)
-    clone:Destroy()
-    print("🗑️ Клон удален")
+    print()
 end
 
--- Обработчики кнопок
-listButton.MouseButton1Click:Connect(function()
-    listButton.Text = "⏳ LISTING..."
-    spawn(function()
-        listAllModels()
-        wait(1)
-        listButton.Text = "📋 LIST ALL MODELS"
-    end)
-end)
+-- Этап 4: Рекомендации
+print("💡 РЕКОМЕНДАЦИИ:")
+print("-" .. string.rep("-", 30))
 
-copyButton.MouseButton1Click:Connect(function()
-    copyButton.Text = "⏳ COPYING..."
-    spawn(function()
-        copyFirstModel()
-        wait(1)
-        copyButton.Text = "🎯 COPY MODEL #1"
-    end)
-end)
+if #uuidModels == 0 then
+    print("❌ UUID модели не найдены - проверьте:")
+    print("  1. Находитесь ли вы рядом с питомцами?")
+    print("  2. Правильно ли определяется позиция игрока?")
+    print("  3. Достаточен ли радиус поиска?")
+elseif #uuidModels > 0 then
+    print("✅ UUID модели найдены, но логика определения может быть неточной")
+    print("  1. Проверьте названия частей питомцев")
+    print("  2. Возможно, нужно изменить критерии определения")
+    print("  3. Рассмотрите снижение порога visibleParts")
+end
 
-print("🎯 Simple Model Lister готов!")
-print("📋 1. Нажми LIST ALL MODELS")
-print("📋 2. Посмотри в консоль - там будут ВСЕ модели рядом")
-print("📋 3. Нажми COPY MODEL #1 для анимации")
+print()
+print("🎯 ДИАГНОСТИКА ЗАВЕРШЕНА")
+print("=" .. string.rep("=", 60))
