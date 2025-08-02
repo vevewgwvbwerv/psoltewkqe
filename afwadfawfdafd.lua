@@ -1,214 +1,216 @@
---[[
-    NEARBY PET SCANNER
-    Находит питомца рядом с игроком и копирует его
-]]
+-- 🔍 COPY DIAGNOSTICS - Диагностика проблем с копией питомца
+-- Анализирует что происходит с копией после создания и попытки восстановления анимации
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
 
-local player = Players.LocalPlayer
+print("🔍 === COPY DIAGNOSTICS ===")
+print("=" .. string.rep("=", 40))
 
-print("🔍 Nearby Pet Scanner загружен!")
-
--- Простой GUI с кнопкой
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "NearbyPetScanner"
-screenGui.Parent = CoreGui
-
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 200, 0, 50)
-button.Position = UDim2.new(0, 10, 0, 490)
-button.BackgroundColor3 = Color3.new(0, 0.5, 1)
-button.Text = "🔍 SCAN NEARBY PET"
-button.TextColor3 = Color3.new(1, 1, 1)
-button.TextScaled = true
-button.Font = Enum.Font.GothamBold
-button.Parent = screenGui
-
--- Функция поиска ближайшего питомца
-local function findNearbyPet()
-    print("\n🔍 === ПОИСК БЛИЖАЙШЕГО ПИТОМЦА ===")
+-- Функция поиска оригинала и копии
+local function findModels()
+    local original = nil
+    local copy = nil
     
-    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-        print("❌ Character не найден!")
-        return nil
-    end
-    
-    local playerPosition = player.Character.HumanoidRootPart.Position
-    print("📍 Позиция игрока: " .. tostring(playerPosition))
-    
-    local closestPet = nil
-    local closestDistance = math.huge
-    
-    -- Сканируем ВСЕ модели в Workspace
-    for _, child in pairs(Workspace:GetChildren()) do
-        if child:IsA("Model") and child ~= player.Character then
-            
-            -- Проверяем есть ли у модели части
-            local hasParts = false
-            local modelCenter = nil
-            
-            for _, part in pairs(child:GetChildren()) do
-                if part:IsA("BasePart") then
-                    hasParts = true
-                    if not modelCenter then
-                        modelCenter = part.Position
-                    end
-                    break
-                end
-            end
-            
-            if hasParts and modelCenter then
-                local distance = (modelCenter - playerPosition).Magnitude
-                
-                -- Ищем модели в радиусе 50 единиц
-                if distance < 50 then
-                    print("🐾 Найдена модель: " .. child.Name .. " (расстояние: " .. string.format("%.1f", distance) .. ")")
-                    
-                    -- Показываем структуру модели
-                    local partCount = 0
-                    for _, part in pairs(child:GetChildren()) do
-                        if part:IsA("BasePart") then
-                            partCount = partCount + 1
-                            if partCount <= 3 then  -- Показываем только первые 3 части
-                                print("  📦 " .. part.Name .. " (Size: " .. tostring(part.Size) .. ")")
-                            end
-                        end
-                    end
-                    print("  📊 Всего частей: " .. partCount)
-                    
-                    -- Выбираем ближайшую модель с наибольшим количеством частей
-                    if distance < closestDistance and partCount > 1 then
-                        closestDistance = distance
-                        closestPet = child
-                    end
-                end
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            if obj.Name:find("_SCALED_COPY") then
+                copy = obj
+            else
+                original = obj
             end
         end
     end
     
-    if closestPet then
-        print("✅ Выбран ближайший питомец: " .. closestPet.Name)
-        print("📏 Расстояние: " .. string.format("%.1f", closestDistance) .. " единиц")
-        return closestPet
-    else
-        print("❌ Питомец рядом не найден!")
-        print("💡 Попробуй:")
-        print("  1. Подойди ближе к питомцу")
-        print("  2. Выпусти питомца из Tool")
-        print("  3. Повтори сканирование")
-        return nil
-    end
+    return original, copy
 end
 
--- Функция анимации найденного питомца
-local function animateNearbyPet()
-    print("\n🎯 === АНИМАЦИЯ БЛИЖАЙШЕГО ПИТОМЦА ===")
+-- Функция диагностики модели
+local function diagnoseModel(model, modelType)
+    print("🔍 ДИАГНОСТИКА " .. modelType .. ":", model.Name)
+    print("-" .. string.rep("-", 30))
     
-    local nearbyPet = findNearbyPet()
-    if not nearbyPet then return end
-    
-    -- Клонируем найденного питомца
-    local petClone = nearbyPet:Clone()
-    petClone.Name = "NearbyPetClone"
-    
-    -- Позиционируем клон рядом с игроком
-    local playerPos = player.Character.HumanoidRootPart.Position
-    local targetPos = playerPos + Vector3.new(3, 5, 0)  -- 3 вправо, 5 вверх
-    
-    if petClone.PrimaryPart then
-        petClone:SetPrimaryPartCFrame(CFrame.new(targetPos))
-        print("📍 Позиционировал через PrimaryPart")
-    else
-        petClone:MoveTo(targetPos)
-        print("📍 Позиционировал через MoveTo")
-    end
-    
-    petClone.Parent = Workspace
-    print("🌍 Клон добавлен в Workspace")
-    
-    -- Подготавливаем все части к анимации
-    local originalSizes = {}
     local parts = {}
+    local motor6Ds = {}
+    local animations = {}
     
-    for _, part in pairs(petClone:GetDescendants()) do
-        if part:IsA("BasePart") then
-            table.insert(parts, part)
-            originalSizes[part] = part.Size
-            
-            -- Устанавливаем начальные параметры
-            part.Size = part.Size / 1.88  -- Маленький размер (как в записи)
-            part.Transparency = 0.8       -- Полупрозрачный
-            part.Anchored = true          -- Фиксируем
-            part.CanCollide = false       -- Убираем коллизию
-        end
-    end
-    
-    print("📊 Подготовлено " .. #parts .. " частей к анимации")
-    
-    -- Ждем 1 секунду
-    wait(1)
-    print("⏰ Начинаю анимацию роста питомца...")
-    
-    -- Анимация роста (точно как в записи яйца)
-    local steps = 20
-    
-    for i = 1, steps do
-        local progress = i / steps
-        local sizeMultiplier = (1/1.88) + ((1 - 1/1.88) * progress)  -- От 1/1.88 до 1
-        local transparency = 0.8 - (0.8 * progress)  -- От 0.8 до 0
-        
-        for _, part in pairs(parts) do
-            if part and part.Parent then
-                part.Size = originalSizes[part] * sizeMultiplier
-                part.Transparency = transparency
+    -- Собираем информацию о частях
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, {
+                name = obj.Name,
+                anchored = obj.Anchored,
+                position = obj.Position,
+                size = obj.Size,
+                parent = obj.Parent.Name,
+                visible = obj.Transparency < 1
+            })
+        elseif obj:IsA("Motor6D") then
+            table.insert(motor6Ds, {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "NIL",
+                part1 = obj.Part1 and obj.Part1.Name or "NIL",
+                currentAngle = obj.CurrentAngle,
+                enabled = obj.Enabled
+            })
+        elseif obj:IsA("Animator") then
+            local tracks = obj:GetPlayingAnimationTracks()
+            for _, track in ipairs(tracks) do
+                table.insert(animations, {
+                    name = track.Name,
+                    id = track.Animation and track.Animation.AnimationId or "N/A",
+                    playing = track.IsPlaying,
+                    speed = track.Speed
+                })
             end
         end
-        
-        if i % 5 == 0 then
-            print("🔄 Рост: " .. string.format("%.0f", progress * 100) .. "% (размер: " .. string.format("%.2f", sizeMultiplier) .. "x)")
-        end
-        
-        wait(0.1)
     end
     
-    print("✅ Анимация роста завершена!")
-    print("🎯 Теперь это НАСТОЯЩИЙ питомец с правильной анимацией!")
+    -- Выводим статистику
+    print("📊 СТАТИСТИКА:")
+    print("  BaseParts:", #parts)
+    print("  Motor6D:", #motor6Ds)
+    print("  Активных анимаций:", #animations)
+    print()
     
-    -- Ждем 4 секунды (как в оригинале)
-    wait(4)
-    
-    -- Исчезновение
-    print("💥 Питомец исчезает...")
-    for i = 1, 10 do
-        for _, part in pairs(parts) do
-            if part and part.Parent then
-                part.Transparency = i / 10
-            end
+    -- Анализируем части
+    print("🧩 ЧАСТИ:")
+    local anchoredCount = 0
+    local visibleCount = 0
+    for i, part in ipairs(parts) do
+        local status = ""
+        if part.anchored then 
+            status = status .. "[ANCHORED] "
+            anchoredCount = anchoredCount + 1
         end
-        wait(0.1)
+        if not part.visible then 
+            status = status .. "[INVISIBLE] "
+        else
+            visibleCount = visibleCount + 1
+        end
+        
+        print("  [" .. i .. "] " .. part.name .. " " .. status)
+        print("    Pos: " .. tostring(part.position))
+        print("    Size: " .. tostring(part.size))
     end
+    print("  Закреплено:", anchoredCount .. "/" .. #parts)
+    print("  Видимых:", visibleCount .. "/" .. #parts)
+    print()
     
-    petClone:Destroy()
-    print("🗑️ Анимация завершена!")
+    -- Анализируем Motor6D
+    print("🔧 MOTOR6D СОЕДИНЕНИЯ:")
+    local workingMotors = 0
+    for i, motor in ipairs(motor6Ds) do
+        local status = ""
+        if motor.part0 == "NIL" or motor.part1 == "NIL" then
+            status = "[BROKEN] "
+        else
+            workingMotors = workingMotors + 1
+            status = "[OK] "
+        end
+        
+        if not motor.enabled then
+            status = status .. "[DISABLED] "
+        end
+        
+        print("  [" .. i .. "] " .. motor.name .. " " .. status)
+        print("    " .. motor.part0 .. " -> " .. motor.part1)
+        print("    Angle: " .. motor.currentAngle)
+    end
+    print("  Рабочих моторов:", workingMotors .. "/" .. #motor6Ds)
+    print()
+    
+    -- Анализируем анимации
+    print("🎬 АНИМАЦИИ:")
+    if #animations == 0 then
+        print("  ❌ Нет активных анимаций")
+    else
+        for i, anim in ipairs(animations) do
+            print("  [" .. i .. "] " .. anim.name)
+            print("    ID: " .. anim.id)
+            print("    Playing: " .. tostring(anim.playing))
+            print("    Speed: " .. anim.speed)
+        end
+    end
+    print()
+    
+    return {
+        parts = parts,
+        motor6Ds = motor6Ds,
+        animations = animations,
+        stats = {
+            totalParts = #parts,
+            anchoredParts = anchoredCount,
+            visibleParts = visibleCount,
+            workingMotors = workingMotors,
+            activeAnimations = #animations
+        }
+    }
 end
 
--- Обработчик кнопки
-button.MouseButton1Click:Connect(function()
-    button.Text = "⏳ SCANNING..."
-    button.BackgroundColor3 = Color3.new(1, 1, 0)
+-- Функция сравнения моделей
+local function compareModels(originalData, copyData)
+    print("⚖️ СРАВНЕНИЕ ОРИГИНАЛА И КОПИИ:")
+    print("-" .. string.rep("-", 30))
     
-    spawn(function()
-        animateNearbyPet()
-        
-        wait(1)
-        button.Text = "🔍 SCAN NEARBY PET"
-        button.BackgroundColor3 = Color3.new(0, 0.5, 1)
-    end)
-end)
+    print("📊 Статистика:")
+    print("  Части - Оригинал:", originalData.stats.totalParts, "| Копия:", copyData.stats.totalParts)
+    print("  Видимые части - Оригинал:", originalData.stats.visibleParts, "| Копия:", copyData.stats.visibleParts)
+    print("  Закрепленные - Оригинал:", originalData.stats.anchoredParts, "| Копия:", copyData.stats.anchoredParts)
+    print("  Рабочие моторы - Оригинал:", originalData.stats.workingMotors, "| Копия:", copyData.stats.workingMotors)
+    print("  Анимации - Оригинал:", originalData.stats.activeAnimations, "| Копия:", copyData.stats.activeAnimations)
+    print()
+    
+    -- Ищем пропавшие части
+    print("🔍 АНАЛИЗ ПРОПАВШИХ ЧАСТЕЙ:")
+    for _, originalPart in ipairs(originalData.parts) do
+        local found = false
+        for _, copyPart in ipairs(copyData.parts) do
+            if copyPart.name == originalPart.name then
+                found = true
+                if not copyPart.visible and originalPart.visible then
+                    print("  ⚠️ Часть стала невидимой:", copyPart.name)
+                end
+                break
+            end
+        end
+        if not found then
+            print("  ❌ Часть пропала:", originalPart.name)
+        end
+    end
+    print()
+end
 
-print("🎯 Nearby Pet Scanner готов!")
-print("📋 1. Подойди к питомцу")
-print("📋 2. Нажми SCAN NEARBY PET")
-print("📋 3. Смотри на анимацию роста!")
+-- Основная функция
+local function main()
+    local original, copy = findModels()
+    
+    if not original then
+        print("❌ Оригинальный питомец не найден!")
+        return
+    end
+    
+    if not copy then
+        print("❌ Копия питомца не найдена!")
+        print("💡 Сначала создайте копию через PetScaler")
+        return
+    end
+    
+    print("🎯 Найдены модели:")
+    print("  Оригинал:", original.Name)
+    print("  Копия:", copy.Name)
+    print()
+    
+    -- Диагностируем оба
+    local originalData = diagnoseModel(original, "ОРИГИНАЛ")
+    local copyData = diagnoseModel(copy, "КОПИЯ")
+    
+    -- Сравниваем
+    compareModels(originalData, copyData)
+    
+    print("🔍 ДИАГНОСТИКА ЗАВЕРШЕНА!")
+    print("=" .. string.rep("=", 40))
+end
+
+-- Запуск
+main()
