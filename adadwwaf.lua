@@ -1,302 +1,349 @@
---[[
-    FIXED ANIMATION RECORDER
-    Исправленная версия без ошибок
-]]
+-- 🔬 ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА
+-- Использует РАБОЧУЮ логику поиска из RealPetModelFinder.lua и PetTypeAnalyzer.lua
+-- Ищет питомцев по наличию MeshPart/SpecialMesh, а НЕ по UUID именам!
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
-local isRecording = false
-local animationData = {}
-local currentRecording = nil
-local recordingConnection = nil
 
--- GUI для управления
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FixedAnimationRecorder"
-screenGui.Parent = CoreGui
+print("🔬 === ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА ===")
+print("=" .. string.rep("=", 70))
+print("🎯 Использует РАБОЧУЮ логику из RealPetModelFinder.lua")
+print("🔍 Ищет модели с MeshPart/SpecialMesh (визуальные элементы)")
+print()
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 400, 0, 500)
-frame.Position = UDim2.new(0, 10, 0, 10)
-frame.BackgroundColor3 = Color3.new(0, 0, 0)
-frame.BackgroundTransparency = 0.2
-frame.BorderSizePixel = 0
-frame.Parent = screenGui
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 30)
-title.Position = UDim2.new(0, 0, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "🎬 FIXED ANIMATION RECORDER"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.TextScaled = true
-title.Font = Enum.Font.GothamBold
-title.Parent = frame
-
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, 0, 0, 25)
-statusLabel.Position = UDim2.new(0, 0, 0, 35)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: Ready to record"
-statusLabel.TextColor3 = Color3.new(1, 1, 1)
-statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.Parent = frame
-
-local recordButton = Instance.new("TextButton")
-recordButton.Size = UDim2.new(0.8, 0, 0, 40)
-recordButton.Position = UDim2.new(0.1, 0, 0, 65)
-recordButton.BackgroundColor3 = Color3.new(1, 0, 0)
-recordButton.Text = "🔴 START RECORDING"
-recordButton.TextColor3 = Color3.new(1, 1, 1)
-recordButton.TextScaled = true
-recordButton.Font = Enum.Font.Gotham
-recordButton.Parent = frame
-
-local logFrame = Instance.new("ScrollingFrame")
-logFrame.Size = UDim2.new(1, -10, 1, -120)
-logFrame.Position = UDim2.new(0, 5, 0, 115)
-logFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-logFrame.BorderSizePixel = 0
-logFrame.ScrollBarThickness = 8
-logFrame.Parent = frame
-
-local logText = Instance.new("TextLabel")
-logText.Size = UDim2.new(1, -10, 1, 0)
-logText.Position = UDim2.new(0, 5, 0, 0)
-logText.BackgroundTransparency = 1
-logText.Text = "Готов к записи анимации...\n"
-logText.TextColor3 = Color3.new(1, 1, 1)
-logText.TextSize = 11
-logText.Font = Enum.Font.Code
-logText.TextXAlignment = Enum.TextXAlignment.Left
-logText.TextYAlignment = Enum.TextYAlignment.Top
-logText.TextWrapped = true
-logText.Parent = logFrame
-
-local function log(message)
-    local timestamp = string.format("%.2f", tick())
-    logText.Text = logText.Text .. "[" .. timestamp .. "] " .. message .. "\n"
-    logFrame.CanvasSize = UDim2.new(0, 0, 0, logText.TextBounds.Y)
-    logFrame.CanvasPosition = Vector2.new(0, logFrame.CanvasSize.Y.Offset)
+-- Получаем позицию игрока
+local playerChar = player.Character
+if not playerChar then
+    print("❌ Персонаж игрока не найден!")
+    return
 end
 
--- Безопасная функция записи состояния модели
-local function recordModelState(model, frameTime)
-    local state = {
-        time = frameTime,
-        parts = {},
-        modelExists = true
-    }
+local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+if not hrp then
+    print("❌ HumanoidRootPart не найден!")
+    return
+end
+
+local playerPos = hrp.Position
+local SEARCH_RADIUS = 100 -- Увеличиваем радиус
+
+print("📍 Позиция игрока:", playerPos)
+print("🎯 Радиус поиска:", SEARCH_RADIUS)
+print()
+
+-- РАБОЧАЯ логика поиска из RealPetModelFinder.lua - поиск по MeshPart/SpecialMesh
+print("🔍 ПОИСК ПИТОМЦЕВ ПО ВИЗУАЛЬНЫМ ЭЛЕМЕНТАМ (как в RealPetModelFinder.lua)...")
+print("-" .. string.rep("-", 50))
+
+-- Функция проверки визуальных элементов питомца (ИСПРАВЛЕННАЯ)
+local function hasPetVisuals(model)
+    local meshCount = 0
+    local petMeshes = {}
     
-    -- Проверяем что модель существует
-    if not model or not model.Parent then
-        state.modelExists = false
-        return state
-    end
-    
-    -- Безопасно записываем состояние каждой части
-    local success, error = pcall(function()
-        for _, part in ipairs(model:GetDescendants()) do
-            if part and part:IsA("BasePart") and part.Parent then
-                local partName = part.Name or "UnknownPart"
-                state.parts[partName] = {
-                    size = part.Size or Vector3.new(1,1,1),
-                    position = part.Position or Vector3.new(0,0,0),
-                    transparency = part.Transparency or 0,
-                    canCollide = part.CanCollide or false
-                }
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") then
+            meshCount = meshCount + 1
+            
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                textureId = "" -- MeshPart не имеет TextureId
+            }
+            
+            -- Проверяем, есть ли реальные ID
+            if meshData.meshId ~= "" then
+                table.insert(petMeshes, meshData)
+            end
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                textureId = obj.TextureId or "" -- SpecialMesh имеет TextureId
+            }
+            
+            -- Проверяем, есть ли реальные ID
+            if meshData.meshId ~= "" or meshData.textureId ~= "" then
+                table.insert(petMeshes, meshData)
             end
         end
-        
-        -- Записываем общие свойства модели
-        if model.PrimaryPart then
-            state.primaryPart = {
-                size = model.PrimaryPart.Size,
-                position = model.PrimaryPart.Position,
-                transparency = model.PrimaryPart.Transparency
-            }
+    end
+    
+    return meshCount > 0, petMeshes
+end
+
+-- Функция анализа потенциального питомца (из RealPetModelFinder.lua)
+local function analyzePotentialPet(model)
+    print("🐾 АНАЛИЗ ПОТЕНЦИАЛЬНОГО ПИТОМЦА: " .. model.Name)
+    
+    local hasVisuals, meshes = hasPetVisuals(model)
+    
+    if hasVisuals then
+        print("    🎨 НАЙДЕНЫ ВИЗУАЛЬНЫЕ ЭЛЕМЕНТЫ ПИТОМЦА!")
+        for i, mesh in pairs(meshes) do
+            print(string.format("    🎨 Меш %d: %s (%s)", i, mesh.name, mesh.className))
+            if mesh.meshId ~= "" then
+                print("      🆔 MeshId: " .. mesh.meshId)
+            end
+            if mesh.textureId ~= "" then
+                print("      🖼️ TextureId: " .. mesh.textureId)
+            end
         end
-        
-        -- Пытаемся получить размер модели
-        local success2, modelSize = pcall(function()
-            return model:GetExtentsSize()
-        end)
+        return true, meshes
+    else
+        print("    ❌ Визуальных элементов питомца не найдено")
+        return false, {}
+    end
+end
+
+local foundPetModels = {}
+
+-- Сканируем все модели в Workspace (как в RealPetModelFinder.lua)
+for _, obj in pairs(Workspace:GetDescendants()) do
+    if obj:IsA("Model") and obj ~= player.Character then
+        -- Проверяем расстояние
+        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+        if success then
+            local distance = (modelCFrame.Position - playerPos).Magnitude
+            if distance <= SEARCH_RADIUS then
+                -- Пропускаем EggExplode и модели инвентаря
+                if obj.Name == "EggExplode" or obj.Name:find("Inventory") then
+                    continue
+                end
+                
+                -- Проверяем на наличие визуала питомца
+                local isPet, meshes = analyzePotentialPet(obj)
+                
+                if isPet then
+                    print("🔥 НАСТОЯЩАЯ МОДЕЛЬ ПИТОМЦА НАЙДЕНА!")
+                    
+                    local petData = {
+                        model = obj,
+                        name = obj.Name,
+                        distance = distance,
+                        meshes = meshes
+                    }
+                    
+                    table.insert(foundPetModels, petData)
+                    
+                    print("    📊 Расстояние: " .. math.floor(distance) .. " единиц")
+                    print("    🎨 Визуальных элементов: " .. #meshes)
+                    
+                    -- Проверяем PrimaryPart
+                    if obj.PrimaryPart then
+                        print("    ✅ PrimaryPart: " .. obj.PrimaryPart.Name)
+                    else
+                        print("    ❌ PrimaryPart отсутствует")
+                    end
+                    print()
+                end
+            end
+        end
+    end
+end
+
+print()
+print("📈 НАЙДЕНО МОДЕЛЕЙ ПИТОМЦЕВ: " .. #foundPetModels)
+print()
+
+if #foundPetModels == 0 then
+    print("❌ Модели питомцев с визуальными элементами не найдены!")
+    print("💡 Убедитесь, что:")
+    print("  1. Вы находитесь рядом с питомцем")
+    print("  2. Питомец имеет MeshPart или SpecialMesh")
+    print("  3. Радиус поиска достаточен (" .. SEARCH_RADIUS .. " единиц)")
+    return
+end
+
+-- Выбираем первого найденного питомца для детального анализа
+local targetPet = foundPetModels[1].model
+print("🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ПИТОМЦА: " .. targetPet.Name)
+print("📍 Расстояние: " .. math.floor(foundPetModels[1].distance) .. " единиц")
+print("🎨 Визуальных элементов: " .. #foundPetModels[1].meshes)
+print("=" .. string.rep("=", 70))
+print()
+
+-- Функция для детального анализа объекта
+local function analyzeObject(obj, depth)
+    local indent = string.rep("  ", depth)
+    print(indent .. "📦 " .. obj.ClassName .. ": " .. obj.Name .. " (Parent: " .. (obj.Parent and obj.Parent.Name or "NIL") .. ")")
+    
+    -- Анализ BasePart
+    if obj:IsA("BasePart") then
+        print(indent .. "  📏 Size: " .. tostring(obj.Size))
+        print(indent .. "  📍 Position: " .. tostring(obj.Position))
+        print(indent .. "  🔄 CFrame: " .. tostring(obj.CFrame))
+        print(indent .. "  👻 Transparency: " .. obj.Transparency)
+        print(indent .. "  🎨 Material: " .. tostring(obj.Material))
+        print(indent .. "  🌈 Color: " .. tostring(obj.Color))
+        print(indent .. "  ⚓ Anchored: " .. tostring(obj.Anchored))
+        print(indent .. "  🏷️ CanCollide: " .. tostring(obj.CanCollide))
+        if obj.Shape then
+            print(indent .. "  🔺 Shape: " .. tostring(obj.Shape))
+        end
+    end
+    
+    -- Анализ Model
+    if obj:IsA("Model") then
+        print(indent .. "  🎯 PrimaryPart: " .. (obj.PrimaryPart and obj.PrimaryPart.Name or "NIL"))
+        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+        if success then
+            print(indent .. "  📍 ModelCFrame: " .. tostring(modelCFrame))
+        end
+        local success2, modelSize = pcall(function() return obj:GetExtentsSize() end)
         if success2 then
-            state.modelSize = modelSize
+            print(indent .. "  📏 ModelSize: " .. tostring(modelSize))
         end
-        
-    end)
-    
-    if not success then
-        log("⚠️ Ошибка записи кадра: " .. tostring(error))
     end
     
-    return state
-end
-
--- Функция начала записи
-local function startRecording(model)
-    if isRecording then return end
-    
-    log("🎬 Начинаю запись модели: " .. (model.Name or "Unknown"))
-    
-    isRecording = true
-    currentRecording = {
-        startTime = tick(),
-        frames = {},
-        model = model,
-        modelName = model.Name or "Unknown"
-    }
-    
-    statusLabel.Text = "🔴 RECORDING: " .. currentRecording.modelName
-    recordButton.Text = "⏹️ STOP RECORDING"
-    recordButton.BackgroundColor3 = Color3.new(0, 1, 0)
-    
-    -- Записываем начальное состояние
-    local initialState = recordModelState(model, 0)
-    table.insert(currentRecording.frames, initialState)
-    log("📊 Записал начальное состояние")
-    
-    -- Запускаем запись каждый кадр
-    recordingConnection = RunService.Heartbeat:Connect(function()
-        if not isRecording then
-            return
-        end
-        
-        local frameTime = tick() - currentRecording.startTime
-        local state = recordModelState(model, frameTime)
-        table.insert(currentRecording.frames, state)
-        
-        -- Обновляем статус каждые 10 кадров
-        if #currentRecording.frames % 10 == 0 then
-            statusLabel.Text = string.format("🔴 REC: %.1fs (%d frames)", frameTime, #currentRecording.frames)
-        end
-        
-        -- Останавливаем если модель исчезла
-        if not state.modelExists then
-            log("💥 Модель исчезла - останавливаю запись")
-            stopRecording()
-        end
-        
-        -- Автостоп через 10 секунд
-        if frameTime > 10 then
-            log("⏰ Автостоп через 10 секунд")
-            stopRecording()
-        end
-    end)
-end
-
--- Функция остановки записи
-function stopRecording()
-    if not isRecording then return end
-    
-    isRecording = false
-    
-    if recordingConnection then
-        recordingConnection:Disconnect()
-        recordingConnection = nil
+    -- Анализ Motor6D
+    if obj:IsA("Motor6D") then
+        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
+        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
+        print(indent .. "  📐 C0: " .. tostring(obj.C0))
+        print(indent .. "  📐 C1: " .. tostring(obj.C1))
+        print(indent .. "  🎯 CurrentAngle: " .. obj.CurrentAngle)
+        print(indent .. "  🎯 DesiredAngle: " .. obj.DesiredAngle)
+        print(indent .. "  ⚡ MaxVelocity: " .. obj.MaxVelocity)
     end
     
-    local duration = tick() - currentRecording.startTime
+    -- Анализ Weld
+    if obj:IsA("Weld") or obj:IsA("WeldConstraint") then
+        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
+        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
+        if obj:IsA("Weld") then
+            print(indent .. "  📐 C0: " .. tostring(obj.C0))
+            print(indent .. "  📐 C1: " .. tostring(obj.C1))
+        end
+    end
     
-    statusLabel.Text = "✅ Recording complete"
-    recordButton.Text = "🔴 START RECORDING"
-    recordButton.BackgroundColor3 = Color3.new(1, 0, 0)
+    -- Анализ Attachment
+    if obj:IsA("Attachment") then
+        print(indent .. "  📍 Position: " .. tostring(obj.Position))
+        print(indent .. "  🔄 Orientation: " .. tostring(obj.Orientation))
+        print(indent .. "  📐 CFrame: " .. tostring(obj.CFrame))
+        print(indent .. "  👁️ Visible: " .. tostring(obj.Visible))
+    end
     
-    log("✅ Запись завершена!")
-    log("⏱️ Длительность: " .. string.format("%.2f", duration) .. " секунд")
-    log("🎞️ Кадров записано: " .. #currentRecording.frames)
+    -- Анализ Humanoid
+    if obj:IsA("Humanoid") then
+        print(indent .. "  ❤️ Health: " .. obj.Health .. "/" .. obj.MaxHealth)
+        print(indent .. "  🏃 WalkSpeed: " .. obj.WalkSpeed)
+        print(indent .. "  🦘 JumpPower: " .. obj.JumpPower)
+        print(indent .. "  🎭 DisplayDistanceType: " .. tostring(obj.DisplayDistanceType))
+        print(indent .. "  📊 RigType: " .. tostring(obj.RigType))
+        
+        -- Анализ активных анимаций
+        local animator = obj:FindFirstChild("Animator")
+        if animator then
+            print(indent .. "  🎬 Animator найден!")
+            local animTracks = animator:GetPlayingAnimationTracks()
+            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
+            for i, track in ipairs(animTracks) do
+                print(indent .. "    🎞️ Анимация #" .. i .. ":")
+                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
+                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
+                print(indent .. "      ⏱️ Length: " .. track.Length)
+                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
+                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
+                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
+                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
+                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
+                print(indent .. "      🏃 Speed: " .. track.Speed)
+            end
+        end
+    end
     
-    -- Сохраняем данные
-    animationData[currentRecording.modelName] = currentRecording
+    -- Анализ AnimationController
+    if obj:IsA("AnimationController") then
+        print(indent .. "  🎮 AnimationController найден!")
+        local animator = obj:FindFirstChild("Animator")
+        if animator then
+            print(indent .. "  🎬 Animator найден!")
+            local animTracks = animator:GetPlayingAnimationTracks()
+            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
+            for i, track in ipairs(animTracks) do
+                print(indent .. "    🎞️ Анимация #" .. i .. ":")
+                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
+                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
+                print(indent .. "      ⏱️ Length: " .. track.Length)
+                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
+                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
+                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
+                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
+                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
+                print(indent .. "      🏃 Speed: " .. track.Speed)
+            end
+        end
+    end
     
-    -- Анализируем записанные данные
-    analyzeAnimation(currentRecording)
+    -- Анализ Animation объектов
+    if obj:IsA("Animation") then
+        print(indent .. "  🎞️ AnimationId: " .. obj.AnimationId)
+    end
+    
+    -- Анализ скриптов
+    if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+        print(indent .. "  📜 Скрипт: " .. obj.ClassName)
+        print(indent .. "  ✅ Enabled: " .. tostring(obj.Enabled or "N/A"))
+    end
+    
+    -- Анализ SpecialMesh
+    if obj:IsA("SpecialMesh") then
+        print(indent .. "  🎭 MeshType: " .. tostring(obj.MeshType))
+        print(indent .. "  📏 Scale: " .. tostring(obj.Scale))
+        print(indent .. "  📍 Offset: " .. tostring(obj.Offset))
+        if obj.MeshId ~= "" then
+            print(indent .. "  🆔 MeshId: " .. obj.MeshId)
+        end
+        if obj.TextureId ~= "" then
+            print(indent .. "  🖼️ TextureId: " .. obj.TextureId)
+        end
+    end
 end
 
--- Функция анализа анимации
-local function analyzeAnimation(recording)
-    log("\n=== АНАЛИЗ АНИМАЦИИ ===")
-    
-    if #recording.frames < 2 then
-        log("❌ Недостаточно кадров для анализа")
+-- Функция для рекурсивного анализа всех детей
+local function analyzeChildren(obj, depth, maxDepth)
+    if depth > maxDepth then
         return
     end
     
-    local firstFrame = recording.frames[1]
-    local lastFrame = recording.frames[#recording.frames]
+    analyzeObject(obj, depth)
     
-    log("📊 Анализирую " .. #recording.frames .. " кадров...")
-    
-    -- Анализируем изменения размера
-    for partName, firstState in pairs(firstFrame.parts) do
-        if lastFrame.parts[partName] then
-            local startSize = firstState.size
-            local endSize = lastFrame.parts[partName].size
-            
-            if startSize and endSize then
-                local sizeChange = endSize.Magnitude / startSize.Magnitude
-                
-                if sizeChange > 1.2 then
-                    log("📈 " .. partName .. " увеличился в " .. string.format("%.2f", sizeChange) .. " раз")
-                elseif sizeChange < 0.8 then
-                    log("📉 " .. partName .. " уменьшился в " .. string.format("%.2f", 1/sizeChange) .. " раз")
-                end
-            end
-            
-            local startTrans = firstState.transparency or 0
-            local endTrans = lastFrame.parts[partName].transparency or 0
-            
-            if math.abs(endTrans - startTrans) > 0.1 then
-                log("💫 " .. partName .. " прозрачность: " .. string.format("%.2f", startTrans) .. " → " .. string.format("%.2f", endTrans))
-            end
+    local children = obj:GetChildren()
+    if #children > 0 then
+        for _, child in ipairs(children) do
+            analyzeChildren(child, depth + 1, maxDepth)
         end
     end
-    
-    log("🎯 Анализ завершен!")
 end
 
--- Кнопка переключения записи
-recordButton.MouseButton1Click:Connect(function()
-    if isRecording then
-        stopRecording()
-    else
-        statusLabel.Text = "⏳ Waiting for pet..."
-        log("⏳ Жду появления питомца из яйца...")
-    end
-end)
+-- ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ
+print("🔬 ПОЛНАЯ СТРУКТУРА ПИТОМЦА:")
+print("-" .. string.rep("-", 50))
 
--- Отслеживаем появление моделей в Visuals
-local visuals = Workspace:FindFirstChild("Visuals")
-if visuals then
-    log("✅ Найдена папка Visuals")
-    
-    visuals.ChildAdded:Connect(function(child)
-        if child:IsA("Model") and not isRecording then
-            log("🎯 Обнаружена модель: " .. (child.Name or "Unknown"))
-            
-            -- Проверяем что это питомец (не эффект)
-            if child.Name and not child.Name:find("Egg") and not child.Name:find("Explode") and not child.Name:find("Poof") then
-                wait(0.1) -- Небольшая задержка
-                
-                if statusLabel.Text:find("Waiting") or recordButton.Text == "⏹️ STOP RECORDING" then
-                    startRecording(child)
-                end
-            else
-                log("⚠️ Пропускаю эффект: " .. (child.Name or "Unknown"))
-            end
-        end
-    end)
-else
-    log("❌ Папка Visuals не найдена")
+analyzeChildren(targetPet, 0, 10) -- Максимум 10 уровней вглубь
+
+print()
+print("📊 ДОПОЛНИТЕЛЬНАЯ СТАТИСТИКА:")
+print("-" .. string.rep("-", 30))
+
+-- Подсчет различных типов объектов
+local stats = {}
+for _, obj in ipairs(targetPet:GetDescendants()) do
+    local className = obj.ClassName
+    stats[className] = (stats[className] or 0) + 1
 end
 
-log("🎬 Fixed Animation Recorder готов!")
-log("📋 Нажми START RECORDING и открой яйцо")
+for className, count in pairs(stats) do
+    print("  " .. className .. ": " .. count)
+end
 
-print("🎬 Fixed Animation Recorder loaded!")
+print()
+print("🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ЗАВЕРШЕН")
+print("=" .. string.rep("=", 70))
