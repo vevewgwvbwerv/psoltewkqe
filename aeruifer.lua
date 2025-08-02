@@ -1,234 +1,427 @@
--- 🔍 ANIMATION STATE ANALYZER - Анализ анимаций в разных состояниях питомца
--- Показывает какие анимации активны когда питомец стоит vs когда копает
+-- 🔥 PET SCALER - Плавное увеличение питомца с сохранением анимации
+-- Находит UUID модель питомца, копирует её и плавно увеличивает
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
-print("🔍 === ANIMATION STATE ANALYZER ===")
-print("=" .. string.rep("=", 50))
+local player = Players.LocalPlayer
 
--- Функция поиска питомца (только оригинал)
-local function findOriginalPet()
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") and not obj.Name:find("_SCALED_COPY") then
-            return obj
-        end
-    end
-    return nil
+print("🔥 === PET SCALER - ПЛАВНОЕ УВЕЛИЧЕНИЕ ПИТОМЦА ===")
+print("=" .. string.rep("=", 60))
+
+-- Конфигурация
+local CONFIG = {
+    SEARCH_RADIUS = 100,
+    SCALE_FACTOR = 3.0,  -- Во сколько раз увеличиваем
+    TWEEN_TIME = 3.0,    -- Время анимации увеличения (секунды)
+    EASING_STYLE = Enum.EasingStyle.Quad,
+    EASING_DIRECTION = Enum.EasingDirection.Out
+}
+
+-- Получаем позицию игрока
+local playerChar = player.Character
+if not playerChar then
+    print("❌ Персонаж игрока не найден!")
+    return
 end
 
--- Функция получения снимка анимаций
-local function getAnimationSnapshot(model, stateName)
-    local animator = nil
+local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+if not hrp then
+    print("❌ HumanoidRootPart не найден!")
+    return
+end
+
+local playerPos = hrp.Position
+print("📍 Позиция игрока:", playerPos)
+print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
+print("📏 Коэффициент увеличения:", CONFIG.SCALE_FACTOR .. "x")
+print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
+print()
+
+-- Функция проверки визуальных элементов питомца
+local function hasPetVisuals(model)
+    local meshCount = 0
+    local petMeshes = {}
+    
     for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Animator") then
-            animator = obj
-            break
-        end
-    end
-    
-    if not animator then
-        print("❌ Animator не найден!")
-        return {}
-    end
-    
-    local snapshot = {
-        state = stateName,
-        timestamp = tick(),
-        animations = {}
-    }
-    
-    local activeTracks = animator:GetPlayingAnimationTracks()
-    
-    for i, track in ipairs(activeTracks) do
-        if track.Animation then
-            local animInfo = {
-                id = track.Animation.AnimationId,
-                name = track.Name or "Unknown_" .. i,
-                isPlaying = track.IsPlaying,
-                speed = track.Speed,
-                weight = track.WeightCurrent,
-                looped = track.Looped,
-                priority = track.Priority.Name,
-                timePosition = track.TimePosition,
-                length = track.Length
+        if obj:IsA("MeshPart") then
+            meshCount = meshCount + 1
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or ""
             }
-            
-            table.insert(snapshot.animations, animInfo)
+            if meshData.meshId ~= "" then
+                table.insert(petMeshes, meshData)
+            end
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                textureId = obj.TextureId or ""
+            }
+            if meshData.meshId ~= "" or meshData.textureId ~= "" then
+                table.insert(petMeshes, meshData)
+            end
         end
     end
     
-    return snapshot
+    return meshCount > 0, petMeshes
 end
 
--- Функция вывода снимка
-local function printSnapshot(snapshot)
-    print("📸 СНИМОК АНИМАЦИЙ: " .. snapshot.state)
-    print("⏰ Время: " .. string.format("%.2f", snapshot.timestamp))
-    print("🎬 Активных анимаций: " .. #snapshot.animations)
-    print()
+-- Функция глубокого копирования модели (ИСПРАВЛЕНО: стоит НА ЗЕМЛЕ)
+local function deepCopyModel(originalModel)
+    print("📋 Создаю глубокую копию модели:", originalModel.Name)
     
-    if #snapshot.animations == 0 then
-        print("  ❌ Нет активных анимаций!")
-    else
-        for i, anim in ipairs(snapshot.animations) do
-            print("  [" .. i .. "] " .. anim.name)
-            print("    🆔 ID: " .. anim.id)
-            print("    ▶️ Playing: " .. tostring(anim.isPlaying))
-            print("    ⚡ Speed: " .. anim.speed)
-            print("    ⚖️ Weight: " .. string.format("%.2f", anim.weight))
-            print("    🔄 Looped: " .. tostring(anim.looped))
-            print("    🎯 Priority: " .. anim.priority)
-            print("    ⏱️ Position: " .. string.format("%.2f", anim.timePosition) .. "/" .. string.format("%.2f", anim.length))
-            print()
-        end
-    end
+    local copy = originalModel:Clone()
+    copy.Name = originalModel.Name .. "_SCALED_COPY"
+    copy.Parent = Workspace
     
-    print("-" .. string.rep("-", 40))
-end
-
--- Функция сравнения снимков
-local function compareSnapshots(snapshot1, snapshot2)
-    print("🔄 СРАВНЕНИЕ АНИМАЦИЙ:")
-    print("📊 " .. snapshot1.state .. " vs " .. snapshot2.state)
-    print()
-    
-    -- Сравниваем количество
-    print("📈 Количество анимаций:")
-    print("  " .. snapshot1.state .. ": " .. #snapshot1.animations)
-    print("  " .. snapshot2.state .. ": " .. #snapshot2.animations)
-    print()
-    
-    -- Ищем различия
-    local differences = {}
-    
-    -- Анимации только в первом снимке
-    for _, anim1 in ipairs(snapshot1.animations) do
-        local found = false
-        for _, anim2 in ipairs(snapshot2.animations) do
-            if anim1.id == anim2.id then
-                found = true
-                break
-            end
-        end
-        if not found then
-            table.insert(differences, {
-                type = "only_in_" .. snapshot1.state,
-                animation = anim1
-            })
-        end
-    end
-    
-    -- Анимации только во втором снимке
-    for _, anim2 in ipairs(snapshot2.animations) do
-        local found = false
-        for _, anim1 in ipairs(snapshot1.animations) do
-            if anim1.id == anim2.id then
-                found = true
-                break
-            end
-        end
-        if not found then
-            table.insert(differences, {
-                type = "only_in_" .. snapshot2.state,
-                animation = anim2
-            })
-        end
-    end
-    
-    -- Общие анимации с разными параметрами
-    for _, anim1 in ipairs(snapshot1.animations) do
-        for _, anim2 in ipairs(snapshot2.animations) do
-            if anim1.id == anim2.id then
-                local paramDiffs = {}
-                if anim1.speed ~= anim2.speed then
-                    table.insert(paramDiffs, "speed: " .. anim1.speed .. " → " .. anim2.speed)
-                end
-                if math.abs(anim1.weight - anim2.weight) > 0.01 then
-                    table.insert(paramDiffs, "weight: " .. string.format("%.2f", anim1.weight) .. " → " .. string.format("%.2f", anim2.weight))
-                end
-                if anim1.isPlaying ~= anim2.isPlaying then
-                    table.insert(paramDiffs, "playing: " .. tostring(anim1.isPlaying) .. " → " .. tostring(anim2.isPlaying))
-                end
-                
-                if #paramDiffs > 0 then
-                    table.insert(differences, {
-                        type = "parameter_change",
-                        animation = anim1,
-                        changes = paramDiffs
-                    })
-                end
-                break
-            end
-        end
-    end
-    
-    -- Выводим различия
-    if #differences == 0 then
-        print("✅ Анимации идентичны!")
-    else
-        print("🔍 Найдено различий: " .. #differences)
-        print()
+    -- ИСПРАВЛЕНО: Правильное позиционирование копии НА ЗЕМЛЕ
+    if copy.PrimaryPart and originalModel.PrimaryPart then
+        local originalCFrame = originalModel.PrimaryPart.CFrame
+        local offset = Vector3.new(15, 0, 0) -- 15 единиц в сторону по X
         
-        for i, diff in ipairs(differences) do
-            if diff.type:find("only_in_") then
-                print("  [" .. i .. "] 🆕 Только в " .. diff.type:gsub("only_in_", "") .. ":")
-                print("    " .. diff.animation.name .. " (" .. diff.animation.id .. ")")
-            elseif diff.type == "parameter_change" then
-                print("  [" .. i .. "] 🔄 Изменения в " .. diff.animation.name .. ":")
-                for _, change in ipairs(diff.changes) do
-                    print("    " .. change)
-                end
+        -- Вычисляем позицию рядом с оригиналом
+        local targetPosition = originalCFrame.Position + offset
+        
+        -- Используем Raycast чтобы найти землю под копией
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {copy, originalModel}
+        
+        -- Луч вниз с высокой позиции
+        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            -- Найдена земля - ставим копию НА землю
+            local groundY = raycastResult.Position.Y
+            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
+            
+            -- Устанавливаем копию на землю с правильной ориентацией
+            local newCFrame = CFrame.new(finalPosition) * (originalCFrame - originalCFrame.Position)
+            copy:SetPrimaryPartCFrame(newCFrame)
+            
+            print("📍 Копия размещена НА ЗЕМЛЕ")
+            print("  Оригинал:", originalCFrame.Position)
+            print("  Копия:", finalPosition)
+            print("  Высота земли:", groundY)
+        else
+            -- Если земля не найдена, используем высоту оригинала
+            local newCFrame = originalCFrame + offset
+            copy:SetPrimaryPartCFrame(newCFrame)
+            print("📍 Копия размещена на уровне оригинала (земля не найдена)")
+        end
+        
+    elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
+        -- Fallback если нет PrimaryPart
+        local originalPos = originalModel.RootPart.Position
+        local offset = Vector3.new(15, 0, 0)
+        local targetPos = originalPos + offset
+        
+        -- Raycast для RootPart
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {copy, originalModel}
+        
+        local rayOrigin = Vector3.new(targetPos.X, targetPos.Y + 100, targetPos.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            copy.RootPart.Position = Vector3.new(targetPos.X, raycastResult.Position.Y, targetPos.Z)
+            print("📍 Копия размещена через RootPart НА ЗЕМЛЕ")
+        else
+            copy.RootPart.Position = targetPos
+            print("📍 Копия размещена через RootPart на уровне оригинала")
+        end
+    else
+        print("⚠️ Не удалось точно позиционировать копию")
+    end
+    
+    -- ИСПРАВЛЕНО: Устанавливаем Anchored только для основной части, остальные оставляем свободными для анимации
+    local anchoredPart = nil
+    
+    -- Сначала пытаемся найти RootPart
+    if copy:FindFirstChild("RootPart") then
+        anchoredPart = copy.RootPart
+    -- Если нет RootPart, используем PrimaryPart
+    elseif copy.PrimaryPart then
+        anchoredPart = copy.PrimaryPart
+    -- Если ничего не найдено, ищем Torso или HumanoidRootPart
+    elseif copy:FindFirstChild("Torso") then
+        anchoredPart = copy.Torso
+    elseif copy:FindFirstChild("HumanoidRootPart") then
+        anchoredPart = copy.HumanoidRootPart
+    end
+    
+    -- Устанавливаем Anchored состояния
+    for _, part in pairs(copy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if part == anchoredPart then
+                part.Anchored = true  -- Только основная часть заякорена
+                print("⚓ Заякорена основная часть:", part.Name)
+            else
+                part.Anchored = false -- Остальные части свободны для анимации
             end
-            print()
         end
     end
     
-    print("=" .. string.rep("=", 50))
+    print("✅ Копия создана и закреплена:", copy.Name)
+    return copy
 end
 
--- Основная функция
-local function main()
-    local pet = findOriginalPet()
+-- Функция получения всех BasePart в модели
+local function getAllParts(model)
+    local parts = {}
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
+        end
+    end
+    return parts
+end
+
+-- Функция плавного масштабирования модели (ИСПРАВЛЕНО: через CFrame)
+local function scaleModelSmoothly(model, scaleFactor, tweenTime)
+    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
+    print("📏 Коэффициент:", scaleFactor .. "x")
+    print("⏱️ Время:", tweenTime .. " сек")
     
-    if not pet then
+    local parts = getAllParts(model)
+    print("🧩 Найдено частей для масштабирования:", #parts)
+    
+    if #parts == 0 then
+        print("❌ Нет частей для масштабирования!")
+        return
+    end
+    
+    -- Определяем центр масштабирования
+    local centerCFrame
+    if model.PrimaryPart then
+        centerCFrame = model.PrimaryPart.CFrame
+        print("🎯 Центр масштабирования: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
+    else
+        -- Если нет PrimaryPart, используем центр модели
+        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
+        if success then
+            centerCFrame = modelCFrame
+            print("🎯 Центр масштабирования: Центр модели")
+        else
+            print("❌ Не удалось определить центр масштабирования!")
+            return
+        end
+    end
+    
+    print("📍 Центр масштабирования:", centerCFrame.Position)
+    
+    -- Сохраняем исходные данные всех частей
+    local originalData = {}
+    for _, part in ipairs(parts) do
+        originalData[part] = {
+            size = part.Size,
+            cframe = part.CFrame
+        }
+    end
+    
+    -- Создаем TweenInfo
+    local tweenInfo = TweenInfo.new(
+        tweenTime,
+        CONFIG.EASING_STYLE,
+        CONFIG.EASING_DIRECTION,
+        0, -- Повторений
+        false, -- Обратная анимация
+        0 -- Задержка
+    )
+    
+    -- ИСПРАВЛЕНО: Масштабирование через CFrame чтобы части не разлетались
+    local tweens = {}
+    local completedTweens = 0
+    
+    for _, part in ipairs(parts) do
+        local originalSize = originalData[part].size
+        local originalCFrame = originalData[part].cframe
+        
+        -- Вычисляем новый размер
+        local newSize = originalSize * scaleFactor
+        
+        -- Вычисляем новый CFrame относительно центра
+        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
+        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
+        local newCFrame = centerCFrame * scaledRelativeCFrame
+        
+        -- Создаем твин для размера и CFrame
+        local tween = TweenService:Create(part, tweenInfo, {
+            Size = newSize,
+            CFrame = newCFrame
+        })
+        
+        -- Обработчик завершения твина
+        tween.Completed:Connect(function()
+            completedTweens = completedTweens + 1
+            if completedTweens == #parts then
+                print("✅ Масштабирование завершено!")
+                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
+            end
+        end)
+        
+        table.insert(tweens, tween)
+        tween:Play()
+    end
+    
+    print("🚀 Запущено " .. #tweens .. " твинов для плавного масштабирования")
+end
+
+-- Основная функция поиска и масштабирования
+local function findAndScalePet()
+    print("🔍 Поиск UUID моделей питомцев...")
+    print("-" .. string.rep("-", 40))
+    
+    local foundPets = {}
+    
+    -- Ищем UUID модели в Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            if success then
+                local distance = (modelCFrame.Position - playerPos).Magnitude
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    print("🎯 Найдена UUID модель:", obj.Name)
+                    print("📍 Расстояние:", math.floor(distance) .. " единиц")
+                    
+                    -- Проверяем визуальные элементы
+                    local hasVisuals, meshes = hasPetVisuals(obj)
+                    if hasVisuals then
+                        print("✅ Модель имеет визуальные элементы питомца!")
+                        print("🎨 Визуальных элементов:", #meshes)
+                        
+                        table.insert(foundPets, {
+                            model = obj,
+                            distance = distance,
+                            meshes = meshes
+                        })
+                    else
+                        print("❌ Модель без визуальных элементов питомца")
+                    end
+                    print()
+                end
+            end
+        end
+    end
+    
+    print("📊 Найдено подходящих питомцев:", #foundPets)
+    
+    if #foundPets == 0 then
+        print("❌ Питомцы с UUID именами и визуальными элементами не найдены!")
+        print("💡 Убедитесь что вы рядом с размещенным питомцем")
+        return
+    end
+    
+    -- Берем первого найденного питомца
+    local targetPet = foundPets[1]
+    print("🎯 Выбран питомец для масштабирования:", targetPet.model.Name)
+    print("📍 Расстояние:", math.floor(targetPet.distance) .. " единиц")
+    print()
+    
+    return targetPet.model
+end
+
+-- Основная функция скрипта
+local function main()
+    print("🚀 ПетСкалер запущен!")
+    print("🔍 Поиск питомца в радиусе " .. CONFIG.SEARCH_RADIUS .. " единиц...")
+    
+    local petModel = findAndScalePet()
+    if not petModel then
         print("❌ Питомец не найден!")
         return
     end
     
-    print("🎯 Найден питомец:", pet.Name)
-    print()
-    print("📋 ИНСТРУКЦИИ:")
-    print("1. Сейчас будет сделан снимок текущего состояния")
-    print("2. Затем измени состояние питомца (заставь копать или стоять)")
-    print("3. Через 5 секунд будет второй снимок")
-    print("4. Скрипт покажет различия между состояниями")
-    print()
-    print("⏳ Делаю первый снимок через 3 секунды...")
+    local petCopy = deepCopyModel(petModel)
+    if not petCopy then
+        print("❌ Не удалось создать копию!")
+        return
+    end
     
-    wait(3)
+    -- Небольшая задержка перед масштабированием
+    wait(0.5)
     
-    -- Первый снимок
-    local snapshot1 = getAnimationSnapshot(pet, "СОСТОЯНИЕ_1")
-    printSnapshot(snapshot1)
-    
-    print("🔄 ТЕПЕРЬ ИЗМЕНИ СОСТОЯНИЕ ПИТОМЦА!")
-    print("   (заставь копать или стоять)")
-    print("⏳ Жду 5 секунд...")
-    
-    wait(5)
-    
-    -- Второй снимок
-    local snapshot2 = getAnimationSnapshot(pet, "СОСТОЯНИЕ_2")
-    printSnapshot(snapshot2)
-    
-    -- Сравнение
-    compareSnapshots(snapshot1, snapshot2)
-    
-    print("🎉 Анализ завершен!")
-    print("💡 Теперь ты знаешь какие анимации нужно копировать для правильного состояния!")
+    scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
 end
 
--- Запуск
-main()
+-- Создание GUI с кнопкой
+local function createGUI()
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Создаем ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PetScalerGUI"
+    screenGui.Parent = playerGui
+    
+    -- Создаем Frame для кнопки
+    local frame = Instance.new("Frame")
+    frame.Name = "MainFrame"
+    frame.Size = UDim2.new(0, 200, 0, 80)
+    frame.Position = UDim2.new(0, 50, 0, 50)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(0, 162, 255)
+    frame.Parent = screenGui
+    
+    -- Создаем кнопку
+    local button = Instance.new("TextButton")
+    button.Name = "ScaleButton"
+    button.Size = UDim2.new(0, 180, 0, 40)
+    button.Position = UDim2.new(0, 10, 0, 20)
+    button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+    button.BorderSizePixel = 0
+    button.Text = "🔥 Увеличить Питомца"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Font = Enum.Font.SourceSansBold
+    button.Parent = frame
+    
+    -- Обработчик нажатия кнопки
+    button.MouseButton1Click:Connect(function()
+        button.Text = "⏳ Обработка..."
+        button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        
+        -- Запускаем основную функцию
+        spawn(function()
+            main()
+            
+            -- Возвращаем кнопку в исходное состояние
+            wait(2)
+            button.Text = "🔥 Увеличить Питомца"
+            button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+        end)
+    end)
+    
+    -- Эффект наведения
+    button.MouseEnter:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(0, 162, 255) then
+            button.BackgroundColor3 = Color3.fromRGB(0, 140, 220)
+        end
+    end)
+    
+    button.MouseLeave:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(0, 140, 220) then
+            button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+        end
+    end)
+    
+    print("🖥️ GUI создан! Нажмите кнопку для увеличения питомца")
+end
+
+-- Запуск GUI
+createGUI()
+print("=" .. string.rep("=", 60))
