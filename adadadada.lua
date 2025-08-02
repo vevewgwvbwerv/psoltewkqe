@@ -1,403 +1,251 @@
--- 🔬 ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА
--- Использует РАБОЧУЮ логику поиска из RealPetModelFinder.lua и PetTypeAnalyzer.lua
--- Ищет питомцев по наличию MeshPart/SpecialMesh, а НЕ по UUID именам!
+-- ⚙️ MOTOR6D COPIER - Копирование состояний Motor6D вместо анимаций
+-- Анимации rbxasset защищены, но состояния Motor6D можно копировать!
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
-local player = Players.LocalPlayer
+print("⚙️ === MOTOR6D COPIER ===")
+print("=" .. string.rep("=", 40))
 
-print("🔬 === ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА ===")
-print("=" .. string.rep("=", 70))
-print("🎯 Использует РАБОЧУЮ логику из RealPetModelFinder.lua")
-print("🔍 Ищет модели с MeshPart/SpecialMesh (визуальные элементы)")
-print()
-
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
+-- Функция поиска моделей
+local function findModels()
+    local original = nil
+    local copy = nil
+    local copyUUID = nil
+    
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") and obj.Name:find("_SCALED_COPY") then
+            copy = obj
+            copyUUID = obj.Name:gsub("_SCALED_COPY", "")
+            break
+        end
+    end
+    
+    if copy then
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if obj:IsA("Model") and obj.Name == copyUUID then
+                original = obj
+                break
+            end
+        end
+    end
+    
+    return original, copy
 end
 
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
-
-local playerPos = hrp.Position
-local SEARCH_RADIUS = 100 -- Увеличиваем радиус
-
-print("📍 Позиция игрока:", playerPos)
-print("🎯 Радиус поиска:", SEARCH_RADIUS)
-print()
-
--- РАБОЧАЯ логика поиска из RealPetModelFinder.lua - поиск по MeshPart/SpecialMesh
-print("🔍 ПОИСК ПИТОМЦЕВ ПО ВИЗУАЛЬНЫМ ЭЛЕМЕНТАМ (как в RealPetModelFinder.lua)...")
-print("-" .. string.rep("-", 50))
-
--- Функция проверки визуальных элементов питомца (ИСПРАВЛЕННАЯ)
-local function hasPetVisuals(model)
-    local meshCount = 0
-    local petMeshes = {}
+-- Функция получения всех Motor6D из модели
+local function getMotor6Ds(model)
+    local motors = {}
     
     for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
-            meshCount = meshCount + 1
-            
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = "" -- MeshPart не имеет TextureId
-            }
-            
-            -- Проверяем, есть ли реальные ID
-            if meshData.meshId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or "" -- SpecialMesh имеет TextureId
-            }
-            
-            -- Проверяем, есть ли реальные ID
-            if meshData.meshId ~= "" or meshData.textureId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
+        if obj:IsA("Motor6D") then
+            table.insert(motors, obj)
         end
     end
     
-    return meshCount > 0, petMeshes
+    return motors
 end
 
--- Функция анализа потенциального питомца (из RealPetModelFinder.lua)
-local function analyzePotentialPet(model)
-    print("🐾 АНАЛИЗ ПОТЕНЦИАЛЬНОГО ПИТОМЦА: " .. model.Name)
+-- Функция создания карты Motor6D по именам
+local function createMotorMap(motors)
+    local map = {}
     
-    local hasVisuals, meshes = hasPetVisuals(model)
-    
-    if hasVisuals then
-        print("    🎨 НАЙДЕНЫ ВИЗУАЛЬНЫЕ ЭЛЕМЕНТЫ ПИТОМЦА!")
-        for i, mesh in pairs(meshes) do
-            print(string.format("    🎨 Меш %d: %s (%s)", i, mesh.name, mesh.className))
-            if mesh.meshId ~= "" then
-                print("      🆔 MeshId: " .. mesh.meshId)
-            end
-            if mesh.textureId ~= "" then
-                print("      🖼️ TextureId: " .. mesh.textureId)
-            end
+    for _, motor in ipairs(motors) do
+        -- Используем имя Motor6D + имена Part0 и Part1 как ключ
+        local key = motor.Name
+        if motor.Part0 then
+            key = key .. "_" .. motor.Part0.Name
         end
-        return true, meshes
-    else
-        print("    ❌ Визуальных элементов питомца не найдено")
-        return false, {}
-    end
-end
-
-local foundPetModels = {}
-
--- КОМБИНИРОВАННЫЙ ПОДХОД: UUID имена (из PetScanDiagnostic.lua) + визуальные элементы (из RealPetModelFinder.lua)
-print("🎯 ЭТАП 1: Поиск моделей с UUID именами (как в PetScanDiagnostic.lua)")
-print("-" .. string.rep("-", 40))
-
--- Сначала ищем модели с UUID именами в фигурных скобках (как в PetScanDiagnostic.lua)
-for _, obj in ipairs(Workspace:GetChildren()) do
-    if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-        if success then
-            local distance = (modelCFrame.Position - playerPos).Magnitude
-            if distance <= SEARCH_RADIUS then
-                print("🎯 НАЙДЕНА UUID МОДЕЛЬ: " .. obj.Name .. " | Расстояние: " .. math.floor(distance))
-                
-                -- Теперь проверяем у UUID модели наличие визуальных элементов
-                local isPet, meshes = analyzePotentialPet(obj)
-                
-                if isPet then
-                    print("🔥 UUID МОДЕЛЬ С ВИЗУАЛЬНЫМИ ЭЛЕМЕНТАМИ - ЭТО ПИТОМЕЦ!")
-                    
-                    local petData = {
-                        model = obj,
-                        name = obj.Name,
-                        distance = distance,
-                        meshes = meshes
-                    }
-                    
-                    table.insert(foundPetModels, petData)
-                    
-                    print("    📊 Расстояние: " .. math.floor(distance) .. " единиц")
-                    print("    🎨 Визуальных элементов: " .. #meshes)
-                    
-                    -- Проверяем PrimaryPart
-                    if obj.PrimaryPart then
-                        print("    ✅ PrimaryPart: " .. obj.PrimaryPart.Name)
-                    else
-                        print("    ❌ PrimaryPart отсутствует")
-                    end
-                    print()
-                else
-                    print("    ❌ UUID модель без визуальных элементов питомца")
-                end
-            end
+        if motor.Part1 then
+            key = key .. "_" .. motor.Part1.Name
         end
-    end
-end
-
-print()
-print("🎯 ЭТАП 2: Если UUID модели не найдены, ищем любые модели с визуальными элементами")
-print("-" .. string.rep("-", 40))
-
--- Если UUID модели не найдены, ищем любые модели с визуальными элементами
-if #foundPetModels == 0 then
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj ~= player.Character then
-            -- Проверяем расстояние
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= SEARCH_RADIUS then
-                    -- Пропускаем EggExplode и модели инвентаря
-                    if obj.Name == "EggExplode" or obj.Name:find("Inventory") then
-                        continue
-                    end
-                    
-                    -- Проверяем на наличие визуала питомца
-                    local isPet, meshes = analyzePotentialPet(obj)
-                    
-                    if isPet then
-                        print("🔥 ОБЫЧНАЯ МОДЕЛЬ С ВИЗУАЛЬНЫМИ ЭЛЕМЕНТАМИ ПИТОМЦА!")
-                        
-                        local petData = {
-                            model = obj,
-                            name = obj.Name,
-                            distance = distance,
-                            meshes = meshes
-                        }
-                        
-                        table.insert(foundPetModels, petData)
-                        
-                        print("    📊 Расстояние: " .. math.floor(distance) .. " единиц")
-                        print("    🎨 Визуальных элементов: " .. #meshes)
-                        
-                        -- Проверяем PrimaryPart
-                        if obj.PrimaryPart then
-                            print("    ✅ PrimaryPart: " .. obj.PrimaryPart.Name)
-                        else
-                            print("    ❌ PrimaryPart отсутствует")
-                        end
-                        print()
-                    end
-                end
-            end
-        end
-    end
-else
-    print("✅ UUID модели с визуальными элементами уже найдены, пропускаем этап 2")
-end
-
-print()
-print("📈 НАЙДЕНО МОДЕЛЕЙ ПИТОМЦЕВ: " .. #foundPetModels)
-print()
-
-if #foundPetModels == 0 then
-    print("❌ Модели питомцев с визуальными элементами не найдены!")
-    print("💡 Убедитесь, что:")
-    print("  1. Вы находитесь рядом с питомцем")
-    print("  2. Питомец имеет MeshPart или SpecialMesh")
-    print("  3. Радиус поиска достаточен (" .. SEARCH_RADIUS .. " единиц)")
-    return
-end
-
--- Выбираем первого найденного питомца для детального анализа
-local targetPet = foundPetModels[1].model
-print("🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ПИТОМЦА: " .. targetPet.Name)
-print("📍 Расстояние: " .. math.floor(foundPetModels[1].distance) .. " единиц")
-print("🎨 Визуальных элементов: " .. #foundPetModels[1].meshes)
-print("=" .. string.rep("=", 70))
-print()
-
--- Функция для детального анализа объекта
-local function analyzeObject(obj, depth)
-    local indent = string.rep("  ", depth)
-    print(indent .. "📦 " .. obj.ClassName .. ": " .. obj.Name .. " (Parent: " .. (obj.Parent and obj.Parent.Name or "NIL") .. ")")
-    
-    -- Анализ BasePart
-    if obj:IsA("BasePart") then
-        print(indent .. "  📏 Size: " .. tostring(obj.Size))
-        print(indent .. "  📍 Position: " .. tostring(obj.Position))
-        print(indent .. "  🔄 CFrame: " .. tostring(obj.CFrame))
-        print(indent .. "  👻 Transparency: " .. obj.Transparency)
-        print(indent .. "  🎨 Material: " .. tostring(obj.Material))
-        print(indent .. "  🌈 Color: " .. tostring(obj.Color))
-        print(indent .. "  ⚓ Anchored: " .. tostring(obj.Anchored))
-        print(indent .. "  🏷️ CanCollide: " .. tostring(obj.CanCollide))
-        if obj.Shape then
-            print(indent .. "  🔺 Shape: " .. tostring(obj.Shape))
-        end
-    end
-    
-    -- Анализ Model
-    if obj:IsA("Model") then
-        print(indent .. "  🎯 PrimaryPart: " .. (obj.PrimaryPart and obj.PrimaryPart.Name or "NIL"))
-        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-        if success then
-            print(indent .. "  📍 ModelCFrame: " .. tostring(modelCFrame))
-        end
-        local success2, modelSize = pcall(function() return obj:GetExtentsSize() end)
-        if success2 then
-            print(indent .. "  📏 ModelSize: " .. tostring(modelSize))
-        end
-    end
-    
-    -- Анализ Motor6D
-    if obj:IsA("Motor6D") then
-        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
-        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
-        print(indent .. "  📐 C0: " .. tostring(obj.C0))
-        print(indent .. "  📐 C1: " .. tostring(obj.C1))
-        print(indent .. "  🎯 CurrentAngle: " .. obj.CurrentAngle)
-        print(indent .. "  🎯 DesiredAngle: " .. obj.DesiredAngle)
-        print(indent .. "  ⚡ MaxVelocity: " .. obj.MaxVelocity)
-    end
-    
-    -- Анализ Weld
-    if obj:IsA("Weld") or obj:IsA("WeldConstraint") then
-        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
-        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
-        if obj:IsA("Weld") then
-            print(indent .. "  📐 C0: " .. tostring(obj.C0))
-            print(indent .. "  📐 C1: " .. tostring(obj.C1))
-        end
-    end
-    
-    -- Анализ Attachment
-    if obj:IsA("Attachment") then
-        print(indent .. "  📍 Position: " .. tostring(obj.Position))
-        print(indent .. "  🔄 Orientation: " .. tostring(obj.Orientation))
-        print(indent .. "  📐 CFrame: " .. tostring(obj.CFrame))
-        print(indent .. "  👁️ Visible: " .. tostring(obj.Visible))
-    end
-    
-    -- Анализ Humanoid
-    if obj:IsA("Humanoid") then
-        print(indent .. "  ❤️ Health: " .. obj.Health .. "/" .. obj.MaxHealth)
-        print(indent .. "  🏃 WalkSpeed: " .. obj.WalkSpeed)
-        print(indent .. "  🦘 JumpPower: " .. obj.JumpPower)
-        print(indent .. "  🎭 DisplayDistanceType: " .. tostring(obj.DisplayDistanceType))
-        print(indent .. "  📊 RigType: " .. tostring(obj.RigType))
         
-        -- Анализ активных анимаций
-        local animator = obj:FindFirstChild("Animator")
-        if animator then
-            print(indent .. "  🎬 Animator найден!")
-            local animTracks = animator:GetPlayingAnimationTracks()
-            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
-            for i, track in ipairs(animTracks) do
-                print(indent .. "    🎞️ Анимация #" .. i .. ":")
-                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
-                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
-                print(indent .. "      ⏱️ Length: " .. track.Length)
-                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
-                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
-                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
-                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
-                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
-                print(indent .. "      🏃 Speed: " .. track.Speed)
-            end
-        end
+        map[key] = motor
     end
     
-    -- Анализ AnimationController
-    if obj:IsA("AnimationController") then
-        print(indent .. "  🎮 AnimationController найден!")
-        local animator = obj:FindFirstChild("Animator")
-        if animator then
-            print(indent .. "  🎬 Animator найден!")
-            local animTracks = animator:GetPlayingAnimationTracks()
-            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
-            for i, track in ipairs(animTracks) do
-                print(indent .. "    🎞️ Анимация #" .. i .. ":")
-                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
-                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
-                print(indent .. "      ⏱️ Length: " .. track.Length)
-                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
-                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
-                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
-                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
-                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
-                print(indent .. "      🏃 Speed: " .. track.Speed)
-            end
-        end
-    end
-    
-    -- Анализ Animation объектов
-    if obj:IsA("Animation") then
-        print(indent .. "  🎞️ AnimationId: " .. obj.AnimationId)
-    end
-    
-    -- Анализ скриптов
-    if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
-        print(indent .. "  📜 Скрипт: " .. obj.ClassName)
-        print(indent .. "  ✅ Enabled: " .. tostring(obj.Enabled or "N/A"))
-    end
-    
-    -- Анализ SpecialMesh
-    if obj:IsA("SpecialMesh") then
-        print(indent .. "  🎭 MeshType: " .. tostring(obj.MeshType))
-        print(indent .. "  📏 Scale: " .. tostring(obj.Scale))
-        print(indent .. "  📍 Offset: " .. tostring(obj.Offset))
-        if obj.MeshId ~= "" then
-            print(indent .. "  🆔 MeshId: " .. obj.MeshId)
-        end
-        if obj.TextureId ~= "" then
-            print(indent .. "  🖼️ TextureId: " .. obj.TextureId)
-        end
-    end
+    return map
 end
 
--- Функция для рекурсивного анализа всех детей
-local function analyzeChildren(obj, depth, maxDepth)
-    if depth > maxDepth then
+-- Функция копирования состояния одного Motor6D
+local function copyMotorState(originalMotor, copyMotor)
+    if not originalMotor or not copyMotor then
+        return false
+    end
+    
+    -- Копируем Transform (основное состояние)
+    copyMotor.Transform = originalMotor.Transform
+    
+    -- Копируем C0 и C1 (позиции соединения)
+    copyMotor.C0 = originalMotor.C0
+    copyMotor.C1 = originalMotor.C1
+    
+    -- Копируем CurrentAngle и DesiredAngle если есть
+    if originalMotor:FindFirstChild("CurrentAngle") then
+        copyMotor.CurrentAngle = originalMotor.CurrentAngle
+    end
+    if originalMotor:FindFirstChild("DesiredAngle") then
+        copyMotor.DesiredAngle = originalMotor.DesiredAngle
+    end
+    
+    return true
+end
+
+-- Функция анализа Motor6D состояний
+local function analyzeMotorStates(model, modelName)
+    print("🔍 Анализ Motor6D в " .. modelName .. ":")
+    
+    local motors = getMotor6Ds(model)
+    print("  Найдено Motor6D: " .. #motors)
+    
+    for i, motor in ipairs(motors) do
+        print("  [" .. i .. "] " .. motor.Name)
+        if motor.Part0 then
+            print("    Part0: " .. motor.Part0.Name)
+        end
+        if motor.Part1 then
+            print("    Part1: " .. motor.Part1.Name)
+        end
+        print("    Transform: " .. tostring(motor.Transform))
+        print("    C0: " .. tostring(motor.C0))
+        print("    C1: " .. tostring(motor.C1))
+        print()
+    end
+    
+    return motors
+end
+
+-- Функция однократного копирования состояний
+local function copyMotorStatesOnce(original, copy)
+    print("📋 Копирование состояний Motor6D (однократно)...")
+    
+    local originalMotors = getMotor6Ds(original)
+    local copyMotors = getMotor6Ds(copy)
+    
+    print("  Оригинал: " .. #originalMotors .. " Motor6D")
+    print("  Копия: " .. #copyMotors .. " Motor6D")
+    
+    if #originalMotors == 0 or #copyMotors == 0 then
+        print("❌ Недостаточно Motor6D для копирования!")
+        return false
+    end
+    
+    -- Создаем карты для сопоставления
+    local originalMap = createMotorMap(originalMotors)
+    local copyMap = createMotorMap(copyMotors)
+    
+    local successCount = 0
+    
+    -- Копируем состояния
+    for key, originalMotor in pairs(originalMap) do
+        local copyMotor = copyMap[key]
+        if copyMotor then
+            local success = copyMotorState(originalMotor, copyMotor)
+            if success then
+                successCount = successCount + 1
+                print("  ✅ " .. key)
+            else
+                print("  ❌ " .. key)
+            end
+        else
+            print("  ⚠️ Не найден в копии: " .. key)
+        end
+    end
+    
+    print("✅ Скопировано состояний: " .. successCount .. "/" .. #originalMotors)
+    return successCount > 0
+end
+
+-- Функция непрерывного копирования состояний (живая анимация)
+local function startLiveMotorCopying(original, copy)
+    print("🔄 Запуск живого копирования Motor6D состояний...")
+    
+    local originalMotors = getMotor6Ds(original)
+    local copyMotors = getMotor6Ds(copy)
+    
+    local originalMap = createMotorMap(originalMotors)
+    local copyMap = createMotorMap(copyMotors)
+    
+    local connection = nil
+    local isRunning = true
+    
+    connection = RunService.Heartbeat:Connect(function()
+        if not isRunning then
+            connection:Disconnect()
+            return
+        end
+        
+        -- Проверяем что модели еще существуют
+        if not original.Parent or not copy.Parent then
+            print("⚠️ Одна из моделей удалена, останавливаю копирование")
+            isRunning = false
+            return
+        end
+        
+        -- Копируем состояния всех Motor6D
+        for key, originalMotor in pairs(originalMap) do
+            local copyMotor = copyMap[key]
+            if copyMotor and originalMotor.Parent then
+                copyMotorState(originalMotor, copyMotor)
+            end
+        end
+    end)
+    
+    print("✅ Живое копирование запущено!")
+    print("💡 Копия должна повторять движения оригинала в реальном времени")
+    
+    -- Останавливаем через 30 секунд для теста
+    spawn(function()
+        wait(30)
+        isRunning = false
+        print("⏰ Живое копирование остановлено через 30 секунд")
+    end)
+    
+    return connection
+end
+
+-- Основная функция
+local function main()
+    local original, copy = findModels()
+    
+    if not original or not copy then
+        print("❌ Модели не найдены!")
         return
     end
     
-    analyzeObject(obj, depth)
+    print("🎯 Найдены модели:")
+    print("  Оригинал:", original.Name)
+    print("  Копия:", copy.Name)
+    print()
     
-    local children = obj:GetChildren()
-    if #children > 0 then
-        for _, child in ipairs(children) do
-            analyzeChildren(child, depth + 1, maxDepth)
-        end
+    -- Анализируем Motor6D в обеих моделях
+    print("📊 АНАЛИЗ MOTOR6D:")
+    analyzeMotorStates(original, "ОРИГИНАЛ")
+    analyzeMotorStates(copy, "КОПИЯ")
+    
+    -- Тест 1: Однократное копирование
+    print("🧪 ТЕСТ 1: Однократное копирование состояний")
+    local success = copyMotorStatesOnce(original, copy)
+    
+    if success then
+        print("✅ Однократное копирование успешно!")
+        
+        wait(2)
+        
+        -- Тест 2: Живое копирование
+        print()
+        print("🧪 ТЕСТ 2: Живое копирование (30 секунд)")
+        print("💡 Теперь подвигай оригинального питомца - копия должна повторять!")
+        
+        local connection = startLiveMotorCopying(original, copy)
+        
+    else
+        print("❌ Однократное копирование не удалось")
+        print("💡 Возможно проблема в структуре Motor6D")
     end
+    
+    print("=" .. string.rep("=", 40))
 end
 
--- ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ
-print("🔬 ПОЛНАЯ СТРУКТУРА ПИТОМЦА:")
-print("-" .. string.rep("-", 50))
-
-analyzeChildren(targetPet, 0, 10) -- Максимум 10 уровней вглубь
-
-print()
-print("📊 ДОПОЛНИТЕЛЬНАЯ СТАТИСТИКА:")
-print("-" .. string.rep("-", 30))
-
--- Подсчет различных типов объектов
-local stats = {}
-for _, obj in ipairs(targetPet:GetDescendants()) do
-    local className = obj.ClassName
-    stats[className] = (stats[className] or 0) + 1
-end
-
-for className, count in pairs(stats) do
-    print("  " .. className .. ": " .. count)
-end
-
-print()
-print("🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ЗАВЕРШЕН")
-print("=" .. string.rep("=", 70))
+-- Запуск
+main()
