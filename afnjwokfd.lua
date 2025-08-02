@@ -1,212 +1,174 @@
---[[
-    WORKSPACE PET COPIER
-    Находит реальные модели питомцев в Workspace и копирует их внешний вид
-]]
+-- 🧪 SIMPLE ANIMATION TEST - Простой тест анимации без изменения Anchored
+-- Просто пытается запустить анимацию на копии без всяких сложностей
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
 
-local player = Players.LocalPlayer
+print("🧪 === SIMPLE ANIMATION TEST ===")
+print("=" .. string.rep("=", 40))
 
-print("🔍 Workspace Pet Copier загружен!")
-
--- Простой GUI с кнопками
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "WorkspacePetCopier"
-screenGui.Parent = CoreGui
-
-local scanButton = Instance.new("TextButton")
-scanButton.Size = UDim2.new(0, 200, 0, 50)
-scanButton.Position = UDim2.new(0, 10, 0, 430)
-scanButton.BackgroundColor3 = Color3.new(0, 1, 0)
-scanButton.Text = "🔍 SCAN WORKSPACE PETS"
-scanButton.TextColor3 = Color3.new(1, 1, 1)
-scanButton.TextScaled = true
-scanButton.Font = Enum.Font.GothamBold
-scanButton.Parent = screenGui
-
-local copyButton = Instance.new("TextButton")
-copyButton.Size = UDim2.new(0, 200, 0, 50)
-copyButton.Position = UDim2.new(0, 220, 0, 430)
-copyButton.BackgroundColor3 = Color3.new(1, 0, 0)
-copyButton.Text = "🎯 COPY & ANIMATE PET"
-copyButton.TextColor3 = Color3.new(1, 1, 1)
-copyButton.TextScaled = true
-copyButton.Font = Enum.Font.GothamBold
-copyButton.Parent = screenGui
-
-local foundPets = {}
-
--- Функция поиска питомцев в Workspace
-local function scanWorkspacePets()
-    print("\n🔍 === СКАНИРОВАНИЕ WORKSPACE ===")
+-- Функция поиска моделей
+local function findModels()
+    local original = nil
+    local copy = nil
     
-    foundPets = {}
-    
-    -- Сканируем весь Workspace
-    for _, child in pairs(Workspace:GetChildren()) do
-        if child:IsA("Model") then
-            local name = child.Name
-            
-            -- Ищем модели с длинными hex-названиями (как на скриншоте)
-            if string.len(name) > 20 and (name:find("-") or name:find("%x%x%x%x")) then
-                table.insert(foundPets, child)
-                print("🐾 Найден питомец: " .. name)
-                
-                -- Показываем структуру модели
-                print("  📦 Части модели:")
-                for _, part in pairs(child:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        print("    - " .. part.Name .. " (" .. part.ClassName .. ", Size: " .. tostring(part.Size) .. ")")
-                    end
-                end
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            if obj.Name:find("_SCALED_COPY") then
+                copy = obj
+            else
+                original = obj
             end
         end
     end
     
-    print("📊 Найдено питомцев: " .. #foundPets)
+    return original, copy
+end
+
+-- Простая функция запуска анимации
+local function simpleAnimationStart(originalModel, copyModel)
+    print("🎬 Простой запуск анимации...")
     
-    if #foundPets == 0 then
-        print("❌ Питомцы не найдены! Попробуй:")
-        print("  1. Выпусти питомца из Tool (правый клик)")
-        print("  2. Подожди пока он появится в мире")
-        print("  3. Повтори сканирование")
+    -- Находим аниматоры
+    local originalAnimator = nil
+    local copyAnimator = nil
+    
+    for _, obj in pairs(originalModel:GetDescendants()) do
+        if obj:IsA("Animator") then
+            originalAnimator = obj
+            break
+        end
+    end
+    
+    for _, obj in pairs(copyModel:GetDescendants()) do
+        if obj:IsA("Animator") then
+            copyAnimator = obj
+            break
+        end
+    end
+    
+    if not originalAnimator then
+        print("❌ Animator не найден в оригинале!")
+        return false
+    end
+    
+    if not copyAnimator then
+        print("❌ Animator не найден в копии!")
+        return false
+    end
+    
+    print("✅ Найдены аниматоры:")
+    print("  Оригинал:", originalAnimator:GetFullName())
+    print("  Копия:", copyAnimator:GetFullName())
+    
+    -- Получаем активные анимации оригинала
+    local originalTracks = originalAnimator:GetPlayingAnimationTracks()
+    print("📹 Активных анимаций в оригинале:", #originalTracks)
+    
+    if #originalTracks == 0 then
+        print("❌ Нет активных анимаций для копирования!")
+        return false
+    end
+    
+    -- Копируем первую анимацию
+    local firstTrack = originalTracks[1]
+    if not firstTrack.Animation then
+        print("❌ У анимации нет Animation объекта!")
+        return false
+    end
+    
+    print("🎯 Копирую анимацию:", firstTrack.Animation.AnimationId)
+    print("  Скорость:", firstTrack.Speed)
+    print("  Зацикленность:", firstTrack.Looped)
+    print("  Играет:", firstTrack.IsPlaying)
+    
+    -- Создаем новую анимацию для копии
+    local newAnimation = Instance.new("Animation")
+    newAnimation.AnimationId = firstTrack.Animation.AnimationId
+    
+    -- Загружаем и запускаем
+    local success, result = pcall(function()
+        local newTrack = copyAnimator:LoadAnimation(newAnimation)
+        newTrack.Looped = firstTrack.Looped
+        newTrack:Play()
+        newTrack:AdjustSpeed(firstTrack.Speed)
+        return newTrack
+    end)
+    
+    if success then
+        print("✅ Анимация успешно запущена на копии!")
+        
+        -- Проверяем через секунду
+        wait(1)
+        local copyTracks = copyAnimator:GetPlayingAnimationTracks()
+        print("📊 Проверка: активных анимаций на копии:", #copyTracks)
+        
+        for i, track in ipairs(copyTracks) do
+            print("  [" .. i .. "] Играет:", track.IsPlaying, "| ID:", track.Animation.AnimationId)
+        end
+        
+        return #copyTracks > 0
     else
-        print("✅ Питомцы найдены! Можно копировать и анимировать")
+        print("❌ Ошибка запуска анимации:", result)
+        return false
     end
 end
 
--- Функция копирования и анимации питомца
-local function copyAndAnimatePet()
-    print("\n🎯 === КОПИРОВАНИЕ И АНИМАЦИЯ ПИТОМЦА ===")
+-- Основная функция
+local function main()
+    local original, copy = findModels()
     
-    if #foundPets == 0 then
-        print("❌ Сначала просканируй Workspace!")
+    if not original then
+        print("❌ Оригинальный питомец не найден!")
         return
     end
     
-    -- Берем первого найденного питомца
-    local originalPet = foundPets[1]
-    print("🐾 Копирую питомца: " .. originalPet.Name)
+    if not copy then
+        print("❌ Копия питомца не найдена!")
+        print("💡 Сначала создайте копию через PetScaler")
+        return
+    end
     
-    -- Клонируем всю модель питомца
-    local petClone = originalPet:Clone()
-    petClone.Name = "AnimatedPetClone"
+    print("🎯 Найдены модели:")
+    print("  Оригинал:", original.Name)
+    print("  Копия:", copy.Name)
+    print()
     
-    -- Позиционируем клон рядом с игроком
-    local playerPos = player.Character.HumanoidRootPart.Position
-    local targetPos = playerPos + Vector3.new(5, 3, 0)
+    -- Проверяем состояние копии ДО попытки анимации
+    print("🔍 Состояние копии ДО анимации:")
+    local partsBefore = 0
+    for _, obj in pairs(copy:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            partsBefore = partsBefore + 1
+        end
+    end
+    print("  Частей:", partsBefore)
     
-    if petClone.PrimaryPart then
-        petClone:SetPrimaryPartCFrame(CFrame.new(targetPos))
-        print("📍 Позиционировал через PrimaryPart")
+    -- Пытаемся запустить анимацию
+    local success = simpleAnimationStart(original, copy)
+    
+    -- Проверяем состояние копии ПОСЛЕ попытки анимации
+    print("🔍 Состояние копии ПОСЛЕ анимации:")
+    local partsAfter = 0
+    for _, obj in pairs(copy:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            partsAfter = partsAfter + 1
+        end
+    end
+    print("  Частей:", partsAfter)
+    
+    if partsBefore ~= partsAfter then
+        print("⚠️ ВНИМАНИЕ: Количество частей изменилось! (" .. partsBefore .. " -> " .. partsAfter .. ")")
+    end
+    
+    if success then
+        print("🎉 ТЕСТ ПРОЙДЕН: Анимация работает!")
     else
-        petClone:MoveTo(targetPos)
-        print("📍 Позиционировал через MoveTo")
+        print("❌ ТЕСТ НЕ ПРОЙДЕН: Анимация не работает")
     end
     
-    petClone.Parent = Workspace
-    print("🌍 Клон добавлен в Workspace")
-    
-    -- Подготавливаем все части к анимации
-    local originalSizes = {}
-    local parts = {}
-    
-    for _, part in pairs(petClone:GetDescendants()) do
-        if part:IsA("BasePart") then
-            table.insert(parts, part)
-            originalSizes[part] = part.Size
-            
-            -- Устанавливаем начальные параметры
-            part.Size = part.Size / 1.88  -- Маленький размер
-            part.Transparency = 0.8       -- Полупрозрачный
-            part.Anchored = true          -- Фиксируем
-            part.CanCollide = false       -- Убираем коллизию
-            
-            print("  📦 Подготовил: " .. part.Name)
-        end
-    end
-    
-    print("📊 Подготовлено " .. #parts .. " частей к анимации")
-    
-    -- Ждем 1 секунду
-    wait(1)
-    print("⏰ Начинаю анимацию роста РЕАЛЬНОГО питомца...")
-    
-    -- Анимация роста всех частей одновременно
-    local steps = 20
-    
-    for i = 1, steps do
-        local progress = i / steps
-        local sizeMultiplier = (1/1.88) + ((1 - 1/1.88) * progress)
-        local transparency = 0.8 - (0.8 * progress)
-        
-        for _, part in pairs(parts) do
-            if part and part.Parent then
-                part.Size = originalSizes[part] * sizeMultiplier
-                part.Transparency = transparency
-            end
-        end
-        
-        if i % 5 == 0 then
-            print("🔄 Рост питомца: " .. string.format("%.0f", progress * 100) .. "%")
-        end
-        
-        wait(0.1)
-    end
-    
-    print("✅ Анимация роста завершена!")
-    print("🎯 Теперь это НАСТОЯЩИЙ питомец с анимацией!")
-    
-    -- Ждем 5 секунд для осмотра
-    wait(5)
-    
-    -- Исчезновение
-    print("💥 Питомец исчезает...")
-    for i = 1, 10 do
-        for _, part in pairs(parts) do
-            if part and part.Parent then
-                part.Transparency = i / 10
-            end
-        end
-        wait(0.1)
-    end
-    
-    petClone:Destroy()
-    print("🗑️ Тест завершен!")
+    print("=" .. string.rep("=", 40))
 end
 
--- Обработчики кнопок
-scanButton.MouseButton1Click:Connect(function()
-    scanButton.Text = "⏳ SCANNING..."
-    scanButton.BackgroundColor3 = Color3.new(1, 1, 0)
-    
-    spawn(function()
-        scanWorkspacePets()
-        
-        wait(1)
-        scanButton.Text = "🔍 SCAN WORKSPACE PETS"
-        scanButton.BackgroundColor3 = Color3.new(0, 1, 0)
-    end)
-end)
-
-copyButton.MouseButton1Click:Connect(function()
-    copyButton.Text = "⏳ ANIMATING..."
-    copyButton.BackgroundColor3 = Color3.new(1, 1, 0)
-    
-    spawn(function()
-        copyAndAnimatePet()
-        
-        wait(1)
-        copyButton.Text = "🎯 COPY & ANIMATE PET"
-        copyButton.BackgroundColor3 = Color3.new(1, 0, 0)
-    end)
-end)
-
-print("🎯 Workspace Pet Copier готов!")
-print("📋 Инструкция:")
-print("  1. Выпусти питомца в мир (правый клик на Tool)")
-print("  2. Нажми SCAN WORKSPACE PETS")
-print("  3. Нажми COPY & ANIMATE PET")
-print("  4. Смотри на НАСТОЯЩЕГО питомца с анимацией!")
+-- Запуск
+main()
