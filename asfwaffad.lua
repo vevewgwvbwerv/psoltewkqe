@@ -118,7 +118,7 @@ local function getAllParts(model)
     return parts
 end
 
--- Функция плавного масштабирования модели
+-- Функция плавного масштабирования модели (ИСПРАВЛЕНО: через CFrame)
 local function scaleModelSmoothly(model, scaleFactor, tweenTime)
     print("🔥 Начинаю плавное масштабирование модели:", model.Name)
     print("📏 Коэффициент:", scaleFactor .. "x")
@@ -133,15 +133,15 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
     end
     
     -- Определяем центр масштабирования
-    local centerPoint
+    local centerCFrame
     if model.PrimaryPart then
-        centerPoint = model.PrimaryPart.Position
+        centerCFrame = model.PrimaryPart.CFrame
         print("🎯 Центр масштабирования: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
     else
         -- Если нет PrimaryPart, используем центр модели
         local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
         if success then
-            centerPoint = modelCFrame.Position
+            centerCFrame = modelCFrame
             print("🎯 Центр масштабирования: Центр модели")
         else
             print("❌ Не удалось определить центр масштабирования!")
@@ -149,14 +149,13 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         end
     end
     
-    print("📍 Центр масштабирования:", centerPoint)
+    print("📍 Центр масштабирования:", centerCFrame.Position)
     
     -- Сохраняем исходные данные всех частей
     local originalData = {}
     for _, part in ipairs(parts) do
         originalData[part] = {
             size = part.Size,
-            position = part.Position,
             cframe = part.CFrame
         }
     end
@@ -171,25 +170,26 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         0 -- Задержка
     )
     
-    -- Создаем и запускаем твины для каждой части
+    -- ИСПРАВЛЕНО: Масштабирование через CFrame чтобы части не разлетались
     local tweens = {}
     local completedTweens = 0
     
     for _, part in ipairs(parts) do
         local originalSize = originalData[part].size
-        local originalPos = originalData[part].position
+        local originalCFrame = originalData[part].cframe
         
         -- Вычисляем новый размер
         local newSize = originalSize * scaleFactor
         
-        -- Вычисляем новую позицию относительно центра масштабирования
-        local offsetFromCenter = originalPos - centerPoint
-        local newPosition = centerPoint + (offsetFromCenter * scaleFactor)
+        -- Вычисляем новый CFrame относительно центра
+        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
+        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
+        local newCFrame = centerCFrame * scaledRelativeCFrame
         
-        -- Создаем твин для размера и позиции
+        -- Создаем твин для размера и CFrame
         local tween = TweenService:Create(part, tweenInfo, {
             Size = newSize,
-            Position = newPosition
+            CFrame = newCFrame
         })
         
         -- Обработчик завершения твина
@@ -259,22 +259,32 @@ local function findAndScalePet()
     print("📍 Расстояние:", math.floor(targetPet.distance) .. " единиц")
     print()
     
-    -- Создаем копию
-    local petCopy = deepCopyModel(targetPet.model)
-    
-    -- Ждем немного чтобы копия полностью загрузилась
-    wait(0.5)
-    
-    -- Масштабируем копию
-    scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    return targetPet.model
 end
 
--- Запуск
-print("🚀 Запуск поиска и масштабирования питомца...")
-print()
+-- Функция проверки визуальных элементов питомца
+local function hasPetVisuals(model)
+    local meshCount = 0
+    local meshes = {}
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                textureId = obj.TextureId or ""
+            }
+            if meshData.meshId ~= "" or meshData.textureId ~= "" then
+                table.insert(meshes, meshData)
+            end
+        end
+    end
+    
+    return meshCount > 0, meshes
+end
 
-findAndScalePet()
-
-print()
-print("🎯 PET SCALER завершен!")
+-- Запуск GUI
+createGUI()
 print("=" .. string.rep("=", 60))
