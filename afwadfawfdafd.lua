@@ -7,19 +7,47 @@ local Workspace = game:GetService("Workspace")
 print("🔍 === COPY DIAGNOSTICS ===")
 print("=" .. string.rep("=", 40))
 
--- Функция поиска оригинала и копии
+-- ИСПРАВЛЕНО: Правильный поиск оригинала и копии
 local function findModels()
     local original = nil
     local copy = nil
+    local copyUUID = nil
     
+    -- Сначала ищем копию чтобы получить UUID
     for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            if obj.Name:find("_SCALED_COPY") then
-                copy = obj
-            else
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") and obj.Name:find("_SCALED_COPY") then
+            copy = obj
+            -- Извлекаем UUID из имени копии
+            copyUUID = obj.Name:gsub("_SCALED_COPY", "")
+            print("🔍 Найдена копия:", obj.Name)
+            print("🎯 Ищу оригинал с UUID:", copyUUID)
+            break
+        end
+    end
+    
+    if not copy then
+        print("⚠️ Копия не найдена, ищу любой UUID питомец...")
+        -- Если копии нет, берем первого найденного
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
                 original = obj
+                break
             end
         end
+        return original, copy
+    end
+    
+    -- Теперь ищем оригинал с таким же UUID
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == copyUUID then
+            original = obj
+            print("✅ Найден оригинал:", obj.Name)
+            break
+        end
+    end
+    
+    if not original then
+        print("❌ Оригинал с UUID", copyUUID, "не найден!")
     end
     
     return original, copy
