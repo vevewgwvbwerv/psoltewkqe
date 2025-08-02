@@ -1,190 +1,195 @@
 --[[
-    FIXED TEST GROWTH ANIMATION
-    Исправленная версия под реальную структуру питомца
-    Питомец = Tool с BasePart объектами (не Model)
+    SIMPLE MODEL LISTER
+    Показывает ВСЕ модели рядом с игроком - без всякой фильтрации
 ]]
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
+local foundModels = {}
 
-print("🧪 Fixed Test Growth Animation загружен!")
+print("📋 Simple Model Lister загружен!")
 
--- Простой GUI с кнопкой
+-- GUI с фиксированной позицией
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FixedTestGrowthAnimation"
+screenGui.Name = "SimpleModelLister"
 screenGui.Parent = CoreGui
 
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 200, 0, 50)
-button.Position = UDim2.new(0, 10, 0, 130)
-button.BackgroundColor3 = Color3.new(0, 1, 0)
-button.Text = "🧪 FIXED TEST ANIMATION"
-button.TextColor3 = Color3.new(1, 1, 1)
-button.TextScaled = true
-button.Font = Enum.Font.GothamBold
-button.Parent = screenGui
+local listButton = Instance.new("TextButton")
+listButton.Size = UDim2.new(0, 180, 0, 40)
+listButton.Position = UDim2.new(0, 10, 0, 100)  -- ФИКСИРОВАННАЯ позиция
+listButton.BackgroundColor3 = Color3.new(1, 0.5, 0)
+listButton.Text = "📋 LIST ALL MODELS"
+listButton.TextColor3 = Color3.new(1, 1, 1)
+listButton.TextScaled = true
+listButton.Font = Enum.Font.GothamBold
+listButton.Parent = screenGui
 
--- Функция получения питомца из руки (исправленная)
-local function getHandPet()
-    if not player.Character then 
+local copyButton = Instance.new("TextButton")
+copyButton.Size = UDim2.new(0, 180, 0, 40)
+copyButton.Position = UDim2.new(0, 200, 0, 100)  -- ФИКСИРОВАННАЯ позиция
+copyButton.BackgroundColor3 = Color3.new(0, 1, 0)
+copyButton.Text = "🎯 COPY MODEL #1"
+copyButton.TextColor3 = Color3.new(1, 1, 1)
+copyButton.TextScaled = true
+copyButton.Font = Enum.Font.GothamBold
+copyButton.Parent = screenGui
+
+-- Функция показа ВСЕХ моделей рядом
+local function listAllModels()
+    print("\n📋 === ВСЕ МОДЕЛИ РЯДОМ С ИГРОКОМ ===")
+    
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
         print("❌ Character не найден!")
-        return nil 
+        return
     end
     
-    for _, tool in pairs(player.Character:GetChildren()) do
-        if tool:IsA("Tool") then
-            print("✅ Найден Tool: " .. tool.Name)
-            return tool  -- Возвращаем сам Tool, не Model внутри
+    local playerPos = player.Character.HumanoidRootPart.Position
+    foundModels = {}
+    
+    -- Показываем ВСЕ модели в радиусе 30 единиц
+    for i, child in pairs(Workspace:GetChildren()) do
+        if child:IsA("Model") and child ~= player.Character then
+            
+            local modelPos = nil
+            local partCount = 0
+            
+            -- Находим любую BasePart для определения позиции
+            for _, part in pairs(child:GetChildren()) do
+                if part:IsA("BasePart") then
+                    if not modelPos then
+                        modelPos = part.Position
+                    end
+                    partCount = partCount + 1
+                end
+            end
+            
+            if modelPos then
+                local distance = (modelPos - playerPos).Magnitude
+                
+                if distance < 30 then  -- В радиусе 30 единиц
+                    table.insert(foundModels, child)
+                    
+                    print("📦 #" .. #foundModels .. ": " .. child.Name)
+                    print("   📏 Расстояние: " .. string.format("%.1f", distance))
+                    print("   🧱 Частей: " .. partCount)
+                    
+                    -- Показываем первые 3 части
+                    local showCount = 0
+                    for _, part in pairs(child:GetChildren()) do
+                        if part:IsA("BasePart") and showCount < 3 then
+                            showCount = showCount + 1
+                            print("     - " .. part.Name .. " (" .. tostring(part.Size) .. ")")
+                        end
+                    end
+                    print("")
+                end
+            end
         end
     end
     
-    print("❌ Tool не найден в руке!")
-    return nil
+    print("📊 Найдено моделей: " .. #foundModels)
+    
+    if #foundModels > 0 then
+        print("✅ Теперь можешь скопировать любую модель!")
+        print("🎯 Нажми COPY MODEL #1 чтобы скопировать первую модель")
+    else
+        print("❌ Модели рядом не найдены!")
+    end
 end
 
--- Функция создания модели из Tool
-local function createModelFromTool(tool)
-    print("📦 Создаю модель из Tool: " .. tool.Name)
+-- Функция копирования первой найденной модели
+local function copyFirstModel()
+    print("\n🎯 === КОПИРОВАНИЕ ПЕРВОЙ МОДЕЛИ ===")
     
-    -- Создаем новую модель
-    local model = Instance.new("Model")
-    model.Name = tool.Name
-    
-    -- Копируем все BasePart из Tool в модель
-    local partCount = 0
-    for _, child in pairs(tool:GetChildren()) do
-        if child:IsA("BasePart") and child.Name ~= "Handle" then
-            local partClone = child:Clone()
-            partClone.Parent = model
-            partCount = partCount + 1
-            print("  📦 Скопировал часть: " .. child.Name)
-        end
+    if #foundModels == 0 then
+        print("❌ Сначала найди модели!")
+        return
     end
     
-    -- Если есть Handle, тоже копируем
-    local handle = tool:FindFirstChild("Handle")
-    if handle then
-        local handleClone = handle:Clone()
-        handleClone.Name = "Body"  -- Переименовываем Handle в Body
-        handleClone.Parent = model
-        partCount = partCount + 1
-        print("  📦 Скопировал Handle как Body")
+    local model = foundModels[1]
+    print("📦 Копирую модель: " .. model.Name)
+    
+    -- Клонируем модель
+    local clone = model:Clone()
+    clone.Name = "TestClone"
+    
+    -- Ставим рядом с игроком
+    local playerPos = player.Character.HumanoidRootPart.Position
+    local targetPos = playerPos + Vector3.new(3, 3, 0)
+    
+    if clone.PrimaryPart then
+        clone:SetPrimaryPartCFrame(CFrame.new(targetPos))
+    else
+        clone:MoveTo(targetPos)
     end
     
-    print("📊 Создана модель с " .. partCount .. " частями")
-    return model
-end
-
--- Функция тестовой анимации роста
-local function testGrowthAnimation()
-    print("\n🧪 === ТЕСТ АНИМАЦИИ РОСТА (ИСПРАВЛЕННЫЙ) ===")
+    clone.Parent = Workspace
+    print("🌍 Клон добавлен в Workspace")
     
-    -- Получаем Tool из руки
-    local handTool = getHandPet()
-    if not handTool then return end
-    
-    -- Создаем модель из Tool
-    local model = createModelFromTool(handTool)
-    
-    -- Позиционируем модель рядом с игроком
-    local playerPosition = player.Character.HumanoidRootPart.Position
-    local testPosition = playerPosition + Vector3.new(5, 0, 0) -- 5 единиц вправо
-    
-    model:MoveTo(testPosition)
-    model.Parent = Workspace
-    print("🌍 Добавил модель в Workspace")
-    
-    -- Подготавливаем анимацию
+    -- Простая анимация роста
+    local parts = {}
     local originalSizes = {}
-    local tweens = {}
-    local partCount = 0
     
-    print("📊 Подготавливаю анимацию...")
-    
-    for _, part in pairs(model:GetChildren()) do
+    for _, part in pairs(clone:GetDescendants()) do
         if part:IsA("BasePart") then
-            partCount = partCount + 1
+            table.insert(parts, part)
             originalSizes[part] = part.Size
-            
-            -- Начинаем с размера 1/1.88 от оригинала (как в записи)
-            local startSize = part.Size / 1.88
-            part.Size = startSize
-            part.Transparency = 0.8  -- Полупрозрачный
-            part.Anchored = true     -- Фиксируем
-            
-            print("  📦 " .. part.Name .. ": " .. tostring(startSize) .. " → " .. tostring(originalSizes[part]))
-            
-            -- Создаем анимацию роста (точно как в записи)
-            local growTween = TweenService:Create(part, 
-                TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
-                {
-                    Size = originalSizes[part],
-                    Transparency = 0
-                }
-            )
-            
-            table.insert(tweens, growTween)
+            part.Size = part.Size / 1.88
+            part.Transparency = 0.8
+            part.Anchored = true
+            part.CanCollide = false
         end
     end
     
-    print("🎬 Найдено " .. partCount .. " частей для анимации")
-    print("📈 Запускаю рост в 1.88 раз...")
+    print("📊 Анимирую " .. #parts .. " частей...")
     
-    -- Запускаем все анимации одновременно
-    for _, tween in pairs(tweens) do
-        tween:Play()
-    end
-    
-    print("⏰ Анимация запущена! Длительность: 1.5 секунд")
-    print("🔍 Смотри на модель рядом с собой!")
-    
-    -- Через 4 секунды удаляем модель
-    wait(4)
-    
-    print("💥 Удаляю тестовую модель...")
-    
-    -- Анимация исчезновения
-    local fadeTweens = {}
-    for _, part in pairs(model:GetChildren()) do
-        if part:IsA("BasePart") then
-            local fadeTween = TweenService:Create(part,
-                TweenInfo.new(0.5, Enum.EasingStyle.Quad),
-                { Transparency = 1 }
-            )
-            table.insert(fadeTweens, fadeTween)
+    -- Анимация
+    for i = 1, 15 do
+        local progress = i / 15
+        local sizeMultiplier = (1/1.88) + ((1 - 1/1.88) * progress)
+        local transparency = 0.8 - (0.8 * progress)
+        
+        for _, part in pairs(parts) do
+            if part and part.Parent then
+                part.Size = originalSizes[part] * sizeMultiplier
+                part.Transparency = transparency
+            end
         end
+        
+        wait(0.1)
     end
     
-    for _, tween in pairs(fadeTweens) do
-        tween:Play()
-    end
+    print("✅ Анимация завершена!")
     
-    wait(0.5)
-    model:Destroy()
-    
-    print("✅ Тест завершен!")
-    print("🎯 Если анимация выглядела правильно, можно использовать для замены питомца из яйца!")
+    -- Удаляем через 3 секунды
+    wait(3)
+    clone:Destroy()
+    print("🗑️ Клон удален")
 end
 
--- Обработчик кнопки
-button.MouseButton1Click:Connect(function()
-    button.Text = "⏳ TESTING..."
-    button.BackgroundColor3 = Color3.new(1, 1, 0)
-    
+-- Обработчики кнопок
+listButton.MouseButton1Click:Connect(function()
+    listButton.Text = "⏳ LISTING..."
     spawn(function()
-        testGrowthAnimation()
-        
+        listAllModels()
         wait(1)
-        button.Text = "🧪 FIXED TEST ANIMATION"
-        button.BackgroundColor3 = Color3.new(0, 1, 0)
+        listButton.Text = "📋 LIST ALL MODELS"
     end)
 end)
 
-print("🎯 Готов к тестированию!")
-print("📋 1. Убедись что питомец в руке")
-print("📋 2. Нажми кнопку FIXED TEST ANIMATION")
-print("📋 3. Смотри на анимацию рядом с собой")
+copyButton.MouseButton1Click:Connect(function()
+    copyButton.Text = "⏳ COPYING..."
+    spawn(function()
+        copyFirstModel()
+        wait(1)
+        copyButton.Text = "🎯 COPY MODEL #1"
+    end)
+end)
+
+print("🎯 Simple Model Lister готов!")
+print("📋 1. Нажми LIST ALL MODELS")
+print("📋 2. Посмотри в консоль - там будут ВСЕ модели рядом")
+print("📋 3. Нажми COPY MODEL #1 для анимации")
