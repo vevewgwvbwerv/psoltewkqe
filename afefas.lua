@@ -1,14 +1,24 @@
--- 🔬 ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА
--- Максимально детальное сканирование всех компонентов питомца
+-- 🔥 PET SCALER - Плавное увеличение питомца с сохранением анимации
+-- Находит UUID модель питомца, копирует её и плавно увеличивает
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-print("🔬 === ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ ПИТОМЦА ===")
-print("=" .. string.rep("=", 70))
+print("🔥 === PET SCALER - ПЛАВНОЕ УВЕЛИЧЕНИЕ ПИТОМЦА ===")
+print("=" .. string.rep("=", 60))
+
+-- Конфигурация
+local CONFIG = {
+    SEARCH_RADIUS = 100,
+    SCALE_FACTOR = 3.0,  -- Во сколько раз увеличиваем
+    TWEEN_TIME = 3.0,    -- Время анимации увеличения (секунды)
+    EASING_STYLE = Enum.EasingStyle.Quad,
+    EASING_DIRECTION = Enum.EasingDirection.Out
+}
 
 -- Получаем позицию игрока
 local playerChar = player.Character
@@ -24,238 +34,394 @@ if not hrp then
 end
 
 local playerPos = hrp.Position
-local SEARCH_RADIUS = 50
-
 print("📍 Позиция игрока:", playerPos)
-print("🎯 Радиус поиска:", SEARCH_RADIUS)
+print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
+print("📏 Коэффициент увеличения:", CONFIG.SCALE_FACTOR .. "x")
+print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
 print()
 
--- Функция для детального анализа объекта
-local function analyzeObject(obj, depth)
-    local indent = string.rep("  ", depth)
-    local info = {
-        name = obj.Name,
-        className = obj.ClassName,
-        parent = obj.Parent and obj.Parent.Name or "NIL"
-    }
+-- Функция проверки визуальных элементов питомца
+local function hasPetVisuals(model)
+    local meshCount = 0
+    local petMeshes = {}
     
-    print(indent .. "📦 " .. info.className .. ": " .. info.name .. " (Parent: " .. info.parent .. ")")
-    
-    -- Анализ BasePart
-    if obj:IsA("BasePart") then
-        print(indent .. "  📏 Size: " .. tostring(obj.Size))
-        print(indent .. "  📍 Position: " .. tostring(obj.Position))
-        print(indent .. "  🔄 CFrame: " .. tostring(obj.CFrame))
-        print(indent .. "  👻 Transparency: " .. obj.Transparency)
-        print(indent .. "  🎨 Material: " .. tostring(obj.Material))
-        print(indent .. "  🌈 Color: " .. tostring(obj.Color))
-        print(indent .. "  ⚓ Anchored: " .. tostring(obj.Anchored))
-        print(indent .. "  🏷️ CanCollide: " .. tostring(obj.CanCollide))
-        if obj.Shape then
-            print(indent .. "  🔺 Shape: " .. tostring(obj.Shape))
-        end
-    end
-    
-    -- Анализ Model
-    if obj:IsA("Model") then
-        print(indent .. "  🎯 PrimaryPart: " .. (obj.PrimaryPart and obj.PrimaryPart.Name or "NIL"))
-        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-        if success then
-            print(indent .. "  📍 ModelCFrame: " .. tostring(modelCFrame))
-        end
-        local success2, modelSize = pcall(function() return obj:GetExtentsSize() end)
-        if success2 then
-            print(indent .. "  📏 ModelSize: " .. tostring(modelSize))
-        end
-    end
-    
-    -- Анализ Motor6D
-    if obj:IsA("Motor6D") then
-        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
-        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
-        print(indent .. "  📐 C0: " .. tostring(obj.C0))
-        print(indent .. "  📐 C1: " .. tostring(obj.C1))
-        print(indent .. "  🎯 CurrentAngle: " .. obj.CurrentAngle)
-        print(indent .. "  🎯 DesiredAngle: " .. obj.DesiredAngle)
-        print(indent .. "  ⚡ MaxVelocity: " .. obj.MaxVelocity)
-    end
-    
-    -- Анализ Weld
-    if obj:IsA("Weld") or obj:IsA("WeldConstraint") then
-        print(indent .. "  🔗 Part0: " .. (obj.Part0 and obj.Part0.Name or "NIL"))
-        print(indent .. "  🔗 Part1: " .. (obj.Part1 and obj.Part1.Name or "NIL"))
-        if obj:IsA("Weld") then
-            print(indent .. "  📐 C0: " .. tostring(obj.C0))
-            print(indent .. "  📐 C1: " .. tostring(obj.C1))
-        end
-    end
-    
-    -- Анализ Attachment
-    if obj:IsA("Attachment") then
-        print(indent .. "  📍 Position: " .. tostring(obj.Position))
-        print(indent .. "  🔄 Orientation: " .. tostring(obj.Orientation))
-        print(indent .. "  📐 CFrame: " .. tostring(obj.CFrame))
-        print(indent .. "  👁️ Visible: " .. tostring(obj.Visible))
-    end
-    
-    -- Анализ Humanoid
-    if obj:IsA("Humanoid") then
-        print(indent .. "  ❤️ Health: " .. obj.Health .. "/" .. obj.MaxHealth)
-        print(indent .. "  🏃 WalkSpeed: " .. obj.WalkSpeed)
-        print(indent .. "  🦘 JumpPower: " .. obj.JumpPower)
-        print(indent .. "  🎭 DisplayDistanceType: " .. tostring(obj.DisplayDistanceType))
-        print(indent .. "  📊 RigType: " .. tostring(obj.RigType))
-        
-        -- Анализ активных анимаций
-        local animator = obj:FindFirstChild("Animator")
-        if animator then
-            print(indent .. "  🎬 Animator найден!")
-            local animTracks = animator:GetPlayingAnimationTracks()
-            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
-            for i, track in ipairs(animTracks) do
-                print(indent .. "    🎞️ Анимация #" .. i .. ":")
-                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
-                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
-                print(indent .. "      ⏱️ Length: " .. track.Length)
-                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
-                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
-                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
-                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
-                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
-                print(indent .. "      🏃 Speed: " .. track.Speed)
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") then
+            meshCount = meshCount + 1
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or ""
+            }
+            if meshData.meshId ~= "" then
+                table.insert(petMeshes, meshData)
+            end
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            local meshData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                textureId = obj.TextureId or ""
+            }
+            if meshData.meshId ~= "" or meshData.textureId ~= "" then
+                table.insert(petMeshes, meshData)
             end
         end
     end
     
-    -- Анализ AnimationController
-    if obj:IsA("AnimationController") then
-        print(indent .. "  🎮 AnimationController найден!")
-        local animator = obj:FindFirstChild("Animator")
-        if animator then
-            print(indent .. "  🎬 Animator найден!")
-            local animTracks = animator:GetPlayingAnimationTracks()
-            print(indent .. "  🎭 Активных анимаций: " .. #animTracks)
-            for i, track in ipairs(animTracks) do
-                print(indent .. "    🎞️ Анимация #" .. i .. ":")
-                print(indent .. "      📝 Name: " .. (track.Name or "Unnamed"))
-                print(indent .. "      🆔 AnimationId: " .. (track.Animation and track.Animation.AnimationId or "NIL"))
-                print(indent .. "      ⏱️ Length: " .. track.Length)
-                print(indent .. "      ⏯️ IsPlaying: " .. tostring(track.IsPlaying))
-                print(indent .. "      🔁 Looped: " .. tostring(track.Looped))
-                print(indent .. "      📊 Priority: " .. tostring(track.Priority))
-                print(indent .. "      🔊 Weight: " .. track.WeightCurrent)
-                print(indent .. "      ⏰ TimePosition: " .. track.TimePosition)
-                print(indent .. "      🏃 Speed: " .. track.Speed)
-            end
-        end
-    end
-    
-    -- Анализ Animation объектов
-    if obj:IsA("Animation") then
-        print(indent .. "  🎞️ AnimationId: " .. obj.AnimationId)
-    end
-    
-    -- Анализ скриптов
-    if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
-        print(indent .. "  📜 Скрипт: " .. obj.ClassName)
-        print(indent .. "  ✅ Enabled: " .. tostring(obj.Enabled or "N/A"))
-    end
-    
-    -- Анализ SpecialMesh
-    if obj:IsA("SpecialMesh") then
-        print(indent .. "  🎭 MeshType: " .. tostring(obj.MeshType))
-        print(indent .. "  📏 Scale: " .. tostring(obj.Scale))
-        print(indent .. "  📍 Offset: " .. tostring(obj.Offset))
-        if obj.MeshId ~= "" then
-            print(indent .. "  🆔 MeshId: " .. obj.MeshId)
-        end
-        if obj.TextureId ~= "" then
-            print(indent .. "  🖼️ TextureId: " .. obj.TextureId)
-        end
-    end
-    
-    -- Анализ других важных свойств
-    if obj:IsA("GuiObject") then
-        print(indent .. "  👁️ Visible: " .. tostring(obj.Visible))
-    end
-    
-    return info
+    return meshCount > 0, petMeshes
 end
 
--- Функция для рекурсивного анализа всех детей
-local function analyzeChildren(obj, depth, maxDepth)
-    if depth > maxDepth then
+-- Функция глубокого копирования модели (ИСПРАВЛЕНО: стоит НА ЗЕМЛЕ)
+local function deepCopyModel(originalModel)
+    print("📋 Создаю глубокую копию модели:", originalModel.Name)
+    
+    local copy = originalModel:Clone()
+    copy.Name = originalModel.Name .. "_SCALED_COPY"
+    copy.Parent = Workspace
+    
+    -- ИСПРАВЛЕНО: Правильное позиционирование копии НА ЗЕМЛЕ
+    if copy.PrimaryPart and originalModel.PrimaryPart then
+        local originalCFrame = originalModel.PrimaryPart.CFrame
+        local offset = Vector3.new(15, 0, 0) -- 15 единиц в сторону по X
+        
+        -- Вычисляем позицию рядом с оригиналом
+        local targetPosition = originalCFrame.Position + offset
+        
+        -- Используем Raycast чтобы найти землю под копией
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {copy, originalModel}
+        
+        -- Луч вниз с высокой позиции
+        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            -- Найдена земля - ставим копию НА землю
+            local groundY = raycastResult.Position.Y
+            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
+            
+            -- Устанавливаем копию на землю с правильной ориентацией
+            local newCFrame = CFrame.new(finalPosition) * (originalCFrame - originalCFrame.Position)
+            copy:SetPrimaryPartCFrame(newCFrame)
+            
+            print("📍 Копия размещена НА ЗЕМЛЕ")
+            print("  Оригинал:", originalCFrame.Position)
+            print("  Копия:", finalPosition)
+            print("  Высота земли:", groundY)
+        else
+            -- Если земля не найдена, используем высоту оригинала
+            local newCFrame = originalCFrame + offset
+            copy:SetPrimaryPartCFrame(newCFrame)
+            print("📍 Копия размещена на уровне оригинала (земля не найдена)")
+        end
+        
+    elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
+        -- Fallback если нет PrimaryPart
+        local originalPos = originalModel.RootPart.Position
+        local offset = Vector3.new(15, 0, 0)
+        local targetPos = originalPos + offset
+        
+        -- Raycast для RootPart
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {copy, originalModel}
+        
+        local rayOrigin = Vector3.new(targetPos.X, targetPos.Y + 100, targetPos.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            copy.RootPart.Position = Vector3.new(targetPos.X, raycastResult.Position.Y, targetPos.Z)
+            print("📍 Копия размещена через RootPart НА ЗЕМЛЕ")
+        else
+            copy.RootPart.Position = targetPos
+            print("📍 Копия размещена через RootPart на уровне оригинала")
+        end
+    else
+        print("⚠️ Не удалось точно позиционировать копию")
+    end
+    
+    -- ИСПРАВЛЕНО: Устанавливаем Anchored только для основной части, остальные оставляем свободными для анимации
+    local anchoredPart = nil
+    
+    -- Сначала пытаемся найти RootPart
+    if copy:FindFirstChild("RootPart") then
+        anchoredPart = copy.RootPart
+    -- Если нет RootPart, используем PrimaryPart
+    elseif copy.PrimaryPart then
+        anchoredPart = copy.PrimaryPart
+    -- Если ничего не найдено, ищем Torso или HumanoidRootPart
+    elseif copy:FindFirstChild("Torso") then
+        anchoredPart = copy.Torso
+    elseif copy:FindFirstChild("HumanoidRootPart") then
+        anchoredPart = copy.HumanoidRootPart
+    end
+    
+    -- Устанавливаем Anchored состояния
+    for _, part in pairs(copy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if part == anchoredPart then
+                part.Anchored = true  -- Только основная часть заякорена
+                print("⚓ Заякорена основная часть:", part.Name)
+            else
+                part.Anchored = false -- Остальные части свободны для анимации
+            end
+        end
+    end
+    
+    print("✅ Копия создана и закреплена:", copy.Name)
+    return copy
+end
+
+-- Функция получения всех BasePart в модели
+local function getAllParts(model)
+    local parts = {}
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
+        end
+    end
+    return parts
+end
+
+-- Функция плавного масштабирования модели (ИСПРАВЛЕНО: через CFrame)
+local function scaleModelSmoothly(model, scaleFactor, tweenTime)
+    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
+    print("📏 Коэффициент:", scaleFactor .. "x")
+    print("⏱️ Время:", tweenTime .. " сек")
+    
+    local parts = getAllParts(model)
+    print("🧩 Найдено частей для масштабирования:", #parts)
+    
+    if #parts == 0 then
+        print("❌ Нет частей для масштабирования!")
         return
     end
     
-    analyzeObject(obj, depth)
-    
-    local children = obj:GetChildren()
-    if #children > 0 then
-        for _, child in ipairs(children) do
-            analyzeChildren(child, depth + 1, maxDepth)
+    -- Определяем центр масштабирования
+    local centerCFrame
+    if model.PrimaryPart then
+        centerCFrame = model.PrimaryPart.CFrame
+        print("🎯 Центр масштабирования: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
+    else
+        -- Если нет PrimaryPart, используем центр модели
+        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
+        if success then
+            centerCFrame = modelCFrame
+            print("🎯 Центр масштабирования: Центр модели")
+        else
+            print("❌ Не удалось определить центр масштабирования!")
+            return
         end
     end
+    
+    print("📍 Центр масштабирования:", centerCFrame.Position)
+    
+    -- Сохраняем исходные данные всех частей
+    local originalData = {}
+    for _, part in ipairs(parts) do
+        originalData[part] = {
+            size = part.Size,
+            cframe = part.CFrame
+        }
+    end
+    
+    -- Создаем TweenInfo
+    local tweenInfo = TweenInfo.new(
+        tweenTime,
+        CONFIG.EASING_STYLE,
+        CONFIG.EASING_DIRECTION,
+        0, -- Повторений
+        false, -- Обратная анимация
+        0 -- Задержка
+    )
+    
+    -- ИСПРАВЛЕНО: Масштабирование через CFrame чтобы части не разлетались
+    local tweens = {}
+    local completedTweens = 0
+    
+    for _, part in ipairs(parts) do
+        local originalSize = originalData[part].size
+        local originalCFrame = originalData[part].cframe
+        
+        -- Вычисляем новый размер
+        local newSize = originalSize * scaleFactor
+        
+        -- Вычисляем новый CFrame относительно центра
+        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
+        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
+        local newCFrame = centerCFrame * scaledRelativeCFrame
+        
+        -- Создаем твин для размера и CFrame
+        local tween = TweenService:Create(part, tweenInfo, {
+            Size = newSize,
+            CFrame = newCFrame
+        })
+        
+        -- Обработчик завершения твина
+        tween.Completed:Connect(function()
+            completedTweens = completedTweens + 1
+            if completedTweens == #parts then
+                print("✅ Масштабирование завершено!")
+                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
+            end
+        end)
+        
+        table.insert(tweens, tween)
+        tween:Play()
+    end
+    
+    print("🚀 Запущено " .. #tweens .. " твинов для плавного масштабирования")
 end
 
--- Поиск питомцев с UUID именами
-print("🔍 ПОИСК ПИТОМЦЕВ С UUID ИМЕНАМИ...")
-print("-" .. string.rep("-", 50))
-
-local foundPets = {}
-
-for _, obj in ipairs(Workspace:GetChildren()) do
-    if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-        if success then
-            local distance = (modelCFrame.Position - playerPos).Magnitude
-            if distance <= SEARCH_RADIUS then
-                table.insert(foundPets, {
-                    model = obj,
-                    distance = distance
-                })
+-- Основная функция поиска и масштабирования
+local function findAndScalePet()
+    print("🔍 Поиск UUID моделей питомцев...")
+    print("-" .. string.rep("-", 40))
+    
+    local foundPets = {}
+    
+    -- Ищем UUID модели в Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            if success then
+                local distance = (modelCFrame.Position - playerPos).Magnitude
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    print("🎯 Найдена UUID модель:", obj.Name)
+                    print("📍 Расстояние:", math.floor(distance) .. " единиц")
+                    
+                    -- Проверяем визуальные элементы
+                    local hasVisuals, meshes = hasPetVisuals(obj)
+                    if hasVisuals then
+                        print("✅ Модель имеет визуальные элементы питомца!")
+                        print("🎨 Визуальных элементов:", #meshes)
+                        
+                        table.insert(foundPets, {
+                            model = obj,
+                            distance = distance,
+                            meshes = meshes
+                        })
+                    else
+                        print("❌ Модель без визуальных элементов питомца")
+                    end
+                    print()
+                end
             end
         end
     end
+    
+    print("📊 Найдено подходящих питомцев:", #foundPets)
+    
+    if #foundPets == 0 then
+        print("❌ Питомцы с UUID именами и визуальными элементами не найдены!")
+        print("💡 Убедитесь что вы рядом с размещенным питомцем")
+        return
+    end
+    
+    -- Берем первого найденного питомца
+    local targetPet = foundPets[1]
+    print("🎯 Выбран питомец для масштабирования:", targetPet.model.Name)
+    print("📍 Расстояние:", math.floor(targetPet.distance) .. " единиц")
+    print()
+    
+    return targetPet.model
 end
 
-print("📊 Найдено питомцев рядом: " .. #foundPets)
-print()
-
-if #foundPets == 0 then
-    print("❌ Питомцы не найдены в радиусе " .. SEARCH_RADIUS .. " единиц!")
-    print("💡 Подойдите ближе к питомцу и запустите скрипт снова")
-    return
+-- Основная функция скрипта
+local function main()
+    print("🚀 ПетСкалер запущен!")
+    print("🔍 Поиск питомца в радиусе " .. CONFIG.SEARCH_RADIUS .. " единиц...")
+    
+    local petModel = findAndScalePet()
+    if not petModel then
+        print("❌ Питомец не найден!")
+        return
+    end
+    
+    local petCopy = deepCopyModel(petModel)
+    if not petCopy then
+        print("❌ Не удалось создать копию!")
+        return
+    end
+    
+    -- Небольшая задержка перед масштабированием
+    wait(0.5)
+    
+    scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
 end
 
--- Анализируем первого найденного питомца
-local targetPet = foundPets[1].model
-print("🎯 АНАЛИЗИРУЕМ ПИТОМЦА: " .. targetPet.Name)
-print("📍 Расстояние: " .. math.floor(foundPets[1].distance) .. " единиц")
-print("=" .. string.rep("=", 70))
-print()
-
--- ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ
-print("🔬 ПОЛНАЯ СТРУКТУРА ПИТОМЦА:")
-print("-" .. string.rep("-", 50))
-
-analyzeChildren(targetPet, 0, 10) -- Максимум 10 уровней вглубь
-
-print()
-print("📊 ДОПОЛНИТЕЛЬНАЯ СТАТИСТИКА:")
-print("-" .. string.rep("-", 30))
-
--- Подсчет различных типов объектов
-local stats = {}
-for _, obj in ipairs(targetPet:GetDescendants()) do
-    local className = obj.ClassName
-    stats[className] = (stats[className] or 0) + 1
+-- Создание GUI с кнопкой
+local function createGUI()
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Создаем ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PetScalerGUI"
+    screenGui.Parent = playerGui
+    
+    -- Создаем Frame для кнопки
+    local frame = Instance.new("Frame")
+    frame.Name = "MainFrame"
+    frame.Size = UDim2.new(0, 200, 0, 80)
+    frame.Position = UDim2.new(0, 50, 0, 50)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(0, 162, 255)
+    frame.Parent = screenGui
+    
+    -- Создаем кнопку
+    local button = Instance.new("TextButton")
+    button.Name = "ScaleButton"
+    button.Size = UDim2.new(0, 180, 0, 40)
+    button.Position = UDim2.new(0, 10, 0, 20)
+    button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+    button.BorderSizePixel = 0
+    button.Text = "🔥 Увеличить Питомца"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Font = Enum.Font.SourceSansBold
+    button.Parent = frame
+    
+    -- Обработчик нажатия кнопки
+    button.MouseButton1Click:Connect(function()
+        button.Text = "⏳ Обработка..."
+        button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        
+        -- Запускаем основную функцию
+        spawn(function()
+            main()
+            
+            -- Возвращаем кнопку в исходное состояние
+            wait(2)
+            button.Text = "🔥 Увеличить Питомца"
+            button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+        end)
+    end)
+    
+    -- Эффект наведения
+    button.MouseEnter:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(0, 162, 255) then
+            button.BackgroundColor3 = Color3.fromRGB(0, 140, 220)
+        end
+    end)
+    
+    button.MouseLeave:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(0, 140, 220) then
+            button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+        end
+    end)
+    
+    print("🖥️ GUI создан! Нажмите кнопку для увеличения питомца")
 end
 
-for className, count in pairs(stats) do
-    print("  " .. className .. ": " .. count)
-end
-
-print()
-print("🎯 АНАЛИЗ ЗАВЕРШЕН")
-print("=" .. string.rep("=", 70))
+-- Запуск GUI
+createGUI()
+print("=" .. string.rep("=", 60))
