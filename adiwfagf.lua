@@ -1,124 +1,186 @@
 --[[
-    SIMPLE WORKING RECORDER
-    Максимально простая версия которая точно работает
+    PET ANIMATION PLAYER
+    Воспроизводит точную анимацию роста на питомце из руки
+    Основано на записанных данных: рост в 1.88 раз для всех частей
 ]]
 
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
-local isRecording = false
-local frames = {}
-local startTime = 0
-local connection = nil
+local player = Players.LocalPlayer
+local isActive = true
 
-print("🎬 Simple Working Recorder загружен!")
+print("🎬 Pet Animation Player загружен!")
+print("📊 Данные анимации: рост в 1.88 раз, все части синхронно")
 
--- Функция записи одного кадра
-local function recordFrame(model)
-    local frame = {
-        time = tick() - startTime,
-        parts = {}
-    }
+-- Функция получения питомца из руки
+local function getHandPet()
+    if not player.Character then return nil end
     
-    -- Записываем размеры всех частей
-    for _, part in pairs(model:GetChildren()) do
-        if part:IsA("BasePart") then
-            frame.parts[part.Name] = {
-                size = part.Size,
-                transparency = part.Transparency
-            }
+    for _, tool in pairs(player.Character:GetChildren()) do
+        if tool:IsA("Tool") then
+            local model = tool:FindFirstChildWhichIsA("Model")
+            if model then
+                return model
+            end
+        end
+    end
+    return nil
+end
+
+-- Функция клонирования питомца
+local function clonePet(originalModel)
+    local clone = originalModel:Clone()
+    
+    -- Убираем скрипты из клона
+    for _, script in pairs(clone:GetDescendants()) do
+        if script:IsA("BaseScript") or script:IsA("LocalScript") then
+            script:Destroy()
         end
     end
     
-    table.insert(frames, frame)
+    return clone
 end
 
--- Функция начала записи
-local function startRecording(model)
-    if isRecording then return end
+-- Функция воспроизведения анимации роста
+local function playGrowthAnimation(model, targetPosition)
+    print("🎬 Начинаю анимацию роста для: " .. model.Name)
     
-    print("🎬 НАЧИНАЮ ЗАПИСЬ: " .. model.Name)
+    -- Позиционируем модель
+    if model.PrimaryPart then
+        model:SetPrimaryPartCFrame(targetPosition)
+    else
+        model:MoveTo(targetPosition.Position)
+    end
     
-    isRecording = true
-    frames = {}
-    startTime = tick()
+    model.Parent = Workspace
     
-    -- Записываем каждый кадр
-    connection = RunService.Heartbeat:Connect(function()
-        if model.Parent then
-            recordFrame(model)
+    -- Список всех частей которые должны расти (из записанных данных)
+    local growingParts = {
+        "LeftEar", "FrontLegL", "RightEar", "LeftLegL", "Torso", 
+        "FrontLegR", "Jaw", "BackLegL", "BackLegR", "Tail", 
+        "Mouth", "RightEye", "LeftEye", "Head"
+    }
+    
+    -- Сохраняем оригинальные размеры и устанавливаем начальные
+    local originalSizes = {}
+    local tweens = {}
+    
+    for _, part in pairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            originalSizes[part] = part.Size
             
-            -- Показываем прогресс
-            if #frames % 30 == 0 then
-                print("🔴 Кадр " .. #frames .. " (время: " .. string.format("%.1f", tick() - startTime) .. "с)")
-            end
-        else
-            -- Модель исчезла - останавливаем запись
-            connection:Disconnect()
-            isRecording = false
+            -- Начинаем с маленького размера (1/1.88 от оригинала)
+            local startSize = part.Size / 1.88
+            part.Size = startSize
+            part.Transparency = 0.8  -- Начинаем полупрозрачными
+            part.Anchored = true     -- Фиксируем чтобы не падали
             
-            local duration = tick() - startTime
-            print("✅ ЗАПИСЬ ЗАВЕРШЕНА!")
-            print("⏱️ Длительность: " .. string.format("%.2f", duration) .. " секунд")
-            print("🎞️ Кадров: " .. #frames)
+            -- Создаем анимацию роста
+            local growTween = TweenService:Create(part, 
+                TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+                {
+                    Size = originalSizes[part],
+                    Transparency = 0
+                }
+            )
             
-            -- АНАЛИЗ ПРЯМО ЗДЕСЬ
-            if #frames >= 2 then
-                print("\n=== 📊 АНАЛИЗ ===")
-                
-                local firstFrame = frames[1]
-                local lastFrame = frames[#frames]
-                
-                for partName, firstData in pairs(firstFrame.parts) do
-                    if lastFrame.parts[partName] then
-                        local startSize = firstData.size
-                        local endSize = lastFrame.parts[partName].size
-                        
-                        local growth = endSize.Magnitude / startSize.Magnitude
-                        
-                        if growth > 1.1 then
-                            print("📈 " .. partName .. " вырос в " .. string.format("%.2f", growth) .. " раз")
-                            print("   " .. tostring(startSize) .. " → " .. tostring(endSize))
-                        end
-                        
-                        local startTrans = firstData.transparency
-                        local endTrans = lastFrame.parts[partName].transparency
-                        
-                        if math.abs(endTrans - startTrans) > 0.1 then
-                            print("💫 " .. partName .. " прозрачность: " .. string.format("%.2f", startTrans) .. " → " .. string.format("%.2f", endTrans))
-                        end
-                    end
-                end
-                
-                print("🎯 АНАЛИЗ ЗАВЕРШЕН!")
-            else
-                print("❌ Мало кадров для анализа")
-            end
+            table.insert(tweens, growTween)
         end
-    end)
+    end
+    
+    -- Запускаем все анимации одновременно
+    print("📈 Запускаю рост всех частей в 1.88 раз...")
+    for _, tween in pairs(tweens) do
+        tween:Play()
+    end
+    
+    -- Через 4 секунды удаляем модель (как в оригинале)
+    wait(4)
+    
+    print("💥 Анимация завершена, удаляю модель")
+    
+    -- Анимация исчезновения
+    local fadeTweens = {}
+    for _, part in pairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local fadeTween = TweenService:Create(part,
+                TweenInfo.new(0.5, Enum.EasingStyle.Quad),
+                { Transparency = 1 }
+            )
+            table.insert(fadeTweens, fadeTween)
+        end
+    end
+    
+    for _, tween in pairs(fadeTweens) do
+        tween:Play()
+    end
+    
+    wait(0.5)
+    model:Destroy()
 end
 
--- Отслеживаем появление питомцев
+-- Функция замены питомца из яйца
+local function replacePetWithAnimation(eggPetModel)
+    if not isActive then return end
+    
+    print("🎯 Обнаружен питомец из яйца: " .. eggPetModel.Name)
+    
+    -- Получаем питомца из руки
+    local handPet = getHandPet()
+    if not handPet then
+        print("❌ Питомец в руке не найден!")
+        return
+    end
+    
+    print("✅ Питомец в руке найден: " .. handPet.Name)
+    
+    -- Получаем позицию яичного питомца
+    local targetPosition = eggPetModel:GetModelCFrame()
+    
+    -- Скрываем оригинального питомца из яйца
+    for _, part in pairs(eggPetModel:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 1
+            part.CanCollide = false
+        end
+    end
+    
+    print("🫥 Скрыл оригинального питомца из яйца")
+    
+    -- Клонируем питомца из руки
+    local clonedPet = clonePet(handPet)
+    
+    -- Запускаем анимацию роста на клоне
+    spawn(function()
+        playGrowthAnimation(clonedPet, targetPosition)
+    end)
+    
+    print("🚀 Запустил анимацию роста на клоне!")
+end
+
+-- Отслеживаем появление питомцев в Visuals
 local visuals = Workspace:FindFirstChild("Visuals")
 if visuals then
     print("✅ Найдена папка Visuals")
     
     visuals.ChildAdded:Connect(function(child)
-        if child:IsA("Model") and not isRecording then
+        if child:IsA("Model") and isActive then
             local name = child.Name or "Unknown"
-            print("🎯 Найдена модель: " .. name)
             
-            -- Записываем только питомцев (не эффекты)
+            -- Проверяем что это питомец (не эффект)
             if not name:find("Egg") and not name:find("Explode") and not name:find("Poof") then
-                wait(0.1)
-                startRecording(child)
-            else
-                print("⚠️ Пропускаю эффект: " .. name)
+                wait(0.1) -- Небольшая задержка для загрузки модели
+                replacePetWithAnimation(child)
             end
         end
     end)
 else
-    print("❌ Visuals не найдена!")
+    print("❌ Папка Visuals не найдена!")
 end
 
-print("🚀 Готов! Открой яйцо и получишь полный анализ в консоли!")
+print("🎯 Pet Animation Player готов!")
+print("📋 Возьми питомца в руку и открой яйцо")
+print("🎬 Твой питомец появится с точной анимацией роста!")
