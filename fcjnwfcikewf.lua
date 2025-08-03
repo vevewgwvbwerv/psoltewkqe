@@ -220,123 +220,6 @@ local function smartAnchoredManagement(copyParts)
     return rootPart
 end
 
--- Умный контроллер поведения: 10-15 сек idle, потом короткая ходьба
-local function createSmartBehaviorController(petModel)
-    print("🧠 Умный контроллер поведения: 10-15 сек idle, потом короткая ходьба")
-    
-    local rootPart = petModel:FindFirstChild("RootPart") or 
-                     petModel:FindFirstChild("Torso") or 
-                     petModel:FindFirstChild("HumanoidRootPart")
-    
-    if not rootPart then
-        print("  ⚠️ Корневая часть не найдена")
-        return nil
-    end
-    
-    -- Конфигурация циклов
-    local IDLE_TIME_MIN = 10 -- Минимальное время idle (сек)
-    local IDLE_TIME_MAX = 15 -- Максимальное время idle (сек)
-    local WALK_TIME_MAX = 2  -- Максимальное время ходьбы (сек)
-    
-    -- Состояние контроллера
-    local currentState = "IDLE" -- "IDLE" или "WALK"
-    local stateStartTime = tick()
-    local nextStateChangeTime = tick() + math.random(IDLE_TIME_MIN, IDLE_TIME_MAX)
-    
-    -- Сохраняем базовую позицию
-    local basePosition = rootPart.Position
-    
-    print("  📍 Базовая позиция:", basePosition)
-    print("  ⏰ Начинаю с IDLE режима на", math.floor(nextStateChangeTime - tick()), "сек")
-    
-    -- Находим Humanoid для управления поведением
-    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
-    
-    -- Функция переключения в IDLE режим
-    local function switchToIdle()
-        currentState = "IDLE"
-        stateStartTime = tick()
-        nextStateChangeTime = tick() + math.random(IDLE_TIME_MIN, IDLE_TIME_MAX)
-        
-        print("  😴 Переключаю в IDLE на", math.floor(nextStateChangeTime - tick()), "сек")
-        
-        -- Заякориваем только корень для анимации
-        rootPart.Anchored = true
-        
-        -- Останавливаем движение через Humanoid
-        if humanoid then
-            humanoid.WalkSpeed = 0
-            humanoid:MoveTo(basePosition)
-        end
-        
-        -- Возвращаем к базовой позиции
-        rootPart.CFrame = CFrame.new(basePosition, basePosition + Vector3.new(0, 0, 1))
-    end
-    
-    -- Функция переключения в WALK режим
-    local function switchToWalk()
-        currentState = "WALK"
-        stateStartTime = tick()
-        nextStateChangeTime = tick() + math.random(1, WALK_TIME_MAX)
-        
-        print("  🚶 Разрешаю ходьбу на", math.floor(nextStateChangeTime - tick()), "сек")
-        
-        -- Освобождаем корень для движения
-        rootPart.Anchored = false
-        
-        -- Разрешаем медленное движение
-        if humanoid then
-            humanoid.WalkSpeed = 4 -- Медленная ходьба
-        end
-    end
-    
-    -- Начинаем с IDLE
-    switchToIdle()
-    
-    -- Основной цикл контроллера
-    local connection = RunService.Heartbeat:Connect(function()
-        if not petModel.Parent or not rootPart.Parent then
-            connection:Disconnect()
-            return
-        end
-        
-        local currentTime = tick()
-        
-        -- Проверяем нужно ли переключить состояние
-        if currentTime >= nextStateChangeTime then
-            if currentState == "IDLE" then
-                switchToWalk()
-            else
-                switchToIdle()
-            end
-        end
-        
-        -- В IDLE режиме принудительно удерживаем позицию
-        if currentState == "IDLE" then
-            local distanceFromBase = (rootPart.Position - basePosition).Magnitude
-            if distanceFromBase > 3 then -- Если ушел далеко от базы
-                rootPart.CFrame = CFrame.new(basePosition, basePosition + Vector3.new(0, 0, 1))
-                if humanoid then
-                    humanoid:MoveTo(basePosition)
-                end
-            end
-        end
-        
-        -- В WALK режиме ограничиваем радиус ходьбы
-        if currentState == "WALK" then
-            local distanceFromBase = (rootPart.Position - basePosition).Magnitude
-            if distanceFromBase > 8 then -- Максимальный радиус ходьбы
-                if humanoid then
-                    humanoid:MoveTo(basePosition) -- Возвращаем к базе
-                end
-            end
-        end
-    end)
-    
-    print("  ✅ Умный контроллер активен - циклы IDLE/WALK запущены")
-    return connection
-end
-
 -- Функция копирования состояния Motor6D с масштабированием
 local function copyMotorState(originalMotor, copyMotor, scaleFactor)
     if not originalMotor or not copyMotor then
@@ -590,17 +473,90 @@ local function main()
     
     local connection = startLiveMotorCopying(petModel, petCopy)
     
-    -- Шаг 6: Блокировка движения (питомец стоит на месте)
-    print("\n🔒 === БЛОКИРОВКА ДВИЖЕНИЯ ===")
-    wait(0.5)
-    local movementBlocker = createSmartBehaviorController(petCopy)
+    -- Шаг 6: КОНТРОЛЬ ОРИГИНАЛЬНОГО ПИТОМЦА - ЗАЦИКЛИВАНИЕ IDLE
+    print("\n🎯 === КОНТРОЛЬ ОРИГИНАЛА ===") 
+    
+    -- Заякориваем оригинал чтобы не ходил
+    local originalRoot = petModel:FindFirstChild("RootPart") or 
+                        petModel:FindFirstChild("Torso") or 
+                        petModel:FindFirstChild("HumanoidRootPart")
+    
+    if originalRoot then
+        originalRoot.Anchored = true
+        print("⚓ Оригинал заякорен - не будет ходить")
+        
+        -- Отключаем AI
+        local originalHumanoid = petModel:FindFirstChildOfClass("Humanoid")
+        if originalHumanoid then
+            originalHumanoid.WalkSpeed = 0
+            originalHumanoid.JumpPower = 0
+            print("🤖 AI отключен")
+        end
+        
+        -- АГРЕССИВНЫЙ КОНТРОЛЬ HUMANOID (БЕЗ ANIMATOR)
+        print("🤖 Animator не найден - используем АГРЕССИВНЫЙ контроль Humanoid!")
+        
+        -- ПРИНУДИТЕЛЬНАЯ БЛОКИРОВКА ДВИЖЕНИЯ
+        spawn(function()
+            while originalHumanoid and originalHumanoid.Parent and originalRoot and originalRoot.Parent do
+                wait(0.1) -- Очень частая проверка каждые 0.1 секунд
+                
+                -- ПРИНУДИТЕЛЬНО блокируем движение
+                if originalHumanoid.WalkSpeed ~= 0 then
+                    originalHumanoid.WalkSpeed = 0
+                    print("🚫 ПРИНУДИТЕЛЬНО заблокировал WalkSpeed!")
+                end
+                
+                if originalHumanoid.JumpPower ~= 0 then
+                    originalHumanoid.JumpPower = 0
+                    print("🚫 ПРИНУДИТЕЛЬНО заблокировал JumpPower!")
+                end
+                
+                -- ПРИНУДИТЕЛЬНО включаем PlatformStand (полная блокировка)
+                if not originalHumanoid.PlatformStand then
+                    originalHumanoid.PlatformStand = true
+                    print("🔒 ПРИНУДИТЕЛЬНО включил PlatformStand!")
+                end
+                
+                -- ПРИНУДИТЕЛЬНО заякориваем корень
+                if originalRoot and not originalRoot.Anchored then
+                    originalRoot.Anchored = true
+                    print("⚓ ПРИНУДИТЕЛЬНО перезаякорил корень!")
+                end
+                
+                -- ПРИНУДИТЕЛЬНО останавливаем любое движение
+                if originalRoot and originalRoot.Velocity.Magnitude > 0.1 then
+                    originalRoot.Velocity = Vector3.new(0, 0, 0)
+                    originalRoot.AngularVelocity = Vector3.new(0, 0, 0)
+                    print("🛑 ПРИНУДИТЕЛЬНО остановил движение!")
+                end
+                
+                -- ПРИНУДИТЕЛЬНО блокируем изменение позиции
+                if originalRoot and originalRoot.Parent then
+                    local currentPos = originalRoot.Position
+                    local currentRot = originalRoot.CFrame.Rotation
+                    
+                    -- Сохраняем позицию но разрешаем поворот для анимации
+                    if (currentPos - originalRoot.Position).Magnitude > 0.5 then
+                        originalRoot.CFrame = CFrame.new(originalRoot.Position, originalRoot.Position + originalRoot.CFrame.LookVector) * currentRot
+                        print("📍 ПРИНУДИТЕЛЬНО вернул на место!")
+                    end
+                end
+            end
+            print("⚠️ Агрессивный контроль Humanoid остановлен")
+        end)
+        
+        print("✅ АГРЕССИВНЫЙ контроль Humanoid запущен!")
+        print("✅ Питомец будет ПРИНУДИТЕЛЬНО заблокирован от движения!")
+        print("💡 Но анимация idle через Motor6D должна работать!")
+    end
     
     if connection then
-        print("🎉 === ПОЛНЫЙ УСПЕХ! ===")
+        print("\n🎉 === ПОЛНЫЙ УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
         print("✅ Анимация запущена")
-        print("✅ Движение заблокировано")
-        print("💡 Питомец стоит на месте с анимацией стояния!")
+        print("✅ Оригинал остановлен и зациклен на idle")
+        print("💡 Копия должна стоять с idle анимацией!")
     else
         print("⚠️ Масштабирование успешно, но анимация не запустилась")
         print("💡 Возможно проблема с Motor6D соединениями")
