@@ -427,6 +427,124 @@ local function findAndScalePet()
     return targetPet.model
 end
 
+-- 💀 ЭКСТРЕМАЛЬНАЯ ФУНКЦИЯ ПРИНУДИТЕЛЬНОГО УДЕРЖАНИЯ В IDLE
+local function startExtremeIdleForcing(petModel)
+    print("💀 ЗАПУСК ЭКСТРЕМАЛЬНОГО КОНТРОЛЯ IDLE АНИМАЦИИ!")
+    
+    -- Находим все компоненты
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+    local animator = petModel:FindFirstChildOfClass("Animator")
+    local rootPart = petModel:FindFirstChild("RootPart") or petModel:FindFirstChild("Torso") or petModel:FindFirstChild("HumanoidRootPart")
+    
+    if not humanoid then
+        print("❌ Humanoid не найден!")
+        return
+    end
+    
+    if not rootPart then
+        print("❌ RootPart не найден!")
+        return
+    end
+    
+    -- Сохраняем исходную позицию
+    local originalPosition = rootPart.Position
+    local originalCFrame = rootPart.CFrame
+    
+    print("📍 Исходная позиция:", originalPosition)
+    print("🎯 Начинаю ЭКСТРЕМАЛЬНЫЙ контроль...")
+    
+    -- 🔒 БЛОКИРОВКА ВСЕХ ДВИЖЕНИЙ
+    humanoid.WalkSpeed = 0
+    humanoid.JumpPower = 0
+    humanoid.JumpHeight = 0
+    humanoid.PlatformStand = true
+    humanoid.Sit = false
+    
+    -- Отключаем все состояния движения
+    humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+    wait(0.1)
+    humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+    wait(0.1)
+    humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+    
+    print("🔒 ВСЕ движения заблокированы!")
+    
+    -- 💀 ЭКСТРЕМАЛЬНЫЙ МОНИТОРИНГ КАЖДЫЕ 0.01 СЕКУНДЫ
+    local extremeConnection
+    extremeConnection = RunService.Heartbeat:Connect(function()
+        
+        -- 🚫 ТЕЛЕПОРТИРУЕМ ОБРАТНО ПРИ ЛЮБОМ ДВИЖЕНИИ
+        if rootPart and rootPart.Parent then
+            local currentPos = rootPart.Position
+            local distance = (currentPos - originalPosition).Magnitude
+            
+            if distance > 0.1 then -- Если сдвинулся больше чем на 0.1 studs
+                rootPart.CFrame = originalCFrame
+                rootPart.Velocity = Vector3.new(0, 0, 0)
+                rootPart.AngularVelocity = Vector3.new(0, 0, 0)
+                -- print("🚫 ТЕЛЕПОРТ ОБРАТНО! Расстояние:", distance)
+            end
+        end
+        
+        -- 🎭 КОНТРОЛЬ АНИМАЦИЙ
+        if animator and animator.Parent then
+            local tracks = animator:GetPlayingAnimationTracks()
+            
+            for _, track in pairs(tracks) do
+                local animName = track.Animation.Name:lower()
+                local animId = tostring(track.Animation.AnimationId)
+                
+                -- 💀 УНИЧТОЖАЕМ ВСЕ АНИМАЦИИ ХОДЬБЫ/БЕГА/ПРЫЖКОВ
+                if animName:find("walk") or animName:find("run") or animName:find("jump") or 
+                   animName:find("move") or animName:find("step") or animId:find("walk") or
+                   animId:find("run") or animId:find("move") then
+                    
+                    print("💀 УНИЧТОЖАЮ анимацию движения:", animName, animId)
+                    track:Stop()
+                    track:Destroy()
+                end
+            end
+        end
+        
+        -- 🧠 ПРИНУДИТЕЛЬНЫЙ КОНТРОЛЬ HUMANOID
+        if humanoid and humanoid.Parent then
+            -- Постоянно блокируем движение
+            if humanoid.WalkSpeed ~= 0 then
+                humanoid.WalkSpeed = 0
+            end
+            if humanoid.JumpPower ~= 0 then
+                humanoid.JumpPower = 0
+            end
+            if humanoid.JumpHeight ~= 0 then
+                humanoid.JumpHeight = 0
+            end
+            if not humanoid.PlatformStand then
+                humanoid.PlatformStand = true
+            end
+            if humanoid.Sit then
+                humanoid.Sit = false
+            end
+            
+            -- Блокируем все попытки движения
+            local currentState = humanoid:GetState()
+            if currentState == Enum.HumanoidStateType.Running or 
+               currentState == Enum.HumanoidStateType.RunningNoPhysics or
+               currentState == Enum.HumanoidStateType.Jumping or
+               currentState == Enum.HumanoidStateType.Freefall then
+                humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+            end
+        end
+    end)
+    
+    print("💀 ЭКСТРЕМАЛЬНЫЙ мониторинг запущен! Частота: каждые 0.01 сек")
+    print("🔒 Питомец ПРИНУДИТЕЛЬНО удерживается в исходной позиции")
+    print("🎭 ВСЕ анимации движения будут УНИЧТОЖЕНЫ")
+    print("✅ Только idle анимация должна остаться!")
+    
+    -- Возвращаем connection для возможности отключения
+    return extremeConnection
+end
+
 -- Главная функция v2.0
 local function main()
     print("🚀 PetScaler v2.0 запущен!")
@@ -473,121 +591,16 @@ local function main()
     
     local connection = startLiveMotorCopying(petModel, petCopy)
     
-    -- Шаг 6: КОНТРОЛЬ ОРИГИНАЛЬНОГО ПИТОМЦА - ЗАЦИКЛИВАНИЕ IDLE
-    print("\n🎯 === КОНТРОЛЬ ОРИГИНАЛА ===") 
-    
-    -- Заякориваем оригинал чтобы не ходил
-    local originalRoot = petModel:FindFirstChild("RootPart") or 
-                        petModel:FindFirstChild("Torso") or 
-                        petModel:FindFirstChild("HumanoidRootPart")
-    
-    if originalRoot then
-        originalRoot.Anchored = true
-        print("⚓ Оригинал заякорен - не будет ходить")
-        
-        -- Отключаем AI
-        local originalHumanoid = petModel:FindFirstChildOfClass("Humanoid")
-        if originalHumanoid then
-            originalHumanoid.WalkSpeed = 0
-            originalHumanoid.JumpPower = 0
-            print("🤖 AI отключен")
-        end
-        
-        -- 🔥 РАДИКАЛЬНЫЙ ПОДХОД: ПОЛНАЯ ЗАМОРОЗКА ВСЕХ ЧАСТЕЙ!
-        print("🔥 РАДИКАЛЬНЫЙ подход - ЗАМОРАЖИВАЕМ ВСЕ части питомца!")
-        
-        -- ПОЛУЧАЕМ ВСЕ ЧАСТИ ПИТОМЦА
-        local allOriginalParts = {}
-        for _, obj in pairs(petModel:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                table.insert(allOriginalParts, obj)
-            end
-        end
-        
-        print("🧩 Нашел частей для заморозки:", #allOriginalParts)
-        
-        -- СОХРАНЯЕМ ОРИГИНАЛЬНЫЕ ПОЗИЦИИ И ПОВОРОТЫ
-        local originalPositions = {}
-        for _, part in pairs(allOriginalParts) do
-            originalPositions[part] = part.CFrame
-        end
-        
-        -- РАДИКАЛЬНАЯ ЗАМОРОЗКА - ЗАЯКОРИВАЕМ ВСЕ!
-        for _, part in pairs(allOriginalParts) do
-            part.Anchored = true
-        end
-        print("❄️ ВСЕ части питомца заякорены!")
-        
-        -- ОТКЛЮЧАЕМ HUMANOID ПОЛНОСТЬЮ
-        if originalHumanoid then
-            originalHumanoid.WalkSpeed = 0
-            originalHumanoid.JumpPower = 0
-            originalHumanoid.PlatformStand = true
-            print("🤖 Humanoid полностью отключен!")
-        end
-        
-        -- МОНИТОРИНГ: ПОДДЕРЖИВАЕМ ЗАМОРОЗКУ НО РАЗРЕШАЕМ IDLE АНИМАЦИЮ
-        spawn(function()
-            while petModel and petModel.Parent do
-                wait(0.05) -- Очень частая проверка
-                
-                -- ПРОВЕРЯЕМ ЧТО ВСЕ ЧАСТИ ОСТАЮТСЯ ЗАЯКОРЕНЫ
-                for _, part in pairs(allOriginalParts) do
-                    if part and part.Parent and not part.Anchored then
-                        part.Anchored = true
-                        print("⚓ Перезаякорил:", part.Name)
-                    end
-                end
-                
-                -- ПРОВЕРЯЕМ ЧТО HUMANOID ОСТАЕТСЯ ОТКЛЮЧЕН
-                if originalHumanoid and originalHumanoid.Parent then
-                    if originalHumanoid.WalkSpeed ~= 0 then
-                        originalHumanoid.WalkSpeed = 0
-                        print("🚫 Переотключил WalkSpeed!")
-                    end
-                    if originalHumanoid.JumpPower ~= 0 then
-                        originalHumanoid.JumpPower = 0
-                        print("🚫 Переотключил JumpPower!")
-                    end
-                    if not originalHumanoid.PlatformStand then
-                        originalHumanoid.PlatformStand = true
-                        print("🔒 Перевключил PlatformStand!")
-                    end
-                end
-                
-                -- РАЗРЕШАЕМ ЛЕГКИЕ ПОВОРОТЫ ДЛЯ IDLE АНИМАЦИИ
-                -- Но блокируем любое серьезное движение
-                for _, part in pairs(allOriginalParts) do
-                    if part and part.Parent then
-                        local currentCFrame = part.CFrame
-                        local originalCFrame = originalPositions[part]
-                        
-                        if originalCFrame then
-                            local positionDiff = (currentCFrame.Position - originalCFrame.Position).Magnitude
-                            
-                            -- Разрешаем маленькие повороты (для idle), но блокируем движение
-                            if positionDiff > 2.0 then -- Большое движение = ходьба!
-                                part.CFrame = originalCFrame
-                                print("🛑 Вернул на место:", part.Name)
-                            end
-                        end
-                    end
-                end
-            end
-            print("⚠️ Мониторинг заморозки остановлен")
-        end)
-        
-        print("✅ РАДИКАЛЬНАЯ заморозка запущена!")
-        print("❄️ Питомец ПОЛНОСТЬЮ заморожен, но Motor6D анимация должна работать!")
-        print("💡 Копия будет копировать только idle движения!")
-    end
+    -- 🔥 ЭКСТРЕМАЛЬНОЕ ПРИНУДИТЕЛЬНОЕ УДЕРЖАНИЕ В IDLE!
+    print("\n💀 === ЭКСТРЕМАЛЬНЫЙ КОНТРОЛЬ АНИМАЦИИ ===")
+    startExtremeIdleForcing(petModel)
     
     if connection then
-        print("\n🎉 === ПОЛНЫЙ УСПЕХ! ===")
+        print("🎉 === УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
         print("✅ Анимация запущена")
-        print("✅ Оригинал остановлен и зациклен на idle")
-        print("💡 Копия должна стоять с idle анимацией!")
+        print("💀 ЭКСТРЕМАЛЬНЫЙ контроль idle запущен!")
+        print("💡 Копия должна повторять ТОЛЬКО idle движения!")
     else
         print("⚠️ Масштабирование успешно, но анимация не запустилась")
         print("💡 Возможно проблема с Motor6D соединениями")
