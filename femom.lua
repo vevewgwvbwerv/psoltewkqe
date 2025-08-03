@@ -1,5 +1,5 @@
--- 🔬 РАСШИРЕННАЯ ДИАГНОСТИКА - ОТСЛЕЖИВАНИЕ ЖИЗНЕННОГО ЦИКЛА КОМПОНЕНТОВ
--- Фокус на том КАК и КОГДА исчезают/появляются Humanoid и Animator
+-- 🧊 ЗАМОРОЗКА IDLE - ПРИНЦИПИАЛЬНО НОВЫЙ ПОДХОД
+-- Вместо борьбы с анимациями - ЗАМОРАЖИВАЕМ Motor6D в idle позах!
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -7,62 +7,33 @@ local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-print("🔬 === РАСШИРЕННАЯ ДИАГНОСТИКА ПИТОМЦА ===")
-print("🎯 Цель: ОТСЛЕДИТЬ когда исчезают/появляются Humanoid и Animator")
-
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
-end
-
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
-
-local playerPos = hrp.Position
-
--- 🐾 РАБОЧАЯ ФУНКЦИЯ ПОИСКА ПИТОМЦА (из PetScaler_v2.2)
-
--- Функция проверки визуальных элементов питомца
+-- 🔍 ПОИСК ПИТОМЦА (РАБОЧАЯ ВЕРСИЯ)
 local function hasPetVisuals(model)
     local meshCount = 0
-    local petMeshes = {}
-    
     for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
             meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or ""
-            }
-            if meshData.meshId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or ""
-            }
-            if meshData.meshId ~= "" or meshData.textureId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
         end
     end
-    
-    return meshCount > 0, petMeshes
+    return meshCount > 0
 end
 
--- Функция поиска питомца
 local function findPet()
-    print("🔍 Поиск UUID моделей питомцев...")
+    local character = player.Character
+    if not character then 
+        print("❌ Персонаж игрока не найден!")
+        return nil 
+    end
+    
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then 
+        print("❌ HumanoidRootPart не найден!")
+        return nil 
+    end
+    
+    local playerPos = hrp.Position
+    
+    print("🔍 Поиск питомцев с фигурными скобками...")
     
     local foundPets = {}
     local SEARCH_RADIUS = 100
@@ -73,12 +44,10 @@ local function findPet()
             if success then
                 local distance = (modelCFrame.Position - playerPos).Magnitude
                 if distance <= SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
+                    if hasPetVisuals(obj) then
                         table.insert(foundPets, {
                             model = obj,
-                            distance = distance,
-                            meshes = meshes
+                            distance = distance
                         })
                         print("🐾 Найден питомец:", obj.Name, "на расстоянии:", math.floor(distance))
                     end
@@ -100,203 +69,255 @@ local function findPet()
     return targetPet.model
 end
 
--- 🔬 РАСШИРЕННЫЙ МОНИТОРИНГ КОМПОНЕНТОВ
-local function startEnhancedMonitoring(petModel)
-    print("\n📊 === РАСШИРЕННЫЙ МОНИТОРИНГ КОМПОНЕНТОВ ===")
+-- 🎯 ПРОВЕРКА НА МАГИЧЕСКИЙ МОМЕНТ
+local function isMagicalIdleMoment(petModel)
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
     
-    local rootPart = petModel:FindFirstChild("RootPart") or petModel:FindFirstChild("Torso") or petModel:FindFirstChild("HumanoidRootPart")
-    if not rootPart then
-        print("❌ RootPart не найден!")
+    -- Условие 1: Нет движения
+    local noMovement = true
+    if humanoid then
+        noMovement = humanoid.MoveDirection.Magnitude < 0.01
+    end
+    
+    -- Условие 2: Есть только idle анимации
+    local hasOnlyIdleAnimation = false
+    local animationCount = 0
+    
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Animator") then
+            local tracks = obj:GetPlayingAnimationTracks()
+            animationCount = #tracks
+            
+            if animationCount > 0 then
+                hasOnlyIdleAnimation = true
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    local id = track.Animation.AnimationId:lower()
+                    
+                    if not name:find("idle") and not id:find("1073293904134356") then
+                        hasOnlyIdleAnimation = false
+                        break
+                    end
+                end
+            end
+            break
+        end
+    end
+    
+    return noMovement and hasOnlyIdleAnimation and animationCount > 0
+end
+
+-- 🧊 ЗАМОРОЗКА IDLE ПОЗ (НОВЫЙ ПОДХОД!)
+local function captureAndFreezeIdle(petModel)
+    print("🧊 === ЗАМОРОЗКА IDLE - НОВЫЙ ПОДХОД ===")
+    print("🎯 Стратегия: НЕ бороться с анимациями, а ЗАМОРОЗИТЬ Motor6D!")
+    
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+    local rootPart = petModel:FindFirstChild("HumanoidRootPart") or petModel:FindFirstChild("Torso")
+    local originalPosition = rootPart and rootPart.Position or Vector3.new(0, 0, 0)
+    
+    -- Находим все Motor6D
+    local motor6Ds = {}
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motor6Ds, obj)
+        end
+    end
+    
+    if #motor6Ds == 0 then
+        print("❌ Motor6D не найдены!")
         return
     end
     
-    -- Состояние компонентов
-    local componentState = {
-        humanoid = nil,
-        animator = nil,
-        humanoidExists = false,
-        animatorExists = false,
-        lastPosition = rootPart.Position,
-        isMoving = false,
-        standingTime = 0,
-        movingTime = 0
-    }
+    print("🔧 Найдено Motor6D:", #motor6Ds)
     
-    -- 🔍 ОТСЛЕЖИВАНИЕ ПОЯВЛЕНИЯ/ИСЧЕЗНОВЕНИЯ КОМПОНЕНТОВ
-    local function trackComponents()
-        local currentHumanoid = petModel:FindFirstChildOfClass("Humanoid")
-        local currentAnimator = petModel:FindFirstChildOfClass("Animator")
-        
-        -- Проверяем изменения Humanoid
-        if currentHumanoid ~= componentState.humanoid then
-            if currentHumanoid and not componentState.humanoidExists then
-                print("🟢 HUMANOID ПОЯВИЛСЯ!")
-                componentState.humanoidExists = true
-            elseif not currentHumanoid and componentState.humanoidExists then
-                print("🔴 HUMANOID ИСЧЕЗ!")
-                componentState.humanoidExists = false
-            end
-            componentState.humanoid = currentHumanoid
-        end
-        
-        -- Проверяем изменения Animator
-        if currentAnimator ~= componentState.animator then
-            if currentAnimator and not componentState.animatorExists then
-                print("🟢 ANIMATOR ПОЯВИЛСЯ!")
-                componentState.animatorExists = true
-            elseif not currentAnimator and componentState.animatorExists then
-                print("🔴 ANIMATOR ИСЧЕЗ!")
-                componentState.animatorExists = false
-            end
-            componentState.animator = currentAnimator
-        end
-        
-        return currentHumanoid, currentAnimator
+    -- ШАГ 1: ОДИН РАЗ блокируем движение (не каждый кадр!)
+    if humanoid then
+        humanoid.WalkSpeed = 0
+        humanoid.JumpPower = 0
+        humanoid.PlatformStand = true
+        humanoid.Sit = false
+        humanoid.AutoRotate = false
+        print("🛡️ Humanoid заблокирован ОДИН РАЗ")
     end
     
-    -- 📊 ДЕТАЛЬНЫЙ АНАЛИЗ СОСТОЯНИЙ
-    local function analyzeState(humanoid, animator, isMoving)
-        print(string.format("\n⏰ === АНАЛИЗ (%.1f сек) ===", tick()))
-        print("🏃 Движется:", isMoving and "ДА" or "НЕТ")
-        print("⏱️ Стоит:", componentState.standingTime, "кадров")
-        print("🏃 Движется:", componentState.movingTime, "кадров")
-        
-        -- Анализ Humanoid
-        if humanoid and humanoid.Parent then
-            print("🤖 === HUMANOID АКТИВЕН ===")
-            print("  🏃 WalkSpeed:", humanoid.WalkSpeed)
-            print("  🦘 JumpPower:", humanoid.JumpPower or "nil")
-            print("  🦘 JumpHeight:", humanoid.JumpHeight or "nil")
-            print("  🛑 PlatformStand:", humanoid.PlatformStand or "nil")
-            print("  💺 Sit:", humanoid.Sit or "nil")
-            print("  🎯 State:", humanoid:GetState().Name)
-            print("  ❤️ Health:", humanoid.Health)
-        else
-            print("❌ HUMANOID ОТСУТСТВУЕТ")
-        end
-        
-        -- Анализ Animator
-        if animator and animator.Parent then
-            print("🎭 === ANIMATOR АКТИВЕН ===")
-            local tracks = animator:GetPlayingAnimationTracks()
-            print("  📽️ Играющих анимаций:", #tracks)
-            
-            for i, track in pairs(tracks) do
-                print(string.format("    %d. %s", i, track.Animation.Name))
-                print(string.format("       🆔 ID: %s", track.Animation.AnimationId))
-                print(string.format("       ▶️ Playing: %s", track.IsPlaying))
-                print(string.format("       🔄 Looped: %s", track.Looped))
-                print(string.format("       ⚡ Priority: %s", track.Priority.Name))
-                print(string.format("       ⏱️ Time: %.2f/%.2f", track.TimePosition, track.Length or 0))
+    if rootPart then
+        rootPart.Anchored = true
+        rootPart.Velocity = Vector3.new(0, 0, 0)
+        rootPart.AngularVelocity = Vector3.new(0, 0, 0)
+        print("🛡️ RootPart заякорен ОДИН РАЗ")
+    end
+    
+    -- ШАГ 2: ОДИН РАЗ уничтожаем walking анимации (не каждый кадр!)
+    print("💀 Уничтожаю walking анимации ОДИН РАЗ...")
+    local destroyedCount = 0
+    
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Animator") then
+            local tracks = obj:GetPlayingAnimationTracks()
+            for _, track in pairs(tracks) do
+                local name = track.Animation.Name:lower()
+                local id = track.Animation.AnimationId:lower()
+                
+                if not name:find("idle") and not id:find("1073293904134356") then
+                    track:Stop()
+                    track:Destroy()
+                    destroyedCount = destroyedCount + 1
+                    print("💀 Уничтожена:", track.Animation.Name)
+                end
             end
-        else
-            print("❌ ANIMATOR ОТСУТСТВУЕТ")
-        end
-        
-        -- Анализ позиции
-        print("📍 === ПОЗИЦИЯ ===")
-        print("  📍 Position:", rootPart.Position)
-        print("  ⚡ Velocity:", rootPart.Velocity)
-        print("  🌀 AngularVelocity:", rootPart.AngularVelocity)
-        
-        -- Анализ всех детей модели
-        print("👥 === ВСЕ ДЕТИ МОДЕЛИ ===")
-        local children = petModel:GetChildren()
-        for i, child in pairs(children) do
-            print(string.format("  %d. %s (%s)", i, child.Name, child.ClassName))
         end
     end
     
-    -- 🔄 ОСНОВНОЙ ЦИКЛ МОНИТОРИНГА
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        
-        -- Отслеживаем компоненты
-        local humanoid, animator = trackComponents()
-        
-        -- Проверяем движение
-        local currentPos = rootPart.Position
-        local distance = (currentPos - componentState.lastPosition).Magnitude
-        
-        if distance > 0.1 then
-            if not componentState.isMoving then
-                print("\n🏃 === ПИТОМЕЦ НАЧАЛ ДВИГАТЬСЯ ===")
-                componentState.isMoving = true
-                componentState.standingTime = 0
-            end
-            componentState.movingTime = componentState.movingTime + 1
-        else
-            if componentState.isMoving then
-                print("\n🛑 === ПИТОМЕЦ ОСТАНОВИЛСЯ ===")
-                componentState.isMoving = false
-                componentState.movingTime = 0
-            end
-            componentState.standingTime = componentState.standingTime + 1
+    print("💀 Уничтожено walking анимаций:", destroyedCount)
+    
+    -- ШАГ 3: Ждем стабилизации idle
+    print("⏳ Ждем стабилизации idle (2 секунды)...")
+    wait(2)
+    
+    -- ШАГ 4: ЗАХВАТЫВАЕМ текущие idle позы
+    print("📸 Захватываю текущие idle позы...")
+    local frozenPoses = {}
+    
+    for _, motor in pairs(motor6Ds) do
+        frozenPoses[motor.Name] = {
+            C0 = motor.C0,
+            C1 = motor.C1,
+            Transform = motor.Transform
+        }
+        print("📸 Захвачена поза:", motor.Name)
+    end
+    
+    -- ШАГ 5: ЗАМОРАЖИВАЕМ Motor6D в этих позах (НЕ КАЖДЫЙ КАДР!)
+    print("🧊 ЗАМОРАЖИВАЮ Motor6D в idle позах...")
+    
+    -- Отключаем все анимации НАВСЕГДА
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Animator") then
+            obj.Enabled = false
+            print("❄️ Animator отключен навсегда")
         end
-        
-        componentState.lastPosition = currentPos
-        
-        -- Детальный анализ каждые 30 кадров (0.5 сек)
-        if tick() % 0.5 < 0.02 then
-            analyzeState(humanoid, animator, componentState.isMoving)
+        if obj:IsA("AnimationController") then
+            obj.Enabled = false
+            print("❄️ AnimationController отключен навсегда")
         end
-        
-        -- ОСОБЫЙ АНАЛИЗ когда питомец долго стоит
-        if not componentState.isMoving and componentState.standingTime > 60 then
-            print("\n🎯 === ПИТОМЕЦ ДОЛГО СТОИТ - ОСОБЫЙ АНАЛИЗ ===")
+    end
+    
+    -- Замораживаем Motor6D в idle позах
+    for _, motor in pairs(motor6Ds) do
+        local pose = frozenPoses[motor.Name]
+        if pose then
+            motor.C0 = pose.C0
+            motor.C1 = pose.C1
+            motor.Transform = pose.Transform
             
-            -- Проверяем ВСЕ возможные места где могут быть компоненты
-            print("🔍 === ПОИСК СКРЫТЫХ КОМПОНЕНТОВ ===")
-            for _, obj in pairs(petModel:GetDescendants()) do
-                if obj:IsA("Humanoid") then
-                    print("🤖 Найден Humanoid в:", obj.Parent.Name, "->", obj.Name)
-                elseif obj:IsA("Animator") then
-                    print("🎭 Найден Animator в:", obj.Parent.Name, "->", obj.Name)
+            -- КЛЮЧЕВОЕ: отключаем Motor6D от анимационной системы
+            motor.Enabled = false
+            print("🧊 Motor6D заморожен:", motor.Name)
+        end
+    end
+    
+    print("🧊 === ЗАМОРОЗКА ЗАВЕРШЕНА ===")
+    print("❄️ Все Animator/AnimationController отключены")
+    print("🧊 Все Motor6D заморожены в idle позах")
+    print("🛡️ Движение заблокировано")
+    
+    -- МИНИМАЛЬНЫЙ мониторинг только позиции (не анимаций!)
+    local monitorConnection
+    monitorConnection = RunService.Heartbeat:Connect(function()
+        -- Только проверяем позицию раз в секунду
+        if tick() % 1 < 0.016 then
+            if rootPart and originalPosition then
+                if (rootPart.Position - originalPosition).Magnitude > 0.1 then
+                    rootPart.Position = originalPosition
+                    print("🔄 Коррекция позиции")
                 end
             end
         end
     end)
     
-    print("✅ Расширенный мониторинг запущен!")
-    print("🔍 Отслеживаем появление/исчезновение компонентов...")
+    print("👁️ Минимальный мониторинг позиции включен")
     
-    -- Останавливаем через 120 секунд
+    -- Автоматическая остановка через 5 минут
     spawn(function()
-        wait(120)
-        connection:Disconnect()
-        print("\n⏹️ Расширенный мониторинг остановлен через 120 секунд")
+        wait(300)
+        monitorConnection:Disconnect()
+        
+        -- Восстанавливаем анимационную систему
+        for _, motor in pairs(motor6Ds) do
+            motor.Enabled = true
+        end
+        
+        for _, obj in pairs(petModel:GetDescendants()) do
+            if obj:IsA("Animator") then
+                obj.Enabled = true
+            end
+            if obj:IsA("AnimationController") then
+                obj.Enabled = true
+            end
+        end
+        
+        print("🔓 Заморозка снята через 5 минут")
     end)
     
-    return connection
+    return monitorConnection
 end
 
--- Главная функция
-local function main()
+-- 🎯 АВТОМАТИЧЕСКИЙ ЛОВЕЦ С ЗАМОРОЗКОЙ
+local function freezeAutoMagicalCatcher()
     local petModel = findPet()
     if not petModel then
+        print("❌ Питомец не найден!")
         return
     end
     
-    print("\n🎮 === НАЧИНАЕМ РАСШИРЕННЫЙ МОНИТОРИНГ ===")
-    print("💡 Подойдите к питомцу и наблюдайте за компонентами")
-    print("🔍 Особое внимание на моменты появления/исчезновения Humanoid и Animator")
+    print("🧊 === АВТОМАТИЧЕСКИЙ ЛОВЕЦ С ЗАМОРОЗКОЙ ===")
+    print("🎯 Новая стратегия: ЗАМОРОЗИТЬ вместо БОРОТЬСЯ!")
+    print("🔍 Поиск магического момента... (макс. 60 секунд)")
     
-    local connection = startEnhancedMonitoring(petModel)
+    local searchStartTime = tick()
+    local lastCheckTime = 0
+    
+    local searchConnection
+    searchConnection = RunService.Heartbeat:Connect(function()
+        local now = tick()
+        
+        if now - lastCheckTime >= 0.1 then
+            lastCheckTime = now
+            
+            if isMagicalIdleMoment(petModel) then
+                print("🌟 === МАГИЧЕСКИЙ МОМЕНТ ПОЙМАН! ===")
+                print("🧊 Запускаю ЗАМОРОЗКУ idle...")
+                searchConnection:Disconnect()
+                
+                local connection = captureAndFreezeIdle(petModel)
+                print("🎉 УСПЕХ! Питомец ЗАМОРОЖЕН в idle!")
+                print("❄️ Никаких дерганий - анимационная система отключена!")
+                
+                return
+            end
+            
+            if math.floor(now - searchStartTime) % 10 == 0 and (now - searchStartTime) % 10 < 0.1 then
+                print(string.format("🔍 Поиск магического момента... %.0f сек", now - searchStartTime))
+            end
+            
+            if now - searchStartTime >= 60 then
+                searchConnection:Disconnect()
+                print("⏰ Время поиска истекло!")
+            end
+        end
+    end)
 end
 
--- 🚀 ПРЯМОЙ ЗАПУСК
-print("\n🚀 === ЗАПУСКАЮ РАСШИРЕННУЮ ДИАГНОСТИКУ ===")
-print("💡 Подойдите к питомцу и смотрите консоль!")
-print("🔬 Анализ будет идти 120 секунд...")
+-- 🚀 ЗАПУСК
+print("\n🧊 === ЗАМОРОЗКА IDLE - ПРИНЦИПИАЛЬНО НОВЫЙ ПОДХОД ===")
+print("❄️ Стратегия: ЗАМОРОЗИТЬ Motor6D вместо борьбы с анимациями")
+print("🛡️ Отключение Animator/AnimationController навсегда")
+print("🧊 Фиксация Motor6D в idle позах")
+print("👁️ Минимальный мониторинг только позиции")
+print("🎯 Запуск через 2 секунды...")
 
 spawn(function()
     wait(2)
-    main()
+    freezeAutoMagicalCatcher()
 end)
-
-print("\n💡 === ЦЕЛЬ ДИАГНОСТИКИ ===")
-print("🔍 1. ОТСЛЕДИТЬ когда исчезают Humanoid и Animator")
-print("🔍 2. ПОНЯТЬ что вызывает их исчезновение")
-print("🔍 3. НАЙТИ способ их восстановления или предотвращения исчезновения")
-print("🔍 4. ВЫЯСНИТЬ связь между компонентами и idle анимацией")
-print("\n🚀 ДИАГНОСТИКА ЗАПУЩЕНА!")
