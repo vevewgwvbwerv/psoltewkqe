@@ -1,5 +1,5 @@
--- 🎬 ПРЯМОЕ УПРАВЛЕНИЕ MOTOR6D - ЗАПИСЫВАЕМ И ВОСПРОИЗВОДИМ IDLE ПОЗЫ
--- Создаем собственную idle анимацию через Motor6D
+-- 🎯 ФИНАЛЬНЫЙ ПРОЕКТ - GUI ДЛЯ ВСЕХ ИНСТРУМЕНТОВ
+-- Все инструменты для поиска и фиксации магического idle момента
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -8,26 +8,7 @@ local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
-print("🎬 === ПРЯМОЕ УПРАВЛЕНИЕ MOTOR6D ===")
-print("🎯 Цель: Записать idle позы и воспроизводить их в цикле")
-print("💡 Обходим систему анимаций полностью!")
-
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
-end
-
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
-
-local playerPos = hrp.Position
-
--- 🐾 РАБОЧАЯ ФУНКЦИЯ ПОИСКА ПИТОМЦА
+-- 🔍 ПОИСК ПИТОМЦА (РАБОЧАЯ ВЕРСИЯ из Motor6DIdleForcer.lua)
 local function hasPetVisuals(model)
     local meshCount = 0
     local petMeshes = {}
@@ -61,7 +42,21 @@ local function hasPetVisuals(model)
 end
 
 local function findPet()
-    print("🔍 Поиск UUID моделей питомцев...")
+    local character = player.Character
+    if not character then 
+        print("❌ Персонаж игрока не найден!")
+        return nil 
+    end
+    
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then 
+        print("❌ HumanoidRootPart не найден!")
+        return nil 
+    end
+    
+    local playerPos = hrp.Position
+    
+    print("🔍 Поиск питомцев с фигурными скобками...")
     
     local foundPets = {}
     local SEARCH_RADIUS = 100
@@ -99,123 +94,147 @@ local function findPet()
     return targetPet.model
 end
 
--- 🎬 ЗАПИСЬ IDLE ПОЗ
-local function recordIdlePoses(petModel)
-    print("\n🎬 === ЗАПИСЬ IDLE ПОЗ ===")
+-- 🎯 ПРОВЕРКА НА МАГИЧЕСКИЙ МОМЕНТ
+local function isMagicalIdleMoment(petModel)
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+    
+    -- Условие 1: Нет движения
+    local noMovement = true
+    if humanoid then
+        noMovement = humanoid.MoveDirection.Magnitude < 0.01
+    end
+    
+    -- Условие 2: Есть только idle анимации
+    local hasOnlyIdleAnimation = false
+    local animationCount = 0
+    
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Animator") then
+            local tracks = obj:GetPlayingAnimationTracks()
+            animationCount = #tracks
+            
+            if animationCount > 0 then
+                hasOnlyIdleAnimation = true
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    local id = track.Animation.AnimationId:lower()
+                    
+                    if not name:find("idle") and not id:find("1073293904134356") then
+                        hasOnlyIdleAnimation = false
+                        break
+                    end
+                end
+            end
+            break
+        end
+    end
+    
+    return noMovement and hasOnlyIdleAnimation and animationCount > 0
+end
+
+-- 📊 ЗАПИСЬ МАГИЧЕСКИХ ПОЗ
+local function recordMagicalPoses(petModel, duration)
+    print("🎬 Записываю МАГИЧЕСКИЕ idle позы...")
     
     local motor6Ds = {}
-    local recordedPoses = {}
-    
-    -- Находим все Motor6D
     for _, obj in pairs(petModel:GetDescendants()) do
         if obj:IsA("Motor6D") then
             table.insert(motor6Ds, obj)
         end
     end
     
-    print("🔧 Найдено Motor6D:", #motor6Ds)
-    
     if #motor6Ds == 0 then
         print("❌ Motor6D не найдены!")
         return nil
     end
     
-    -- Записываем позы в течение 10 секунд
-    print("📹 Начинаю запись idle поз на 10 секунд...")
-    print("💡 Убедитесь что питомец стоит и анимирует idle!")
-    
-    local recordingTime = 10
-    local frameRate = 30  -- 30 кадров в секунду
-    local frameInterval = 1 / frameRate
-    local totalFrames = recordingTime * frameRate
-    
-    local currentFrame = 0
-    local startTime = tick()
+    local poses = {}
+    local frameCount = 0
+    local targetFrames = duration * 60
     
     local recordConnection
     recordConnection = RunService.Heartbeat:Connect(function()
-        local elapsed = tick() - startTime
+        frameCount = frameCount + 1
         
-        if elapsed >= frameInterval * currentFrame then
-            currentFrame = currentFrame + 1
-            
-            -- Записываем текущие позы всех Motor6D
-            local framePoses = {}
-            
-            for _, motor in pairs(motor6Ds) do
-                framePoses[motor.Name] = {
-                    C0 = motor.C0,
-                    C1 = motor.C1,
-                    Transform = motor.Transform
-                }
-            end
-            
-            table.insert(recordedPoses, framePoses)
-            
-            if currentFrame % 30 == 0 then  -- Каждую секунду
-                print(string.format("📹 Записано кадров: %d/%d", currentFrame, totalFrames))
-            end
+        local framePoses = {}
+        for _, motor in pairs(motor6Ds) do
+            framePoses[motor.Name] = {
+                C0 = motor.C0,
+                C1 = motor.C1,
+                Transform = motor.Transform
+            }
         end
         
-        if elapsed >= recordingTime then
+        table.insert(poses, framePoses)
+        
+        if frameCount >= targetFrames then
             recordConnection:Disconnect()
-            print("✅ Запись завершена!")
-            print(string.format("📹 Записано кадров: %d", #recordedPoses))
         end
     end)
     
-    -- Ждем завершения записи
-    while #recordedPoses < totalFrames and recordConnection.Connected do
+    while frameCount < targetFrames and recordConnection.Connected do
         wait(0.1)
     end
     
-    return recordedPoses, motor6Ds
+    print(string.format("✅ Записано %d магических idle поз!", #poses))
+    return poses, motor6Ds
 end
 
--- 🎭 ВОСПРОИЗВЕДЕНИЕ IDLE АНИМАЦИИ
-local function playIdleAnimation(recordedPoses, motor6Ds, petModel)
-    print("\n🎭 === ВОСПРОИЗВЕДЕНИЕ IDLE АНИМАЦИИ ===")
+-- 🔒 ФИКСАЦИЯ В МАГИЧЕСКОМ СОСТОЯНИИ
+local function lockInMagicalIdle(petModel, magicalPoses, motor6Ds)
+    print("🔒 Фиксирую питомца в МАГИЧЕСКОМ idle состоянии...")
     
-    if not recordedPoses or #recordedPoses == 0 then
-        print("❌ Нет записанных поз!")
-        return
-    end
-    
-    print("🎬 Начинаю воспроизведение idle анимации...")
-    print("🔄 Анимация будет циклически повторяться!")
-    
-    -- Останавливаем питомца
     local humanoid = petModel:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        humanoid.WalkSpeed = 0
-        humanoid.PlatformStand = true
-        print("🛑 Питомец остановлен")
-    end
-    
-    -- Якорим RootPart
     local rootPart = petModel:FindFirstChild("HumanoidRootPart") or petModel:FindFirstChild("Torso")
-    if rootPart then
-        rootPart.Anchored = true
-        print("⚓ RootPart заякорен")
-    end
+    local originalPosition = rootPart and rootPart.Position or Vector3.new(0, 0, 0)
     
     local currentFrame = 1
-    local frameRate = 30
+    local frameRate = 60
     local frameInterval = 1 / frameRate
     local lastFrameTime = tick()
     
-    local playConnection
-    playConnection = RunService.Heartbeat:Connect(function()
+    local lockConnection
+    lockConnection = RunService.Heartbeat:Connect(function()
         local now = tick()
         
+        -- УЛЬТРА-АГРЕССИВНАЯ блокировка
+        if humanoid then
+            humanoid.WalkSpeed = 0
+            humanoid.JumpPower = 0
+            humanoid.PlatformStand = true
+        end
+        
+        if rootPart then
+            rootPart.Anchored = true
+            if (rootPart.Position - originalPosition).Magnitude > 0.05 then
+                rootPart.Position = originalPosition
+                rootPart.Velocity = Vector3.new(0, 0, 0)
+                rootPart.AngularVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+        
+        -- Уничтожение НЕ-idle анимаций
+        for _, obj in pairs(petModel:GetDescendants()) do
+            if obj:IsA("Animator") then
+                local tracks = obj:GetPlayingAnimationTracks()
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    local id = track.Animation.AnimationId:lower()
+                    
+                    if not name:find("idle") and not id:find("1073293904134356") then
+                        track:Stop()
+                        track:Destroy()
+                    end
+                end
+            end
+        end
+        
+        -- Применение магических поз
         if now - lastFrameTime >= frameInterval then
             lastFrameTime = now
             
-            -- Получаем текущий кадр
-            local framePoses = recordedPoses[currentFrame]
-            
+            local framePoses = magicalPoses[currentFrame]
             if framePoses then
-                -- Применяем позы ко всем Motor6D
                 for _, motor in pairs(motor6Ds) do
                     local pose = framePoses[motor.Name]
                     if pose then
@@ -228,159 +247,270 @@ local function playIdleAnimation(recordedPoses, motor6Ds, petModel)
                 end
             end
             
-            -- Переходим к следующему кадру
             currentFrame = currentFrame + 1
-            if currentFrame > #recordedPoses then
-                currentFrame = 1  -- Зацикливаем
-                print("🔄 Анимация зациклена!")
+            if currentFrame > #magicalPoses then
+                currentFrame = 1
             end
         end
     end)
     
-    print("✅ Воспроизведение запущено!")
-    print("🔄 Idle анимация играет в цикле!")
-    
-    -- Останавливаем через 300 секунд (5 минут)
-    spawn(function()
-        wait(300)
-        playConnection:Disconnect()
-        print("\n⏹️ Воспроизведение остановлено через 5 минут")
-    end)
-    
-    return playConnection
+    return lockConnection
 end
 
--- 🎯 УЛУЧШЕННАЯ ВЕРСИЯ С ИНТЕРПОЛЯЦИЕЙ
-local function playIdleAnimationSmooth(recordedPoses, motor6Ds, petModel)
-    print("\n🎭 === ПЛАВНОЕ ВОСПРОИЗВЕДЕНИЕ IDLE АНИМАЦИИ ===")
-    
-    if not recordedPoses or #recordedPoses == 0 then
-        print("❌ Нет записанных поз!")
+-- 🎯 МГНОВЕННАЯ ФИКСАЦИЯ (если питомец УЖЕ в idle)
+local function instantMagicalFix()
+    local petModel = findPet()
+    if not petModel then
+        print("❌ Питомец не найден!")
         return
     end
     
-    print("🎬 Начинаю плавное воспроизведение idle анимации...")
-    
-    -- Останавливаем питомца
-    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        humanoid.WalkSpeed = 0
-        humanoid.PlatformStand = true
+    if isMagicalIdleMoment(petModel) then
+        print("🌟 Питомец УЖЕ в магическом idle! Фиксирую...")
+        
+        local magicalPoses, motor6Ds = recordMagicalPoses(petModel, 3)
+        if magicalPoses then
+            local connection = lockInMagicalIdle(petModel, magicalPoses, motor6Ds)
+            print("🎉 УСПЕХ! Питомец зафиксирован в магическом idle!")
+            
+            spawn(function()
+                wait(300)
+                connection:Disconnect()
+                print("⏹️ Фиксация остановлена через 5 минут")
+            end)
+        end
+    else
+        print("❌ Питомец НЕ в idle состоянии!")
+        print("💡 Дождись когда питомец встанет и попробуй снова")
+    end
+end
+
+-- 🔍 АВТОМАТИЧЕСКИЙ ЛОВЕЦ
+local function autoMagicalCatcher()
+    local petModel = findPet()
+    if not petModel then
+        print("❌ Питомец не найден!")
+        return
     end
     
-    local rootPart = petModel:FindFirstChild("HumanoidRootPart") or petModel:FindFirstChild("Torso")
-    if rootPart then
-        rootPart.Anchored = true
-    end
+    print("🔍 Автоматический поиск магического момента...")
+    print("⏰ Максимальное время: 60 секунд")
     
-    local currentFrame = 1
-    local frameRate = 30
-    local frameInterval = 1 / frameRate
-    local lastFrameTime = tick()
+    local searchStartTime = tick()
+    local lastCheckTime = 0
     
-    local playConnection
-    playConnection = RunService.Heartbeat:Connect(function()
+    local searchConnection
+    searchConnection = RunService.Heartbeat:Connect(function()
         local now = tick()
         
-        if now - lastFrameTime >= frameInterval then
-            lastFrameTime = now
+        if now - lastCheckTime >= 0.1 then
+            lastCheckTime = now
             
-            -- Получаем текущий и следующий кадры для интерполяции
-            local currentPoses = recordedPoses[currentFrame]
-            local nextFrame = currentFrame + 1
-            if nextFrame > #recordedPoses then
-                nextFrame = 1
-            end
-            local nextPoses = recordedPoses[nextFrame]
-            
-            if currentPoses and nextPoses then
-                -- Интерполируем между кадрами для плавности
-                local alpha = 0.5  -- Можно настроить для большей/меньшей плавности
+            if isMagicalIdleMoment(petModel) then
+                print("🌟 МАГИЧЕСКИЙ МОМЕНТ ПОЙМАН!")
+                searchConnection:Disconnect()
                 
-                for _, motor in pairs(motor6Ds) do
-                    local currentPose = currentPoses[motor.Name]
-                    local nextPose = nextPoses[motor.Name]
+                local magicalPoses, motor6Ds = recordMagicalPoses(petModel, 3)
+                if magicalPoses then
+                    local connection = lockInMagicalIdle(petModel, magicalPoses, motor6Ds)
+                    print("🎉 Питомец зафиксирован в магическом idle!")
                     
-                    if currentPose and nextPose then
-                        pcall(function()
-                            -- Интерполяция C0
-                            motor.C0 = currentPose.C0:lerp(nextPose.C0, alpha)
-                            -- Интерполяция C1
-                            motor.C1 = currentPose.C1:lerp(nextPose.C1, alpha)
-                            -- Transform сложнее интерполировать, используем текущий
-                            motor.Transform = currentPose.Transform
-                        end)
+                    spawn(function()
+                        wait(300)
+                        connection:Disconnect()
+                        print("⏹️ Фиксация остановлена")
+                    end)
+                end
+                return
+            end
+            
+            if now - searchStartTime >= 60 then
+                searchConnection:Disconnect()
+                print("⏰ Время поиска истекло!")
+            end
+        end
+    end)
+end
+
+-- 📊 ДЕТАЛЬНЫЙ АНАЛИЗ
+local function detailedAnalysis()
+    local petModel = findPet()
+    if not petModel then
+        print("❌ Питомец не найден!")
+        return
+    end
+    
+    print("📊 Детальный анализ состояния питомца...")
+    
+    local logCount = 0
+    local connection = RunService.Heartbeat:Connect(function()
+        if tick() % 1 < 0.016 then -- каждую секунду
+            logCount = logCount + 1
+            
+            local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+            local trackCount = 0
+            local idleTracks = 0
+            
+            for _, obj in pairs(petModel:GetDescendants()) do
+                if obj:IsA("Animator") then
+                    local tracks = obj:GetPlayingAnimationTracks()
+                    trackCount = #tracks
+                    
+                    for _, track in pairs(tracks) do
+                        local name = track.Animation.Name:lower()
+                        local id = track.Animation.AnimationId:lower()
+                        if name:find("idle") or id:find("1073293904134356") then
+                            idleTracks = idleTracks + 1
+                        end
                     end
+                    break
                 end
             end
             
-            currentFrame = currentFrame + 1
-            if currentFrame > #recordedPoses then
-                currentFrame = 1
-                print("🔄 Плавная анимация зациклена!")
+            local moveSpeed = humanoid and humanoid.MoveDirection.Magnitude or 0
+            local isMagical = isMagicalIdleMoment(petModel)
+            
+            print(string.format("📊 #%d | Треков: %d (idle: %d) | Движение: %.3f | Магический: %s", 
+                logCount, trackCount, idleTracks, moveSpeed, isMagical and "✨ ДА" or "❌ НЕТ"))
+            
+            if logCount >= 30 then -- 30 секунд
+                connection:Disconnect()
+                print("📊 Анализ завершен")
             end
         end
     end)
-    
-    print("✅ Плавное воспроизведение запущено!")
-    
-    -- Останавливаем через 300 секунд
-    spawn(function()
-        wait(300)
-        playConnection:Disconnect()
-        print("\n⏹️ Плавное воспроизведение остановлено через 5 минут")
-    end)
-    
-    return playConnection
 end
 
--- Главная функция
-local function main()
-    local petModel = findPet()
-    if not petModel then
-        return
+-- 🖥️ СОЗДАНИЕ GUI
+local function createFinalGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Удаляем старый GUI если есть
+    local existingGui = playerGui:FindFirstChild("FinalProjectGUI")
+    if existingGui then
+        existingGui:Destroy()
     end
     
-    print("\n🎬 === ЗАПИСЬ IDLE ПОЗ ===")
-    print("💡 Убедитесь что питомец стоит и анимирует idle!")
-    print("📹 Запись начнется через 5 секунд...")
+    -- Основной фрейм
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "FinalProjectGUI"
+    screenGui.Parent = playerGui
     
-    wait(5)
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 350, 0, 400)
+    mainFrame.Position = UDim2.new(0, 10, 0, 10)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
     
-    local recordedPoses, motor6Ds = recordIdlePoses(petModel)
+    -- Заголовок
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 FINAL PROJECT - Магический Idle"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextSize = 16
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = mainFrame
     
-    if recordedPoses and #recordedPoses > 0 then
-        print("✅ Позы записаны успешно!")
+    -- Функция создания кнопки
+    local function createButton(text, position, color, callback)
+        local button = Instance.new("TextButton")
+        button.Size = UDim2.new(1, -20, 0, 50)
+        button.Position = position
+        button.BackgroundColor3 = color
+        button.BorderSizePixel = 0
+        button.Text = text
+        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        button.TextSize = 14
+        button.Font = Enum.Font.SourceSansBold
+        button.Parent = mainFrame
         
-        wait(2)
+        button.MouseButton1Click:Connect(function()
+            local originalText = button.Text
+            local originalColor = button.BackgroundColor3
+            
+            button.Text = "⏳ Выполняется..."
+            button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+            
+            spawn(function()
+                callback()
+                wait(2)
+                button.Text = originalText
+                button.BackgroundColor3 = originalColor
+            end)
+        end)
         
-        print("\n🎭 === ВОСПРОИЗВЕДЕНИЕ ===")
-        local connection = playIdleAnimationSmooth(recordedPoses, motor6Ds, petModel)
-        
-        if connection then
-            print("🎉 УСПЕХ! Питомец теперь играет записанную idle анимацию!")
-            print("🔄 Анимация зациклена и будет играть 5 минут!")
-        end
-    else
-        print("❌ Запись не удалась")
+        return button
     end
+    
+    -- Кнопки
+    createButton("🌏 Мгновенная фиксация (если УЖЕ idle)", 
+        UDim2.new(0, 10, 0, 60), 
+        Color3.fromRGB(255, 0, 255), 
+        instantMagicalFix)
+    
+    createButton("🌏 ПЛАВНАЯ фиксация (БЕЗ ЛАГОВ!)", 
+        UDim2.new(0, 10, 0, 120), 
+        Color3.fromRGB(0, 255, 150), 
+        function()
+            local petModel = findPet()
+            if petModel and isMagicalIdleMoment(petModel) then
+                local poses, motors = recordMagicalPoses(petModel, 2)
+                if poses then
+                    smoothMagicalFix(petModel, poses, motors)
+                    print("🌏 Плавная фиксация запущена!")
+                end
+            else
+                print("❌ Питомец не в idle!")
+            end
+        end)
+    
+    createButton("🔍 Автоматический ловец (60 сек)", 
+        UDim2.new(0, 10, 0, 180), 
+        Color3.fromRGB(0, 255, 0), 
+        autoMagicalCatcher)
+    
+    createButton("📈 Детальный анализ (30 сек)", 
+        UDim2.new(0, 10, 0, 240), 
+        Color3.fromRGB(0, 150, 255), 
+        detailedAnalysis)
+    
+    -- Информационная панель
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Size = UDim2.new(1, -20, 0, 150)
+    infoLabel.Position = UDim2.new(0, 10, 0, 300)
+    infoLabel.Position = UDim2.new(0, 10, 0, 240)
+    infoLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    infoLabel.BorderSizePixel = 0
+    infoLabel.Text = [[💡 ИНСТРУКЦИЯ:
+
+🌟 Мгновенная фиксация:
+   Используй когда питомец УЖЕ стоит в idle
+
+🔍 Автоматический ловец:
+   Ждет пока питомец войдет в idle и фиксирует
+
+📊 Детальный анализ:
+   Показывает состояние питомца в реальном времени]]
+    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    infoLabel.TextSize = 12
+    infoLabel.Font = Enum.Font.SourceSans
+    infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    infoLabel.Parent = mainFrame
+    
+    print("🖥️ Final Project GUI создан!")
 end
 
--- 🚀 ПРЯМОЙ ЗАПУСК
-print("\n🚀 === ЗАПУСКАЮ ЗАПИСЬ И ВОСПРОИЗВЕДЕНИЕ MOTOR6D ===")
-print("🎯 Обходим всю систему анимаций Roblox!")
-print("📹 Записываем настоящие idle позы и воспроизводим их!")
+-- 🚀 ЗАПУСК
+print("\n🎯 === FINAL PROJECT - МАГИЧЕСКИЙ IDLE ===")
+print("✨ Все инструменты для поиска и фиксации магического момента!")
+print("🖥️ GUI будет создан через 2 секунды...")
 
 spawn(function()
     wait(2)
-    main()
+    createFinalGUI()
 end)
-
-print("\n💡 === СТРАТЕГИЯ MOTOR6D ===")
-print("🎬 1. Записываем Motor6D позы во время idle (10 секунд)")
-print("🎭 2. Останавливаем питомца (WalkSpeed=0, PlatformStand=true)")
-print("⚓ 3. Якорим RootPart для предотвращения движения")
-print("🔄 4. Воспроизводим записанные позы в цикле")
-print("✨ 5. Используем интерполяцию для плавности")
-print("🎉 Результат: Настоящая idle анимация без системы Roblox!")
-print("\n🚀 ЗАПИСЬ ЗАПУЩЕНА!")
