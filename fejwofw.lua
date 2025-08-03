@@ -1,14 +1,24 @@
--- 🔬 ГЛУБОКАЯ ДИАГНОСТИКА ПИТОМЦА - ПОНИМАЕМ КАК ОН РАБОТАЕТ
--- Анализируем ВСЕ: Motor6D, Animator, Humanoid, анимации, состояния
+-- 🔥 PET SCALER v2.9 MINIMAL IDLE - МИНИМАЛЬНАЯ модификация рабочего v2.9
+-- ТОЧНО ТАКОЙ ЖЕ КОД как v2.9, но с ОДНИМ условием: копировать Motor6D только когда питомец idle
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-print("🔬 === ГЛУБОКАЯ ДИАГНОСТИКА ПИТОМЦА ===")
-print("🎯 Цель: ПОНЯТЬ как работает idle анимация")
+print("🔥 === PET SCALER v2.9 MINIMAL IDLE - ТОЛЬКО IDLE АНИМАЦИЯ ===")
+print("=" .. string.rep("=", 60))
+
+-- Конфигурация (как в оригинальном PetScaler)
+local CONFIG = {
+    SEARCH_RADIUS = 100,
+    SCALE_FACTOR = 3.0,
+    TWEEN_TIME = 3.0,
+    EASING_STYLE = Enum.EasingStyle.Quad,
+    EASING_DIRECTION = Enum.EasingDirection.Out
+}
 
 -- Получаем позицию игрока
 local playerChar = player.Character
@@ -24,8 +34,13 @@ if not hrp then
 end
 
 local playerPos = hrp.Position
+print("📍 Позиция игрока:", playerPos)
+print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
+print("📏 Коэффициент увеличения:", CONFIG.SCALE_FACTOR .. "x")
+print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
+print()
 
--- 🐾 РАБОЧАЯ ФУНКЦИЯ ПОИСКА ПИТОМЦА (из PetScaler_v2.2)
+-- === ФУНКЦИИ ИЗ ОРИГИНАЛЬНОГО PETSCALER ===
 
 -- Функция проверки визуальных элементов питомца
 local function hasPetVisuals(model)
@@ -60,19 +75,311 @@ local function hasPetVisuals(model)
     return meshCount > 0, petMeshes
 end
 
--- Функция поиска питомца (РАБОЧАЯ версия из PetScaler_v2.2)
-local function findPet()
+-- Функция глубокого копирования модели (ОРИГИНАЛЬНАЯ ВЕРСИЯ)
+local function deepCopyModel(originalModel)
+    print("📋 Создаю глубокую копию модели:", originalModel.Name)
+    
+    local copy = originalModel:Clone()
+    copy.Name = originalModel.Name .. "_SCALED_COPY"
+    copy.Parent = Workspace
+    
+    -- Позиционирование копии (оригинальная логика)
+    if copy.PrimaryPart and originalModel.PrimaryPart then
+        local originalCFrame = originalModel.PrimaryPart.CFrame
+        local offset = Vector3.new(15, 0, 0)
+        
+        local targetPosition = originalCFrame.Position + offset
+        
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {copy, originalModel}
+        
+        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            local groundY = raycastResult.Position.Y
+            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
+            
+            local newCFrame = CFrame.new(finalPosition, finalPosition + originalCFrame.LookVector)
+            copy:SetPrimaryPartCFrame(newCFrame)
+            print("📍 Копия размещена на земле рядом с оригиналом")
+        else
+            copy:SetPrimaryPartCFrame(originalCFrame + offset)
+            print("📍 Копия размещена на уровне оригинала в стоячем положении")
+        end
+    elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
+        local originalPos = originalModel.RootPart.Position
+        local offset = Vector3.new(15, 0, 0)
+        copy.RootPart.Position = originalPos + offset
+        print("📍 Копия размещена через RootPart")
+    else
+        print("⚠️ Не удалось точно позиционировать копию")
+    end
+    
+    -- ВАЖНО: НЕ устанавливаем Anchored здесь - это сделает SmartAnchoredManagement
+    
+    print("✅ Копия создана:", copy.Name)
+    return copy
+end
+
+-- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
+
+-- Функция получения всех BasePart из модели (ОРИГИНАЛЬНАЯ ЛОГИКА PETSCALER)
+local function getAllParts(model)
+    local parts = {}
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
+        end
+    end
+    
+    return parts
+end
+
+-- Получаем все Motor6D из модели
+local function getMotor6Ds(model)
+    local motors = {}
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motors, obj)
+        end
+    end
+    return motors
+end
+
+-- Создаем карту Motor6D по именам
+local function createMotorMap(motors)
+    local map = {}
+    for _, motor in ipairs(motors) do
+        local key = motor.Name
+        if motor.Part0 then
+            key = key .. "_" .. motor.Part0.Name
+        end
+        if motor.Part1 then
+            key = key .. "_" .. motor.Part1.Name
+        end
+        
+        map[key] = motor
+    end
+    
+    return map
+end
+
+-- Функция умного управления Anchored (из SmartMotorCopier)
+local function smartAnchoredManagement(copyParts)
+    print("🧠 Умное управление Anchored...")
+    
+    -- Находим "корневую" часть
+    local rootPart = nil
+    for _, part in ipairs(copyParts) do
+        local partName = part.Name:lower()
+        if partName:find("torso") or partName:find("humanoidrootpart") or partName:find("rootpart") then
+            rootPart = part
+            break
+        end
+    end
+    
+    if not rootPart then
+        rootPart = copyParts[1]
+        print("  ⚠️ Корневая часть не найдена, использую первую:", rootPart.Name)
+    else
+        print("  ✅ Корневая часть найдена:", rootPart.Name)
+    end
+    
+    -- Устанавливаем Anchored
+    for _, part in ipairs(copyParts) do
+        if part == rootPart then
+            part.Anchored = true
+            print("  🔒 Закреплена корневая часть:", part.Name)
+        else
+            part.Anchored = false
+        end
+    end
+    
+    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
+    return rootPart
+end
+
+-- Функция копирования состояния Motor6D с масштабированием
+local function copyMotorState(originalMotor, copyMotor, scaleFactor)
+    if not originalMotor or not copyMotor then
+        return false
+    end
+    
+    -- ИСПРАВЛЕНО: Масштабируем позиционные компоненты Motor6D
+    local originalC0 = originalMotor.C0
+    local originalC1 = originalMotor.C1
+    
+    -- Масштабируем позиционные компоненты (Position), но НЕ вращательные (Rotation)
+    local scaledC0 = CFrame.new(originalC0.Position * scaleFactor) * (originalC0 - originalC0.Position)
+    local scaledC1 = CFrame.new(originalC1.Position * scaleFactor) * (originalC1 - originalC1.Position)
+    
+    copyMotor.C0 = scaledC0
+    copyMotor.C1 = scaledC1
+    
+    return true
+end
+
+-- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
+
+-- Функция плавного масштабирования модели
+local function scaleModelSmoothly(model, scaleFactor, tweenTime)
+    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
+    
+    local parts = getAllParts(model)
+    
+    if #parts == 0 then
+        print("❌ Части для масштабирования не найдены!")
+        return false
+    end
+    
+    print("📊 Найдено частей для масштабирования:", #parts)
+    
+    -- Сохраняем оригинальные данные
+    local originalData = {}
+    for _, part in ipairs(parts) do
+        originalData[part] = {
+            size = part.Size,
+            cframe = part.CFrame
+        }
+    end
+    
+    -- Создаем TweenInfo
+    local tweenInfo = TweenInfo.new(
+        tweenTime,
+        CONFIG.EASING_STYLE,
+        CONFIG.EASING_DIRECTION,
+        0, -- Повторений
+        false, -- Обратная анимация
+        0 -- Задержка
+    )
+    
+    -- Масштабирование через CFrame (ОРИГИНАЛЬНАЯ ЛОГИКА)
+    local tweens = {}
+    local completedTweens = 0
+    
+    for _, part in ipairs(parts) do
+        local originalSize = originalData[part].size
+        local originalCFrame = originalData[part].cframe
+        
+        -- Вычисляем новый размер
+        local newSize = originalSize * scaleFactor
+        
+        -- Вычисляем новую позицию (масштабируем относительно центра модели)
+        local newCFrame = originalCFrame
+        
+        local tween = TweenService:Create(part, tweenInfo, {
+            Size = newSize,
+            CFrame = newCFrame
+        })
+        
+        tween.Completed:Connect(function()
+            completedTweens = completedTweens + 1
+            if completedTweens == #parts then
+                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
+            end
+        end)
+        
+        table.insert(tweens, tween)
+        tween:Play()
+    end
+    
+    print("🚀 Запущено " .. #tweens .. " твинов для плавного масштабирования")
+    return true
+end
+
+-- === МИНИМАЛЬНО МОДИФИЦИРОВАННАЯ ФУНКЦИЯ ЖИВОГО КОПИРОВАНИЯ ===
+-- ТОЧНО ТАКАЯ ЖЕ как в v2.9, но с ОДНИМ условием: копировать только когда idle
+
+local function startLiveMotorCopying(original, copy)
+    print("🔄 Запуск живого копирования Motor6D...")
+    
+    local originalMotors = getMotor6Ds(original)
+    local copyMotors = getMotor6Ds(copy)
+    
+    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
+    
+    if #originalMotors == 0 or #copyMotors == 0 then
+        print("❌ Недостаточно Motor6D для копирования")
+        return nil
+    end
+    
+    local originalMap = createMotorMap(originalMotors)
+    local copyMap = createMotorMap(copyMotors)
+    
+    -- ДОБАВЛЯЕМ ТОЛЬКО ЭТО: поиск rootPart для проверки velocity
+    local originalRootPart = original:FindFirstChild("HumanoidRootPart") or original:FindFirstChild("Torso")
+    if not originalRootPart then
+        print("❌ Не найден rootPart у оригинала для проверки velocity!")
+        return nil
+    end
+    
+    local connection = nil
+    local isRunning = true
+    local frameCount = 0
+    
+    connection = RunService.Heartbeat:Connect(function()
+        if not isRunning then
+            connection:Disconnect()
+            return
+        end
+        
+        frameCount = frameCount + 1
+        
+        -- Проверяем существование моделей
+        if not original.Parent or not copy.Parent then
+            print("⚠️ Модель удалена, останавливаю копирование")
+            isRunning = false
+            return
+        end
+        
+        -- ДОБАВЛЯЕМ ТОЛЬКО ЭТО УСЛОВИЕ: копируем только когда питомец idle
+        local velocity = originalRootPart.AssemblyLinearVelocity.Magnitude
+        local isIdle = velocity < 0.5
+        
+        if isIdle then
+            -- ОРИГИНАЛЬНЫЙ КОД ИЗ v2.9: Копируем состояния Motor6D с масштабированием
+            for key, originalMotor in pairs(originalMap) do
+                local copyMotor = copyMap[key]
+                if copyMotor and originalMotor.Parent then
+                    copyMotorState(originalMotor, copyMotor, CONFIG.SCALE_FACTOR)
+                end
+            end
+        end
+        -- Если НЕ idle - просто НЕ копируем, копия остается в последней idle позе
+        
+        -- Статус каждые 3 секунды
+        if frameCount % 180 == 0 then
+            if isIdle then
+                print("📊 Живое копирование активно (кадр " .. frameCount .. ") - IDLE")
+            else
+                print("📊 Ожидание idle (кадр " .. frameCount .. ") - WALKING")
+            end
+        end
+    end)
+    
+    print("✅ Живое копирование Motor6D запущено с IDLE фильтром!")
+    print("💡 Копия будет повторять движения оригинала ТОЛЬКО когда он стоит!")
+    
+    return connection
+end
+
+-- Функция поиска и масштабирования (из оригинального PetScaler)
+local function findAndScalePet()
     print("🔍 Поиск UUID моделей питомцев...")
     
     local foundPets = {}
-    local SEARCH_RADIUS = 100
     
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
             local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
             if success then
                 local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= SEARCH_RADIUS then
+                if distance <= CONFIG.SEARCH_RADIUS then
                     local hasVisuals, meshes = hasPetVisuals(obj)
                     if hasVisuals then
                         table.insert(foundPets, {
@@ -80,7 +387,6 @@ local function findPet()
                             distance = distance,
                             meshes = meshes
                         })
-                        print("🐾 Найден питомец:", obj.Name, "на расстоянии:", math.floor(distance))
                     end
                 end
             end
@@ -89,304 +395,140 @@ local function findPet()
     
     if #foundPets == 0 then
         print("❌ Питомцы не найдены!")
-        print("💡 Подсказка: Подойдите ближе к питомцу (в радиусе 100 блоков)")
         return nil
     end
     
-    -- Сортируем по расстоянию
-    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
-    
     local targetPet = foundPets[1]
     print("🎯 Выбран питомец:", targetPet.model.Name)
-    print("📍 Расстояние:", math.floor(targetPet.distance), "блоков")
-    print("🎨 Мешей:", #targetPet.meshes)
     
     return targetPet.model
 end
 
--- Функция глубокого анализа питомца
-local function deepAnalyzePet(petModel)
-    print("\n🔬 === ГЛУБОКИЙ АНАЛИЗ ПИТОМЦА ===")
-    print("📋 Модель:", petModel.Name)
-    
-    -- 1. АНАЛИЗ СТРУКТУРЫ МОДЕЛИ
-    print("\n📁 === СТРУКТУРА МОДЕЛИ ===")
-    local allChildren = petModel:GetChildren()
-    print("👥 Всего детей:", #allChildren)
-    
-    for i, child in pairs(allChildren) do
-        print(string.format("  %d. %s (%s)", i, child.Name, child.ClassName))
-        
-        -- Если это BasePart, показываем дополнительную информацию
-        if child:IsA("BasePart") then
-            print(string.format("     📐 Size: %s", tostring(child.Size)))
-            print(string.format("     📍 Position: %s", tostring(child.Position)))
-            print(string.format("     ⚓ Anchored: %s", tostring(child.Anchored)))
-            print(string.format("     ⚡ Velocity: %s", tostring(child.Velocity)))
-        end
-    end
-    
-    -- 2. ПОИСК ВСЕХ КОМПОНЕНТОВ
-    print("\n🧩 === ПОИСК КОМПОНЕНТОВ ===")
-    
-    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
-    local animator = petModel:FindFirstChildOfClass("Animator")
-    local rootPart = petModel:FindFirstChild("RootPart") or petModel:FindFirstChild("Torso") or petModel:FindFirstChild("HumanoidRootPart")
-    
-    print("🤖 Humanoid:", humanoid and "✅ НАЙДЕН" or "❌ НЕ НАЙДЕН")
-    print("🎭 Animator:", animator and "✅ НАЙДЕН" or "❌ НЕ НАЙДЕН")
-    print("🎯 RootPart:", rootPart and "✅ НАЙДЕН (" .. rootPart.Name .. ")" or "❌ НЕ НАЙДЕН")
-    
-    -- 3. АНАЛИЗ MOTOR6D
-    print("\n⚙️ === АНАЛИЗ MOTOR6D ===")
-    local motors = {}
-    for _, obj in pairs(petModel:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            table.insert(motors, obj)
-        end
-    end
-    
-    print("⚙️ Найдено Motor6D:", #motors)
-    for i, motor in pairs(motors) do
-        print(string.format("  %d. %s", i, motor.Name))
-        print(string.format("     🔗 Part0: %s", motor.Part0 and motor.Part0.Name or "nil"))
-        print(string.format("     🔗 Part1: %s", motor.Part1 and motor.Part1.Name or "nil"))
-        print(string.format("     📐 C0: %s", tostring(motor.C0)))
-        print(string.format("     📐 C1: %s", tostring(motor.C1)))
-        print(string.format("     🔄 Transform: %s", tostring(motor.Transform)))
-    end
-    
-    return {
-        humanoid = humanoid,
-        animator = animator,
-        rootPart = rootPart,
-        motors = motors
-    }
-end
-
--- Функция мониторинга в реальном времени
-local function startRealTimeMonitoring(petData)
-    print("\n📊 === ЗАПУСК МОНИТОРИНГА В РЕАЛЬНОМ ВРЕМЕНИ ===")
-    print("⏱️ Обновление каждые 0.5 секунды")
-    print("🎯 Следим за состоянием питомца...")
-    
-    local lastPosition = petData.rootPart and petData.rootPart.Position or Vector3.new(0, 0, 0)
-    local isMoving = false
-    local standingTime = 0
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        
-        -- Проверяем движение
-        if petData.rootPart and petData.rootPart.Parent then
-            local currentPos = petData.rootPart.Position
-            local distance = (currentPos - lastPosition).Magnitude
-            
-            if distance > 0.1 then
-                if not isMoving then
-                    print("\n🏃 === ПИТОМЕЦ НАЧАЛ ДВИГАТЬСЯ ===")
-                    isMoving = true
-                    standingTime = 0
-                end
-            else
-                if isMoving then
-                    print("\n🛑 === ПИТОМЕЦ ОСТАНОВИЛСЯ ===")
-                    isMoving = false
-                    standingTime = 0
-                else
-                    standingTime = standingTime + 1
-                end
-            end
-            
-            lastPosition = currentPos
-        end
-        
-        -- ДИАГНОСТИКА КАЖДЫЕ 30 КАДРОВ (примерно 0.5 сек)
-        if tick() % 0.5 < 0.02 then
-            
-            print(string.format("\n📊 === СОСТОЯНИЕ (%.1f сек) ===", tick()))
-            print("🏃 Движется:", isMoving and "ДА" or "НЕТ")
-            print("⏰ Стоит уже:", standingTime, "кадров")
-            
-            -- Анализ Humanoid
-            if petData.humanoid and petData.humanoid.Parent then
-                print("🤖 === HUMANOID ===")
-                print("  🏃 WalkSpeed:", petData.humanoid.WalkSpeed)
-                print("  🦘 JumpPower:", petData.humanoid.JumpPower or "nil")
-                print("  🦘 JumpHeight:", petData.humanoid.JumpHeight or "nil")
-                print("  🛑 PlatformStand:", petData.humanoid.PlatformStand or "nil")
-                print("  💺 Sit:", petData.humanoid.Sit or "nil")
-                print("  🎯 State:", petData.humanoid:GetState().Name)
-                print("  ❤️ Health:", petData.humanoid.Health)
-            else
-                print("❌ HUMANOID ПРОПАЛ!")
-            end
-            
-            -- Анализ Animator
-            if petData.animator and petData.animator.Parent then
-                print("🎭 === ANIMATOR ===")
-                local tracks = petData.animator:GetPlayingAnimationTracks()
-                print("  📽️ Играющих анимаций:", #tracks)
-                
-                for i, track in pairs(tracks) do
-                    print(string.format("    %d. %s", i, track.Animation.Name))
-                    print(string.format("       🆔 ID: %s", track.Animation.AnimationId))
-                    print(string.format("       ▶️ Playing: %s", track.IsPlaying))
-                    print(string.format("       🔄 Looped: %s", track.Looped))
-                    print(string.format("       ⚡ Priority: %s", track.Priority.Name))
-                    print(string.format("       ⏱️ Time: %.2f", track.TimePosition))
-                    print(string.format("       📏 Length: %.2f", track.Length or 0))
-                    print(string.format("       🔊 Weight: %.2f", track.WeightCurrent))
-                end
-            else
-                print("❌ ANIMATOR ПРОПАЛ!")
-            end
-            
-            -- Анализ позиции и скорости
-            if petData.rootPart and petData.rootPart.Parent then
-                print("📍 === ПОЗИЦИЯ И ДВИЖЕНИЕ ===")
-                print("  📍 Position:", petData.rootPart.Position)
-                print("  ⚡ Velocity:", petData.rootPart.Velocity)
-                print("  🌀 AngularVelocity:", petData.rootPart.AngularVelocity)
-            end
-            
-            -- ОСОБОЕ ВНИМАНИЕ КОГДА ПИТОМЕЦ СТОИТ ДОЛГО
-            if not isMoving and standingTime > 60 then -- Стоит больше 1 секунды
-                print("\n🎯 === ПИТОМЕЦ ДОЛГО СТОИТ - ДЕТАЛЬНЫЙ АНАЛИЗ ===")
-                
-                -- Анализ Motor6D в момент стояния
-                print("⚙️ === MOTOR6D В МОМЕНТ СТОЯНИЯ ===")
-                for i, motor in pairs(petData.motors) do
-                    if motor.Parent then
-                        print(string.format("  %s:", motor.Name))
-                        print(string.format("    🔄 Transform: %s", tostring(motor.Transform)))
-                        print(string.format("    📐 C0: %s", tostring(motor.C0)))
-                        print(string.format("    📐 C1: %s", tostring(motor.C1)))
-                    end
-                end
-            end
-        end
-    end)
-    
-    print("✅ Мониторинг запущен! Наблюдайте за выводом...")
-    return connection
-end
-
--- Главная функция
+-- Главная функция v2.0
 local function main()
-    local petModel = findPet()
+    print("🚀 PetScaler v2.9 MINIMAL IDLE запущен!")
+    
+    -- Шаг 1: Найти питомца
+    local petModel = findAndScalePet()
     if not petModel then
         return
     end
     
-    local petData = deepAnalyzePet(petModel)
-    
-    print("\n🎮 === НАЧИНАЕМ МОНИТОРИНГ ===")
-    print("💡 Подойдите к питомцу и наблюдайте за выводом")
-    print("🎯 Особое внимание на моменты когда питомец СТОИТ")
-    
-    local connection = startRealTimeMonitoring(petData)
-    
-    -- Останавливаем через 60 секунд
-    spawn(function()
-        wait(60)
-        connection:Disconnect()
-        print("\n⏹️ Мониторинг остановлен через 60 секунд")
-    end)
-end
-
--- 🚀 ПРЯМОЙ ЗАПУСК ДИАГНОСТИКИ
-print("\n🚀 === ЗАПУСКАЮ ДИАГНОСТИКУ СРАЗУ ===")
-print("💡 Подойдите к питомцу и смотрите консоль!")
-print("🔬 Анализ будет идти 60 секунд...")
-
--- Запускаем диагностику сразу
-spawn(function()
-    wait(2) -- Небольшая задержка для загрузки
-    main()
-end)
-
--- Создание GUI (исправленная версия)
-local function createGUI()
-    print("🖥️ Создаю диагностический GUI...")
-    
-    local playerGui = player.PlayerGui
-    if not playerGui then
-        print("❌ PlayerGui не найден!")
+    -- Шаг 2: Создать копию (оригинальная логика)
+    local petCopy = deepCopyModel(petModel)
+    if not petCopy then
+        print("❌ Не удалось создать копию!")
         return
     end
     
-    -- Удаляем старый GUI
-    local oldGui = playerGui:FindFirstChild("PetDiagnosticGUI")
+    -- Шаг 3: СНАЧАЛА масштабируем с закрепленными частями (как в оригинале)
+    print("\n📏 === МАСШТАБИРОВАНИЕ ===")
+    -- Убеждаемся что все части закреплены для стабильного масштабирования
+    for _, part in pairs(petCopy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = true
+        end
+    end
+    
+    wait(0.5)
+    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    
+    if not scaleSuccess then
+        print("❌ Масштабирование не удалось!")
+        return
+    end
+    
+    -- Шаг 4: ПОСЛЕ масштабирования настраиваем Anchored для анимации
+    print("\n🧠 === НАСТРОЙКА ANCHORED ДЛЯ АНИМАЦИИ ===")
+    wait(CONFIG.TWEEN_TIME + 1) -- Ждем завершения масштабирования
+    
+    local copyParts = getAllParts(petCopy)
+    local rootPart = smartAnchoredManagement(copyParts)
+    
+    -- Шаг 5: Запуск живого копирования Motor6D (МИНИМАЛЬНО МОДИФИЦИРОВАННОГО)
+    print("\n🎭 === ЗАПУСК АНИМАЦИИ ===")
+    
+    local connection = startLiveMotorCopying(petModel, petCopy)
+    
+    if connection then
+        print("🎉 === УСПЕХ! ===")
+        print("✅ Масштабированная копия создана")
+        print("✅ Анимация запущена с IDLE фильтром")
+        print("💡 Копия будет анимироваться ТОЛЬКО когда оригинал стоит!")
+    else
+        print("⚠️ Масштабирование успешно, но анимация не запустилась")
+        print("💡 Возможно проблема с Motor6D соединениями")
+    end
+end
+
+-- Создание GUI
+local function createGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    local oldGui = playerGui:FindFirstChild("PetScalerV29MinimalIdleGUI")
     if oldGui then
         oldGui:Destroy()
-        print("🗑️ Удалил старый GUI")
     end
     
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetDiagnosticGUI"
-    screenGui.ResetOnSpawn = false
+    screenGui.Name = "PetScalerV29MinimalIdleGUI"
     screenGui.Parent = playerGui
     
     local frame = Instance.new("Frame")
     frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 300, 0, 100)
-    frame.Position = UDim2.new(0, 50, 0, 200)
-    frame.BackgroundColor3 = Color3.fromRGB(50, 0, 50)
-    frame.BorderSizePixel = 3
-    frame.BorderColor3 = Color3.fromRGB(255, 0, 255)
+    frame.Size = UDim2.new(0, 280, 0, 80)
+    frame.Position = UDim2.new(0, 50, 0, 250) -- Еще ниже
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(255, 0, 255) -- Фиолетовая рамка
     frame.Parent = screenGui
     
-    -- Заголовок
-    local title = Instance.new("TextLabel")
-    title.Name = "Title"
-    title.Size = UDim2.new(1, 0, 0, 30)
-    title.Position = UDim2.new(0, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "🔬 ДИАГНОСТИКА ПИТОМЦА"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 16
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
     local button = Instance.new("TextButton")
-    button.Name = "DiagnosticButton"
-    button.Size = UDim2.new(0, 280, 0, 50)
-    button.Position = UDim2.new(0, 10, 0, 40)
+    button.Name = "ScaleButton"
+    button.Size = UDim2.new(0, 260, 0, 40)
+    button.Position = UDim2.new(0, 10, 0, 20)
     button.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
     button.BorderSizePixel = 0
-    button.Text = "🔬 ЗАПУСТИТЬ ДИАГНОСТИКУ"
+    button.Text = "🔥 PetScaler v2.9 MINIMAL IDLE"
     button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.TextSize = 18
+    button.TextSize = 14
     button.Font = Enum.Font.SourceSansBold
     button.Parent = frame
     
     button.MouseButton1Click:Connect(function()
-        print("\n🔬 === КНОПКА НАЖАТА! ЗАПУСКАЮ ДИАГНОСТИКУ ===\n")
-        button.Text = "🔬 АНАЛИЗИРУЮ..."
-        button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        button.Text = "⏳ Создаю MINIMAL IDLE..."
+        button.BackgroundColor3 = Color3.fromRGB(200, 0, 200)
         
         spawn(function()
             main()
             
-            wait(5)
-            button.Text = "🔬 ЗАПУСТИТЬ ДИАГНОСТИКУ"
+            wait(3)
+            button.Text = "🔥 PetScaler v2.9 MINIMAL IDLE"
             button.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
         end)
     end)
     
-    print("✅ Диагностический GUI создан успешно!")
-    print("📍 Позиция GUI: левый верх экрана")
-    print("🎯 Ищите ФИОЛЕТОВУЮ кнопку!")
+    button.MouseEnter:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(255, 0, 255) then
+            button.BackgroundColor3 = Color3.fromRGB(200, 0, 200)
+        end
+    end)
+    
+    button.MouseLeave:Connect(function()
+        if button.BackgroundColor3 == Color3.fromRGB(200, 0, 200) then
+            button.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+        end
+    end)
+    
+    print("🖥️ PetScaler v2.9 MINIMAL IDLE GUI создан!")
 end
 
--- Создаем GUI
+-- Запуск
 createGUI()
-
-print("\n💡 === ИНСТРУКЦИИ ===\n")
-print("🎯 1. Ищите ФИОЛЕТОВУЮ кнопку в левом верхнем углу")
-print("🔬 2. Нажмите кнопку для запуска диагностики")
-print("📊 3. Смотрите консоль для анализа")
-print("🐾 4. Подойдите к питомцу во время анализа")
-print("⏰ 5. Диагностика длится 60 секунд")
-print("\n🚀 ДИАГНОСТИКА УЖЕ ЗАПУЩЕНА АВТОМАТИЧЕСКИ!")
+print("=" .. string.rep("=", 60))
+print("💡 PETSCALER v2.9 MINIMAL IDLE:")
+print("   1. ТОЧНО ТАКОЙ ЖЕ КОД как рабочий v2.9")
+print("   2. ЕДИНСТВЕННОЕ отличие: копирует Motor6D только когда питомец idle")
+print("   3. Когда питомец движется, копия остается в последней idle позе")
+print("🎯 Нажмите ФИОЛЕТОВУЮ кнопку для запуска!")
+print("=" .. string.rep("=", 60))
