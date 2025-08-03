@@ -517,34 +517,52 @@ local function main()
             print("🎭 Создал новый Animator")
         end
         
-        print("🎭 Нашел/создал Animator - ищем анимации...")
+        print("🎭 Нашел/создал Animator")
         
-        -- Ждем немного чтобы анимации загрузились
-        wait(1)
-        
+        -- СНАЧАЛА ОСТАНАВЛИВАЕМ ВСЕ АНИМАЦИИ ЧТОБЫ УВИДЕТЬ IDLE
+        print("🛑 ОСТАНАВЛИВАЮ все анимации чтобы увидеть idle...")
         local allTracks = originalAnimator:GetPlayingAnimationTracks()
-        local idleTrack = nil
-        local walkTracks = {}
+        for _, track in pairs(allTracks) do
+            track:Stop()
+            print("⏹️ Остановил:", track.Name)
+        end
         
-        print("🔍 Анализирую анимации:")
+        -- ЖДЕМ ЧТОБЫ IDLE АНИМАЦИЯ ПОЯВИЛАСЬ
+        print("⏳ Жду появления idle анимации...")
+        wait(3) -- Ждем чтобы система переключилась на idle
+        
+        -- 🔥 КАРДИНАЛЬНОЕ ИЗМЕНЕНИЕ: ПОЛНОЕ ПЕРЕОПРЕДЕЛЕНИЕ АНИМАЦИЙ!
+        print("🔥 КАРДИНАЛЬНОЕ решение - ПОЛНОЕ переопределение анимаций!")
+        
+        -- ОСТАНАВЛИВАЕМ И УНИЧТОЖАЕМ ВСЕ АНИМАЦИИ
+        local allTracks = originalAnimator:GetPlayingAnimationTracks()
+        for _, track in pairs(allTracks) do
+            track:Stop()
+            track:Destroy()
+            print("🗑️ ПОЛНОСТЬЮ уничтожил анимацию:", track.Name)
+        end
+        
+        -- ТЕПЕРЬ ИЩЕМ IDLE АНИМАЦИЮ В ПОЛНОЙ ТИШИНЕ
+        wait(3) -- Ждем чтобы система переключилась на idle
+        
+        allTracks = originalAnimator:GetPlayingAnimationTracks()
+        local idleTrack = nil
+        
+        print("🔍 Ищу IDLE анимацию в тишине:")
         for _, track in pairs(allTracks) do
             local trackName = track.Name:lower()
             print("  📋", track.Name, "- Играет:", track.IsPlaying)
             
             if trackName:find("idle") or trackName:find("stand") or trackName:find("breath") then
                 idleTrack = track
-                print("  ✨ Это IDLE анимация!")
-            elseif trackName:find("walk") or trackName:find("run") or trackName:find("move") then
-                table.insert(walkTracks, track)
-                print("  🚫 Это WALKING анимация - будет удалена!")
+                print("  ✨ НАШЕЛ IDLE анимацию!")
+                break
+            elseif track.IsPlaying then
+                -- Любая играющая анимация в тишине = idle
+                idleTrack = track
+                print("  🤔 Неизвестная, но считаем IDLE:", track.Name)
+                break
             end
-        end
-        
-        -- УДАЛЯЕМ ВСЕ WALKING АНИМАЦИИ НАВСЕГДА
-        for _, walkTrack in pairs(walkTracks) do
-            walkTrack:Stop()
-            walkTrack:Destroy()
-            print("🗑️ УДАЛИЛ walking анимацию:", walkTrack.Name)
         end
         
         -- ЗАЦИКЛИВАЕМ IDLE АНИМАЦИЮ КАК БЕСКОНЕЧНУЮ
@@ -557,29 +575,70 @@ local function main()
             print("🔄 ЗАЦИКЛИЛ idle анимацию как БЕСКОНЕЧНУЮ:", idleTrack.Name)
             print("♾️ Теперь idle анимация будет играть ВЕЧНО как ходьба!")
             
-            -- МОНИТОРИНГ: следим чтобы idle всегда играла
+            -- 🔥 КАРДИНАЛЬНЫЙ МОНИТОРИНГ: ЗАМЕНЯЕМ ЛЮБЫЕ АНИМАЦИИ НА IDLE!
             spawn(function()
+                print("🔥 КАРДИНАЛЬНЫЙ мониторинг - заменяем ЛЮБЫЕ анимации на IDLE!")
+                
+                -- Короткая пауза для стабилизации
+                wait(1)
+                
                 while idleTrack and idleTrack.Parent and petModel and petModel.Parent do
-                    wait(0.5)
+                    wait(0.1) -- Проверяем каждые 0.1 секунды
                     
-                    -- Проверяем что idle играет
-                    if not idleTrack.IsPlaying then
-                        idleTrack.Looped = true
-                        idleTrack:Play()
-                        print("🔄 Перезапустил idle анимацию!")
+                    -- 1. ПРОВЕРЯЕМ ЧТО IDLE ИГРАЕТ
+                    if idleTrack and idleTrack.Parent then
+                        if not idleTrack.IsPlaying then
+                            idleTrack.Looped = true
+                            idleTrack.Priority = Enum.AnimationPriority.Action
+                            idleTrack:Play()
+                            print("🔄 Перезапустил IDLE")
+                        end
                     end
                     
-                    -- Удаляем любые новые walking анимации
-                    for _, track in pairs(originalAnimator:GetPlayingAnimationTracks()) do
-                        local trackName = track.Name:lower()
-                        if trackName:find("walk") or trackName:find("run") or trackName:find("move") then
+                    -- 2. КАРДИНАЛЬНОЕ РЕШЕНИЕ: ЗАМЕНЯЕМ ЛЮБЫЕ НОВЫЕ АНИМАЦИИ!
+                    local currentTracks = originalAnimator:GetPlayingAnimationTracks()
+                    for _, track in pairs(currentTracks) do
+                        if track ~= idleTrack then
+                            -- ЛЮбая новая анимация = уничтожаем и заменяем на idle
                             track:Stop()
                             track:Destroy()
-                            print("🗑️ Удалил новую walking анимацию:", track.Name)
+                            print("🔥 УНИЧТОЖИЛ новую анимацию:", track.Name)
+                            
+                            -- Немедленно восстанавливаем idle
+                            if idleTrack and idleTrack.Parent then
+                                idleTrack.Looped = true
+                                idleTrack.Priority = Enum.AnimationPriority.Action
+                                idleTrack:Play()
+                                print("🔄 Немедленно восстановил IDLE!")
+                            end
+                        end
+                    end
+                    
+                    -- 3. ПОДДЕРЖИВАЕМ ОТКЛЮЧЕННОЕ ДВИЖЕНИЕ
+                    if originalHumanoid then
+                        if originalHumanoid.WalkSpeed ~= 0 then
+                            originalHumanoid.WalkSpeed = 0
+                            print("🚫 Переотключил WalkSpeed")
+                        end
+                        if originalHumanoid.JumpPower ~= 0 then
+                            originalHumanoid.JumpPower = 0
+                            print("🚫 Переотключил JumpPower")
+                        end
+                    end
+                    
+                    -- 4. ПОДДЕРЖИВАЕМ IDLE НАСТРОЙКИ
+                    if idleTrack and idleTrack.Parent then
+                        if not idleTrack.Looped then
+                            idleTrack.Looped = true
+                            print("♾️ Переустановил Looped=true")
+                        end
+                        if idleTrack.Priority ~= Enum.AnimationPriority.Action then
+                            idleTrack.Priority = Enum.AnimationPriority.Action
+                            print("🎯 Переустановил приоритет")
                         end
                     end
                 end
-                print("⚠️ Мониторинг idle анимации остановлен")
+                print("⚠️ Кардинальный мониторинг остановлен")
             end)
             
         else
