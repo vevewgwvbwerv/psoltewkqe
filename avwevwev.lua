@@ -1,24 +1,16 @@
--- 🔥 PET SCALER - Плавное увеличение питомца с сохранением анимации
--- Находит UUID модель питомца, копирует её и плавно увеличивает
+-- 🎬 ПРЯМОЕ УПРАВЛЕНИЕ MOTOR6D - ЗАПИСЫВАЕМ И ВОСПРОИЗВОДИМ IDLE ПОЗЫ
+-- Создаем собственную idle анимацию через Motor6D
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
-print("🔥 === PET SCALER - ПЛАВНОЕ УВЕЛИЧЕНИЕ ПИТОМЦА ===")
-print("=" .. string.rep("=", 60))
-
--- Конфигурация
-local CONFIG = {
-    SEARCH_RADIUS = 100,
-    SCALE_FACTOR = 3.0,  -- Во сколько раз увеличиваем
-    TWEEN_TIME = 3.0,    -- Время анимации увеличения (секунды)
-    EASING_STYLE = Enum.EasingStyle.Quad,
-    EASING_DIRECTION = Enum.EasingDirection.Out
-}
+print("🎬 === ПРЯМОЕ УПРАВЛЕНИЕ MOTOR6D ===")
+print("🎯 Цель: Записать idle позы и воспроизводить их в цикле")
+print("💡 Обходим систему анимаций полностью!")
 
 -- Получаем позицию игрока
 local playerChar = player.Character
@@ -34,13 +26,8 @@ if not hrp then
 end
 
 local playerPos = hrp.Position
-print("📍 Позиция игрока:", playerPos)
-print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
-print("📏 Коэффициент увеличения:", CONFIG.SCALE_FACTOR .. "x")
-print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
-print()
 
--- Функция проверки визуальных элементов питомца
+-- 🐾 РАБОЧАЯ ФУНКЦИЯ ПОИСКА ПИТОМЦА
 local function hasPetVisuals(model)
     local meshCount = 0
     local petMeshes = {}
@@ -73,192 +60,327 @@ local function hasPetVisuals(model)
     return meshCount > 0, petMeshes
 end
 
--- Функция глубокого копирования модели
-local function deepCopyModel(originalModel)
-    print("📋 Создаю глубокую копию модели:", originalModel.Name)
-    
-    local copy = originalModel:Clone()
-    copy.Name = originalModel.Name .. "_SCALED_COPY"
-    copy.Parent = Workspace
-    
-    -- Смещаем копию рядом с оригиналом
-    if copy.PrimaryPart then
-        local offset = Vector3.new(10, 0, 0) -- 10 единиц в сторону
-        copy:SetPrimaryPartCFrame(originalModel:GetPrimaryPartCFrame() * CFrame.new(offset))
-    end
-    
-    print("✅ Копия создана:", copy.Name)
-    return copy
-end
-
--- Функция получения всех BasePart в модели
-local function getAllParts(model)
-    local parts = {}
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(parts, obj)
-        end
-    end
-    return parts
-end
-
--- Функция плавного масштабирования модели
-local function scaleModelSmoothly(model, scaleFactor, tweenTime)
-    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
-    print("📏 Коэффициент:", scaleFactor .. "x")
-    print("⏱️ Время:", tweenTime .. " сек")
-    
-    local parts = getAllParts(model)
-    print("🧩 Найдено частей для масштабирования:", #parts)
-    
-    if #parts == 0 then
-        print("❌ Нет частей для масштабирования!")
-        return
-    end
-    
-    -- Определяем центр масштабирования
-    local centerPoint
-    if model.PrimaryPart then
-        centerPoint = model.PrimaryPart.Position
-        print("🎯 Центр масштабирования: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
-    else
-        -- Если нет PrimaryPart, используем центр модели
-        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            centerPoint = modelCFrame.Position
-            print("🎯 Центр масштабирования: Центр модели")
-        else
-            print("❌ Не удалось определить центр масштабирования!")
-            return
-        end
-    end
-    
-    print("📍 Центр масштабирования:", centerPoint)
-    
-    -- Сохраняем исходные данные всех частей
-    local originalData = {}
-    for _, part in ipairs(parts) do
-        originalData[part] = {
-            size = part.Size,
-            position = part.Position,
-            cframe = part.CFrame
-        }
-    end
-    
-    -- Создаем TweenInfo
-    local tweenInfo = TweenInfo.new(
-        tweenTime,
-        CONFIG.EASING_STYLE,
-        CONFIG.EASING_DIRECTION,
-        0, -- Повторений
-        false, -- Обратная анимация
-        0 -- Задержка
-    )
-    
-    -- Создаем и запускаем твины для каждой части
-    local tweens = {}
-    local completedTweens = 0
-    
-    for _, part in ipairs(parts) do
-        local originalSize = originalData[part].size
-        local originalPos = originalData[part].position
-        
-        -- Вычисляем новый размер
-        local newSize = originalSize * scaleFactor
-        
-        -- Вычисляем новую позицию относительно центра масштабирования
-        local offsetFromCenter = originalPos - centerPoint
-        local newPosition = centerPoint + (offsetFromCenter * scaleFactor)
-        
-        -- Создаем твин для размера и позиции
-        local tween = TweenService:Create(part, tweenInfo, {
-            Size = newSize,
-            Position = newPosition
-        })
-        
-        -- Обработчик завершения твина
-        tween.Completed:Connect(function()
-            completedTweens = completedTweens + 1
-            if completedTweens == #parts then
-                print("✅ Масштабирование завершено!")
-                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
-            end
-        end)
-        
-        table.insert(tweens, tween)
-        tween:Play()
-    end
-    
-    print("🚀 Запущено " .. #tweens .. " твинов для плавного масштабирования")
-end
-
--- Основная функция поиска и масштабирования
-local function findAndScalePet()
+local function findPet()
     print("🔍 Поиск UUID моделей питомцев...")
-    print("-" .. string.rep("-", 40))
     
     local foundPets = {}
+    local SEARCH_RADIUS = 100
     
-    -- Ищем UUID модели в Workspace
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
             local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
             if success then
                 local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    print("🎯 Найдена UUID модель:", obj.Name)
-                    print("📍 Расстояние:", math.floor(distance) .. " единиц")
-                    
-                    -- Проверяем визуальные элементы
+                if distance <= SEARCH_RADIUS then
                     local hasVisuals, meshes = hasPetVisuals(obj)
                     if hasVisuals then
-                        print("✅ Модель имеет визуальные элементы питомца!")
-                        print("🎨 Визуальных элементов:", #meshes)
-                        
                         table.insert(foundPets, {
                             model = obj,
                             distance = distance,
                             meshes = meshes
                         })
-                    else
-                        print("❌ Модель без визуальных элементов питомца")
+                        print("🐾 Найден питомец:", obj.Name, "на расстоянии:", math.floor(distance))
                     end
-                    print()
                 end
             end
         end
     end
     
-    print("📊 Найдено подходящих питомцев:", #foundPets)
-    
     if #foundPets == 0 then
-        print("❌ Питомцы с UUID именами и визуальными элементами не найдены!")
-        print("💡 Убедитесь что вы рядом с размещенным питомцем")
+        print("❌ Питомцы не найдены!")
+        return nil
+    end
+    
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    
+    local targetPet = foundPets[1]
+    print("🎯 Выбран питомец:", targetPet.model.Name)
+    
+    return targetPet.model
+end
+
+-- 🎬 ЗАПИСЬ IDLE ПОЗ
+local function recordIdlePoses(petModel)
+    print("\n🎬 === ЗАПИСЬ IDLE ПОЗ ===")
+    
+    local motor6Ds = {}
+    local recordedPoses = {}
+    
+    -- Находим все Motor6D
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motor6Ds, obj)
+        end
+    end
+    
+    print("🔧 Найдено Motor6D:", #motor6Ds)
+    
+    if #motor6Ds == 0 then
+        print("❌ Motor6D не найдены!")
+        return nil
+    end
+    
+    -- Записываем позы в течение 10 секунд
+    print("📹 Начинаю запись idle поз на 10 секунд...")
+    print("💡 Убедитесь что питомец стоит и анимирует idle!")
+    
+    local recordingTime = 10
+    local frameRate = 30  -- 30 кадров в секунду
+    local frameInterval = 1 / frameRate
+    local totalFrames = recordingTime * frameRate
+    
+    local currentFrame = 0
+    local startTime = tick()
+    
+    local recordConnection
+    recordConnection = RunService.Heartbeat:Connect(function()
+        local elapsed = tick() - startTime
+        
+        if elapsed >= frameInterval * currentFrame then
+            currentFrame = currentFrame + 1
+            
+            -- Записываем текущие позы всех Motor6D
+            local framePoses = {}
+            
+            for _, motor in pairs(motor6Ds) do
+                framePoses[motor.Name] = {
+                    C0 = motor.C0,
+                    C1 = motor.C1,
+                    Transform = motor.Transform
+                }
+            end
+            
+            table.insert(recordedPoses, framePoses)
+            
+            if currentFrame % 30 == 0 then  -- Каждую секунду
+                print(string.format("📹 Записано кадров: %d/%d", currentFrame, totalFrames))
+            end
+        end
+        
+        if elapsed >= recordingTime then
+            recordConnection:Disconnect()
+            print("✅ Запись завершена!")
+            print(string.format("📹 Записано кадров: %d", #recordedPoses))
+        end
+    end)
+    
+    -- Ждем завершения записи
+    while #recordedPoses < totalFrames and recordConnection.Connected do
+        wait(0.1)
+    end
+    
+    return recordedPoses, motor6Ds
+end
+
+-- 🎭 ВОСПРОИЗВЕДЕНИЕ IDLE АНИМАЦИИ
+local function playIdleAnimation(recordedPoses, motor6Ds, petModel)
+    print("\n🎭 === ВОСПРОИЗВЕДЕНИЕ IDLE АНИМАЦИИ ===")
+    
+    if not recordedPoses or #recordedPoses == 0 then
+        print("❌ Нет записанных поз!")
         return
     end
     
-    -- Берем первого найденного питомца
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец для масштабирования:", targetPet.model.Name)
-    print("📍 Расстояние:", math.floor(targetPet.distance) .. " единиц")
-    print()
+    print("🎬 Начинаю воспроизведение idle анимации...")
+    print("🔄 Анимация будет циклически повторяться!")
     
-    -- Создаем копию
-    local petCopy = deepCopyModel(targetPet.model)
+    -- Останавливаем питомца
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.WalkSpeed = 0
+        humanoid.PlatformStand = true
+        print("🛑 Питомец остановлен")
+    end
     
-    -- Ждем немного чтобы копия полностью загрузилась
-    wait(0.5)
+    -- Якорим RootPart
+    local rootPart = petModel:FindFirstChild("HumanoidRootPart") or petModel:FindFirstChild("Torso")
+    if rootPart then
+        rootPart.Anchored = true
+        print("⚓ RootPart заякорен")
+    end
     
-    -- Масштабируем копию
-    scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    local currentFrame = 1
+    local frameRate = 30
+    local frameInterval = 1 / frameRate
+    local lastFrameTime = tick()
+    
+    local playConnection
+    playConnection = RunService.Heartbeat:Connect(function()
+        local now = tick()
+        
+        if now - lastFrameTime >= frameInterval then
+            lastFrameTime = now
+            
+            -- Получаем текущий кадр
+            local framePoses = recordedPoses[currentFrame]
+            
+            if framePoses then
+                -- Применяем позы ко всем Motor6D
+                for _, motor in pairs(motor6Ds) do
+                    local pose = framePoses[motor.Name]
+                    if pose then
+                        pcall(function()
+                            motor.C0 = pose.C0
+                            motor.C1 = pose.C1
+                            motor.Transform = pose.Transform
+                        end)
+                    end
+                end
+            end
+            
+            -- Переходим к следующему кадру
+            currentFrame = currentFrame + 1
+            if currentFrame > #recordedPoses then
+                currentFrame = 1  -- Зацикливаем
+                print("🔄 Анимация зациклена!")
+            end
+        end
+    end)
+    
+    print("✅ Воспроизведение запущено!")
+    print("🔄 Idle анимация играет в цикле!")
+    
+    -- Останавливаем через 300 секунд (5 минут)
+    spawn(function()
+        wait(300)
+        playConnection:Disconnect()
+        print("\n⏹️ Воспроизведение остановлено через 5 минут")
+    end)
+    
+    return playConnection
 end
 
--- Запуск
-print("🚀 Запуск поиска и масштабирования питомца...")
-print()
+-- 🎯 УЛУЧШЕННАЯ ВЕРСИЯ С ИНТЕРПОЛЯЦИЕЙ
+local function playIdleAnimationSmooth(recordedPoses, motor6Ds, petModel)
+    print("\n🎭 === ПЛАВНОЕ ВОСПРОИЗВЕДЕНИЕ IDLE АНИМАЦИИ ===")
+    
+    if not recordedPoses or #recordedPoses == 0 then
+        print("❌ Нет записанных поз!")
+        return
+    end
+    
+    print("🎬 Начинаю плавное воспроизведение idle анимации...")
+    
+    -- Останавливаем питомца
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.WalkSpeed = 0
+        humanoid.PlatformStand = true
+    end
+    
+    local rootPart = petModel:FindFirstChild("HumanoidRootPart") or petModel:FindFirstChild("Torso")
+    if rootPart then
+        rootPart.Anchored = true
+    end
+    
+    local currentFrame = 1
+    local frameRate = 30
+    local frameInterval = 1 / frameRate
+    local lastFrameTime = tick()
+    
+    local playConnection
+    playConnection = RunService.Heartbeat:Connect(function()
+        local now = tick()
+        
+        if now - lastFrameTime >= frameInterval then
+            lastFrameTime = now
+            
+            -- Получаем текущий и следующий кадры для интерполяции
+            local currentPoses = recordedPoses[currentFrame]
+            local nextFrame = currentFrame + 1
+            if nextFrame > #recordedPoses then
+                nextFrame = 1
+            end
+            local nextPoses = recordedPoses[nextFrame]
+            
+            if currentPoses and nextPoses then
+                -- Интерполируем между кадрами для плавности
+                local alpha = 0.5  -- Можно настроить для большей/меньшей плавности
+                
+                for _, motor in pairs(motor6Ds) do
+                    local currentPose = currentPoses[motor.Name]
+                    local nextPose = nextPoses[motor.Name]
+                    
+                    if currentPose and nextPose then
+                        pcall(function()
+                            -- Интерполяция C0
+                            motor.C0 = currentPose.C0:lerp(nextPose.C0, alpha)
+                            -- Интерполяция C1
+                            motor.C1 = currentPose.C1:lerp(nextPose.C1, alpha)
+                            -- Transform сложнее интерполировать, используем текущий
+                            motor.Transform = currentPose.Transform
+                        end)
+                    end
+                end
+            end
+            
+            currentFrame = currentFrame + 1
+            if currentFrame > #recordedPoses then
+                currentFrame = 1
+                print("🔄 Плавная анимация зациклена!")
+            end
+        end
+    end)
+    
+    print("✅ Плавное воспроизведение запущено!")
+    
+    -- Останавливаем через 300 секунд
+    spawn(function()
+        wait(300)
+        playConnection:Disconnect()
+        print("\n⏹️ Плавное воспроизведение остановлено через 5 минут")
+    end)
+    
+    return playConnection
+end
 
-findAndScalePet()
+-- Главная функция
+local function main()
+    local petModel = findPet()
+    if not petModel then
+        return
+    end
+    
+    print("\n🎬 === ЗАПИСЬ IDLE ПОЗ ===")
+    print("💡 Убедитесь что питомец стоит и анимирует idle!")
+    print("📹 Запись начнется через 5 секунд...")
+    
+    wait(5)
+    
+    local recordedPoses, motor6Ds = recordIdlePoses(petModel)
+    
+    if recordedPoses and #recordedPoses > 0 then
+        print("✅ Позы записаны успешно!")
+        
+        wait(2)
+        
+        print("\n🎭 === ВОСПРОИЗВЕДЕНИЕ ===")
+        local connection = playIdleAnimationSmooth(recordedPoses, motor6Ds, petModel)
+        
+        if connection then
+            print("🎉 УСПЕХ! Питомец теперь играет записанную idle анимацию!")
+            print("🔄 Анимация зациклена и будет играть 5 минут!")
+        end
+    else
+        print("❌ Запись не удалась")
+    end
+end
 
-print()
-print("🎯 PET SCALER завершен!")
-print("=" .. string.rep("=", 60))
+-- 🚀 ПРЯМОЙ ЗАПУСК
+print("\n🚀 === ЗАПУСКАЮ ЗАПИСЬ И ВОСПРОИЗВЕДЕНИЕ MOTOR6D ===")
+print("🎯 Обходим всю систему анимаций Roblox!")
+print("📹 Записываем настоящие idle позы и воспроизводим их!")
+
+spawn(function()
+    wait(2)
+    main()
+end)
+
+print("\n💡 === СТРАТЕГИЯ MOTOR6D ===")
+print("🎬 1. Записываем Motor6D позы во время idle (10 секунд)")
+print("🎭 2. Останавливаем питомца (WalkSpeed=0, PlatformStand=true)")
+print("⚓ 3. Якорим RootPart для предотвращения движения")
+print("🔄 4. Воспроизводим записанные позы в цикле")
+print("✨ 5. Используем интерполяцию для плавности")
+print("🎉 Результат: Настоящая idle анимация без системы Roblox!")
+print("\n🚀 ЗАПИСЬ ЗАПУЩЕНА!")
