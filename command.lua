@@ -521,13 +521,13 @@ local function recordIdleTimeline(original)
         
         if rootPart then
             local velocity = rootPart.AssemblyLinearVelocity
-            if velocity.Magnitude > 0.05 then -- Очень строго
+            if velocity.Magnitude > 0.8 then -- Менее строго - позволяем небольшое движение
                 isValidIdleFrame = false
             end
         end
         
         if humanoid then
-            if humanoid.MoveDirection.Magnitude > 0.005 then -- Очень строго
+            if humanoid.MoveDirection.Magnitude > 0.2 then -- Менее строго - позволяем небольшое движение
                 isValidIdleFrame = false
             end
             
