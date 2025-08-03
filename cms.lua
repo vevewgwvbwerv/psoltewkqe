@@ -1,323 +1,437 @@
--- 🔄 ХИРУРГИЧЕСКАЯ ЗАМЕНА ANIMATION ID - ЗАМЕНЯЕМ ХОДЬБУ НА IDLE
--- Находим анимацию ходьбы и заменяем ее ID на idle ID
+-- 🎯 ФИНАЛЬНЫЙ ПРОЕКТ - GUI ДЛЯ ВСЕХ ИНСТРУМЕНТОВ
+-- Все инструменты для поиска и фиксации магического idle момента
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
-print("🔄 === ХИРУРГИЧЕСКАЯ ЗАМЕНА ANIMATION ID ===")
-print("🎯 Цель: Заменить ID ходьбы на ID idle анимации")
-print("💡 Гениальная идея пользователя!")
-
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
-end
-
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
-
-local playerPos = hrp.Position
-
--- ID анимаций
-local IDLE_ID = "rbxassetid://1073293904134356"  -- Найденная idle анимация
-local WALK_KEYWORDS = {"walk", "run", "move", "step", "locomotion"}  -- Ключевые слова для поиска ходьбы
-
--- 🐾 РАБОЧАЯ ФУНКЦИЯ ПОИСКА ПИТОМЦА
-local function hasPetVisuals(model)
-    local meshCount = 0
-    local petMeshes = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or ""
-            }
-            if meshData.meshId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or ""
-            }
-            if meshData.meshId ~= "" or meshData.textureId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        end
-    end
-    
-    return meshCount > 0, petMeshes
-end
-
+-- 🔍 ПОИСК ПИТОМЦА (общая функция)
 local function findPet()
-    print("🔍 Поиск UUID моделей питомцев...")
+    local character = player.Character
+    if not character then return nil end
     
-    local foundPets = {}
-    local SEARCH_RADIUS = 100
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return nil end
     
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
-                        table.insert(foundPets, {
-                            model = obj,
-                            distance = distance,
-                            meshes = meshes
-                        })
-                        print("🐾 Найден питомец:", obj.Name, "на расстоянии:", math.floor(distance))
-                    end
+    local playerPosition = humanoidRootPart.Position
+    
+    for _, model in pairs(Workspace:GetChildren()) do
+        if model:IsA("Model") and model.Name:match("%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x") then
+            local petRootPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso")
+            if petRootPart then
+                local distance = (petRootPart.Position - playerPosition).Magnitude
+                if distance <= 100 then
+                    return model
                 end
             end
         end
     end
-    
-    if #foundPets == 0 then
-        print("❌ Питомцы не найдены!")
-        return nil
-    end
-    
-    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
-    
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец:", targetPet.model.Name)
-    
-    return targetPet.model
+    return nil
 end
 
--- 🔍 ПОИСК ВСЕХ АНИМАЦИЙ В МОДЕЛИ
-local function findAllAnimations(petModel)
-    print("\n🔍 === ПОИСК ВСЕХ АНИМАЦИЙ ===")
+-- 🎯 ПРОВЕРКА НА МАГИЧЕСКИЙ МОМЕНТ
+local function isMagicalIdleMoment(petModel)
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
     
-    local animations = {}
-    
-    -- Ищем все Animation объекты
-    for _, obj in pairs(petModel:GetDescendants()) do
-        if obj:IsA("Animation") then
-            table.insert(animations, {
-                object = obj,
-                type = "Animation",
-                id = obj.AnimationId,
-                name = obj.Name,
-                parent = obj.Parent
-            })
-        end
+    -- Условие 1: Нет движения
+    local noMovement = true
+    if humanoid then
+        noMovement = humanoid.MoveDirection.Magnitude < 0.01
     end
     
-    -- Ищем все AnimationTrack через Animator
+    -- Условие 2: Есть только idle анимации
+    local hasOnlyIdleAnimation = false
+    local animationCount = 0
+    
     for _, obj in pairs(petModel:GetDescendants()) do
         if obj:IsA("Animator") then
             local tracks = obj:GetPlayingAnimationTracks()
-            for _, track in pairs(tracks) do
-                table.insert(animations, {
-                    object = track,
-                    type = "AnimationTrack",
-                    id = track.Animation.AnimationId,
-                    name = track.Animation.Name,
-                    parent = obj,
-                    track = track
-                })
-            end
-        end
-    end
-    
-    print("📽️ Найдено анимаций:", #animations)
-    
-    for i, anim in pairs(animations) do
-        print(string.format("  %d. %s (%s)", i, anim.name, anim.type))
-        print(string.format("     🆔 ID: %s", anim.id))
-        print(string.format("     👨‍👩‍👧‍👦 Parent: %s", anim.parent.Name))
-    end
-    
-    return animations
-end
-
--- 🔄 ЗАМЕНА ID АНИМАЦИЙ
-local function replaceAnimationIDs(animations)
-    print("\n🔄 === ЗАМЕНА ANIMATION ID ===")
-    
-    local replacedCount = 0
-    
-    for i, anim in pairs(animations) do
-        local isWalkAnimation = false
-        
-        -- Проверяем является ли это анимацией ходьбы
-        local name = anim.name:lower()
-        local id = anim.id:lower()
-        
-        for _, keyword in pairs(WALK_KEYWORDS) do
-            if name:find(keyword) or id:find(keyword) then
-                isWalkAnimation = true
-                break
-            end
-        end
-        
-        -- Также проверяем если это НЕ idle анимация
-        if not name:find("idle") and not id:find("1073293904134356") then
-            -- Если это не idle - считаем это ходьбой
-            isWalkAnimation = true
-        end
-        
-        if isWalkAnimation then
-            print(string.format("🎯 Найдена анимация ходьбы: %s", anim.name))
-            print(string.format("   Старый ID: %s", anim.id))
+            animationCount = #tracks
             
-            -- Попытка замены ID
-            local success = pcall(function()
-                if anim.type == "Animation" then
-                    anim.object.AnimationId = IDLE_ID
-                    print("✅ Animation ID заменен на idle")
-                elseif anim.type == "AnimationTrack" then
-                    anim.object.Animation.AnimationId = IDLE_ID
-                    print("✅ AnimationTrack ID заменен на idle")
-                end
-            end)
-            
-            if success then
-                replacedCount = replacedCount + 1
-                print("✅ Замена успешна!")
-            else
-                print("❌ Замена не удалась")
-                
-                -- Попытка создать новую анимацию с idle ID
-                local success2 = pcall(function()
-                    local newAnimation = Instance.new("Animation")
-                    newAnimation.AnimationId = IDLE_ID
-                    newAnimation.Name = anim.name .. "_IDLE_REPLACED"
-                    newAnimation.Parent = anim.parent
+            if animationCount > 0 then
+                hasOnlyIdleAnimation = true
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    local id = track.Animation.AnimationId:lower()
                     
-                    -- Если это AnimationTrack - перезагружаем
-                    if anim.type == "AnimationTrack" and anim.parent:IsA("Animator") then
-                        local newTrack = anim.parent:LoadAnimation(newAnimation)
-                        newTrack.Looped = true
-                        newTrack.Priority = Enum.AnimationPriority.Action
-                        newTrack:Play()
-                        
-                        -- Останавливаем старый трек
-                        anim.track:Stop()
+                    if not name:find("idle") and not id:find("1073293904134356") then
+                        hasOnlyIdleAnimation = false
+                        break
                     end
-                    
-                    print("✅ Создана новая idle анимация взамен старой")
-                end)
-                
-                if success2 then
-                    replacedCount = replacedCount + 1
                 end
             end
-        else
-            print(string.format("⏭️ Пропускаем: %s (уже idle или не ходьба)", anim.name))
+            break
         end
     end
     
-    print(string.format("\n🎉 Заменено анимаций: %d", replacedCount))
-    return replacedCount
+    return noMovement and hasOnlyIdleAnimation and animationCount > 0
 end
 
--- 🔄 МОНИТОРИНГ И ПОСТОЯННАЯ ЗАМЕНА
-local function startContinuousReplacement(petModel)
-    print("\n🔄 === ЗАПУСК ПОСТОЯННОЙ ЗАМЕНЫ ===")
+-- 📊 ЗАПИСЬ МАГИЧЕСКИХ ПОЗ
+local function recordMagicalPoses(petModel, duration)
+    print("🎬 Записываю МАГИЧЕСКИЕ idle позы...")
     
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
+    local motor6Ds = {}
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motor6Ds, obj)
+        end
+    end
+    
+    if #motor6Ds == 0 then
+        print("❌ Motor6D не найдены!")
+        return nil
+    end
+    
+    local poses = {}
+    local frameCount = 0
+    local targetFrames = duration * 60
+    
+    local recordConnection
+    recordConnection = RunService.Heartbeat:Connect(function()
+        frameCount = frameCount + 1
         
-        -- Каждые 2 секунды проверяем и заменяем анимации
-        if tick() % 2 < 0.02 then
-            local animations = findAllAnimations(petModel)
-            
-            -- Ищем новые анимации ходьбы и заменяем их
-            for _, anim in pairs(animations) do
-                local name = anim.name:lower()
-                local id = anim.id:lower()
-                
-                -- Если это не idle анимация - заменяем
-                if not name:find("idle") and not id:find("1073293904134356") then
-                    pcall(function()
-                        if anim.type == "Animation" then
-                            anim.object.AnimationId = IDLE_ID
-                        elseif anim.type == "AnimationTrack" then
-                            anim.object.Animation.AnimationId = IDLE_ID
-                            anim.track.Looped = true
-                        end
-                    end)
+        local framePoses = {}
+        for _, motor in pairs(motor6Ds) do
+            framePoses[motor.Name] = {
+                C0 = motor.C0,
+                C1 = motor.C1,
+                Transform = motor.Transform
+            }
+        end
+        
+        table.insert(poses, framePoses)
+        
+        if frameCount >= targetFrames then
+            recordConnection:Disconnect()
+        end
+    end)
+    
+    while frameCount < targetFrames and recordConnection.Connected do
+        wait(0.1)
+    end
+    
+    print(string.format("✅ Записано %d магических idle поз!", #poses))
+    return poses, motor6Ds
+end
+
+-- 🔒 ФИКСАЦИЯ В МАГИЧЕСКОМ СОСТОЯНИИ
+local function lockInMagicalIdle(petModel, magicalPoses, motor6Ds)
+    print("🔒 Фиксирую питомца в МАГИЧЕСКОМ idle состоянии...")
+    
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+    local rootPart = petModel:FindFirstChild("HumanoidRootPart") or petModel:FindFirstChild("Torso")
+    local originalPosition = rootPart and rootPart.Position or Vector3.new(0, 0, 0)
+    
+    local currentFrame = 1
+    local frameRate = 60
+    local frameInterval = 1 / frameRate
+    local lastFrameTime = tick()
+    
+    local lockConnection
+    lockConnection = RunService.Heartbeat:Connect(function()
+        local now = tick()
+        
+        -- УЛЬТРА-АГРЕССИВНАЯ блокировка
+        if humanoid then
+            humanoid.WalkSpeed = 0
+            humanoid.JumpPower = 0
+            humanoid.PlatformStand = true
+        end
+        
+        if rootPart then
+            rootPart.Anchored = true
+            if (rootPart.Position - originalPosition).Magnitude > 0.05 then
+                rootPart.Position = originalPosition
+                rootPart.Velocity = Vector3.new(0, 0, 0)
+                rootPart.AngularVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+        
+        -- Уничтожение НЕ-idle анимаций
+        for _, obj in pairs(petModel:GetDescendants()) do
+            if obj:IsA("Animator") then
+                local tracks = obj:GetPlayingAnimationTracks()
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    local id = track.Animation.AnimationId:lower()
+                    
+                    if not name:find("idle") and not id:find("1073293904134356") then
+                        track:Stop()
+                        track:Destroy()
+                    end
                 end
+            end
+        end
+        
+        -- Применение магических поз
+        if now - lastFrameTime >= frameInterval then
+            lastFrameTime = now
+            
+            local framePoses = magicalPoses[currentFrame]
+            if framePoses then
+                for _, motor in pairs(motor6Ds) do
+                    local pose = framePoses[motor.Name]
+                    if pose then
+                        pcall(function()
+                            motor.C0 = pose.C0
+                            motor.C1 = pose.C1
+                            motor.Transform = pose.Transform
+                        end)
+                    end
+                end
+            end
+            
+            currentFrame = currentFrame + 1
+            if currentFrame > #magicalPoses then
+                currentFrame = 1
             end
         end
     end)
     
-    print("✅ Постоянная замена запущена!")
-    
-    -- Останавливаем через 300 секунд (5 минут)
-    spawn(function()
-        wait(300)
-        connection:Disconnect()
-        print("\n⏹️ Постоянная замена остановлена через 5 минут")
-    end)
-    
-    return connection
+    return lockConnection
 end
 
--- Главная функция
-local function main()
+-- 🎯 МГНОВЕННАЯ ФИКСАЦИЯ (если питомец УЖЕ в idle)
+local function instantMagicalFix()
     local petModel = findPet()
     if not petModel then
+        print("❌ Питомец не найден!")
         return
     end
     
-    print("\n🔍 === ПОИСК АНИМАЦИЙ ===")
-    local animations = findAllAnimations(petModel)
-    
-    if #animations == 0 then
-        print("❌ Анимации не найдены!")
-        return
-    end
-    
-    print("\n🔄 === ЗАМЕНА ID ===")
-    local replacedCount = replaceAnimationIDs(animations)
-    
-    if replacedCount > 0 then
-        print("🎉 ЗАМЕНА УСПЕШНА!")
-        print("💡 Все анимации ходьбы заменены на idle!")
+    if isMagicalIdleMoment(petModel) then
+        print("🌟 Питомец УЖЕ в магическом idle! Фиксирую...")
         
-        -- Запускаем постоянную замену
-        local connection = startContinuousReplacement(petModel)
-        
-        print("🔄 Постоянная замена активна!")
+        local magicalPoses, motor6Ds = recordMagicalPoses(petModel, 3)
+        if magicalPoses then
+            local connection = lockInMagicalIdle(petModel, magicalPoses, motor6Ds)
+            print("🎉 УСПЕХ! Питомец зафиксирован в магическом idle!")
+            
+            spawn(function()
+                wait(300)
+                connection:Disconnect()
+                print("⏹️ Фиксация остановлена через 5 минут")
+            end)
+        end
     else
-        print("❌ Замена не удалась")
+        print("❌ Питомец НЕ в idle состоянии!")
+        print("💡 Дождись когда питомец встанет и попробуй снова")
     end
 end
 
--- 🚀 ПРЯМОЙ ЗАПУСК
-print("\n🚀 === ЗАПУСКАЮ ХИРУРГИЧЕСКУЮ ЗАМЕНУ ===")
-print("🎯 Гениальная идея: заменить ID ходьбы на ID idle!")
-print("🔄 Анализ будет идти 5 минут...")
+-- 🔍 АВТОМАТИЧЕСКИЙ ЛОВЕЦ
+local function autoMagicalCatcher()
+    local petModel = findPet()
+    if not petModel then
+        print("❌ Питомец не найден!")
+        return
+    end
+    
+    print("🔍 Автоматический поиск магического момента...")
+    print("⏰ Максимальное время: 60 секунд")
+    
+    local searchStartTime = tick()
+    local lastCheckTime = 0
+    
+    local searchConnection
+    searchConnection = RunService.Heartbeat:Connect(function()
+        local now = tick()
+        
+        if now - lastCheckTime >= 0.1 then
+            lastCheckTime = now
+            
+            if isMagicalIdleMoment(petModel) then
+                print("🌟 МАГИЧЕСКИЙ МОМЕНТ ПОЙМАН!")
+                searchConnection:Disconnect()
+                
+                local magicalPoses, motor6Ds = recordMagicalPoses(petModel, 3)
+                if magicalPoses then
+                    local connection = lockInMagicalIdle(petModel, magicalPoses, motor6Ds)
+                    print("🎉 Питомец зафиксирован в магическом idle!")
+                    
+                    spawn(function()
+                        wait(300)
+                        connection:Disconnect()
+                        print("⏹️ Фиксация остановлена")
+                    end)
+                end
+                return
+            end
+            
+            if now - searchStartTime >= 60 then
+                searchConnection:Disconnect()
+                print("⏰ Время поиска истекло!")
+            end
+        end
+    end)
+end
+
+-- 📊 ДЕТАЛЬНЫЙ АНАЛИЗ
+local function detailedAnalysis()
+    local petModel = findPet()
+    if not petModel then
+        print("❌ Питомец не найден!")
+        return
+    end
+    
+    print("📊 Детальный анализ состояния питомца...")
+    
+    local logCount = 0
+    local connection = RunService.Heartbeat:Connect(function()
+        if tick() % 1 < 0.016 then -- каждую секунду
+            logCount = logCount + 1
+            
+            local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+            local trackCount = 0
+            local idleTracks = 0
+            
+            for _, obj in pairs(petModel:GetDescendants()) do
+                if obj:IsA("Animator") then
+                    local tracks = obj:GetPlayingAnimationTracks()
+                    trackCount = #tracks
+                    
+                    for _, track in pairs(tracks) do
+                        local name = track.Animation.Name:lower()
+                        local id = track.Animation.AnimationId:lower()
+                        if name:find("idle") or id:find("1073293904134356") then
+                            idleTracks = idleTracks + 1
+                        end
+                    end
+                    break
+                end
+            end
+            
+            local moveSpeed = humanoid and humanoid.MoveDirection.Magnitude or 0
+            local isMagical = isMagicalIdleMoment(petModel)
+            
+            print(string.format("📊 #%d | Треков: %d (idle: %d) | Движение: %.3f | Магический: %s", 
+                logCount, trackCount, idleTracks, moveSpeed, isMagical and "✨ ДА" or "❌ НЕТ"))
+            
+            if logCount >= 30 then -- 30 секунд
+                connection:Disconnect()
+                print("📊 Анализ завершен")
+            end
+        end
+    end)
+end
+
+-- 🖥️ СОЗДАНИЕ GUI
+local function createFinalGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Удаляем старый GUI если есть
+    local existingGui = playerGui:FindFirstChild("FinalProjectGUI")
+    if existingGui then
+        existingGui:Destroy()
+    end
+    
+    -- Основной фрейм
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "FinalProjectGUI"
+    screenGui.Parent = playerGui
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 350, 0, 400)
+    mainFrame.Position = UDim2.new(0, 10, 0, 10)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
+    
+    -- Заголовок
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 FINAL PROJECT - Магический Idle"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextSize = 16
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = mainFrame
+    
+    -- Функция создания кнопки
+    local function createButton(text, position, color, callback)
+        local button = Instance.new("TextButton")
+        button.Size = UDim2.new(1, -20, 0, 50)
+        button.Position = position
+        button.BackgroundColor3 = color
+        button.BorderSizePixel = 0
+        button.Text = text
+        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        button.TextSize = 14
+        button.Font = Enum.Font.SourceSansBold
+        button.Parent = mainFrame
+        
+        button.MouseButton1Click:Connect(function()
+            local originalText = button.Text
+            local originalColor = button.BackgroundColor3
+            
+            button.Text = "⏳ Выполняется..."
+            button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+            
+            spawn(function()
+                callback()
+                wait(2)
+                button.Text = originalText
+                button.BackgroundColor3 = originalColor
+            end)
+        end)
+        
+        return button
+    end
+    
+    -- Кнопки
+    createButton("🌟 Мгновенная фиксация (если УЖЕ idle)", 
+        UDim2.new(0, 10, 0, 60), 
+        Color3.fromRGB(255, 0, 255), 
+        instantMagicalFix)
+    
+    createButton("🔍 Автоматический ловец (60 сек)", 
+        UDim2.new(0, 10, 0, 120), 
+        Color3.fromRGB(0, 255, 0), 
+        autoMagicalCatcher)
+    
+    createButton("📊 Детальный анализ (30 сек)", 
+        UDim2.new(0, 10, 0, 180), 
+        Color3.fromRGB(0, 150, 255), 
+        detailedAnalysis)
+    
+    -- Информационная панель
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Size = UDim2.new(1, -20, 0, 150)
+    infoLabel.Position = UDim2.new(0, 10, 0, 240)
+    infoLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    infoLabel.BorderSizePixel = 0
+    infoLabel.Text = [[💡 ИНСТРУКЦИЯ:
+
+🌟 Мгновенная фиксация:
+   Используй когда питомец УЖЕ стоит в idle
+
+🔍 Автоматический ловец:
+   Ждет пока питомец войдет в idle и фиксирует
+
+📊 Детальный анализ:
+   Показывает состояние питомца в реальном времени]]
+    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    infoLabel.TextSize = 12
+    infoLabel.Font = Enum.Font.SourceSans
+    infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    infoLabel.Parent = mainFrame
+    
+    print("🖥️ Final Project GUI создан!")
+end
+
+-- 🚀 ЗАПУСК
+print("\n🎯 === FINAL PROJECT - МАГИЧЕСКИЙ IDLE ===")
+print("✨ Все инструменты для поиска и фиксации магического момента!")
+print("🖥️ GUI будет создан через 2 секунды...")
 
 spawn(function()
     wait(2)
-    main()
+    createFinalGUI()
 end)
-
-print("\n💡 === СТРАТЕГИЯ ЗАМЕНЫ ===")
-print("🔍 1. Найти все Animation и AnimationTrack объекты")
-print("🎯 2. Определить какие из них относятся к ходьбе")
-print("🔄 3. Заменить их ID на rbxassetid://1073293904134356 (idle)")
-print("🔄 4. Постоянно мониторить и заменять новые анимации ходьбы")
-print("✅ 5. Результат: питомец будет играть idle вместо ходьбы!")
-print("\n🚀 ЗАМЕНА ЗАПУЩЕНА!")
