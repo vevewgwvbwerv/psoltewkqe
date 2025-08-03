@@ -20,8 +20,8 @@ local CONFIG = {
     TWEEN_TIME = 3.0,
     EASING_STYLE = Enum.EasingStyle.Quad,
     EASING_DIRECTION = Enum.EasingDirection.Out,
-    IDLE_RECORD_TIME = 2,  -- Ускоренная запись: 2 секунды вместо 5
-    IDLE_FRAME_RATE = 30   -- Оптимизированная частота: 30 FPS
+    IDLE_RECORD_TIME = 5,  -- Оригинальная запись: 5 секунд (как в Motor6DIdleForcer)
+    IDLE_FRAME_RATE = 60   -- Оригинальная частота: 60 FPS (как в Motor6DIdleForcer)
 }
 
 -- Получаем позицию игрока
@@ -42,7 +42,7 @@ print("📍 Позиция игрока:", playerPos)
 print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
 print("📏 Масштабирование:", CONFIG.START_SCALE .. "x -> " .. CONFIG.END_SCALE .. "x")
 print("⏱️ Время роста:", CONFIG.TWEEN_TIME .. " сек")
-print("🎬 Время записи idle:", CONFIG.IDLE_RECORD_TIME .. " сек (УСКОРЕННАЯ)")
+print("🎬 Время записи idle:", CONFIG.IDLE_RECORD_TIME .. " сек (ОРИГИНАЛЬНЫЕ НАСТРОЙКИ)")
 print()
 
 -- === ФУНКЦИИ ИЗ PETSCALER ===
@@ -354,11 +354,11 @@ local function recordPureIdlePoses(petModel)
         end
     end
     
-    print("📹 Ждем 1 секунду для стабилизации idle... (УСКОРЕННАЯ)")
-    wait(1)
+    print("📹 Ждем 3 секунды для стабилизации idle... (ОРИГИНАЛЬНЫЕ НАСТРОЙКИ)")
+    wait(3)
     
-    -- Записываем стабильные idle позы (УСКОРЕННАЯ ВЕРСИЯ)
-    print("📹 Записываем стабильные idle позы (" .. CONFIG.IDLE_RECORD_TIME .. " секунд - БЫСТРО)...")
+    -- Записываем стабильные idle позы (ОРИГИНАЛЬНАЯ ВЕРСИЯ)
+    print("📹 Записываем стабильные idle позы (" .. CONFIG.IDLE_RECORD_TIME .. " секунд - ОРИГИНАЛЬНЫЕ НАСТРОЙКИ)...")
     
     local recordingTime = CONFIG.IDLE_RECORD_TIME
     local frameRate = CONFIG.IDLE_FRAME_RATE
@@ -388,8 +388,8 @@ local function recordPureIdlePoses(petModel)
             
             table.insert(idlePoses, framePoses)
             
-            if currentFrame % (frameRate / 2) == 0 then  -- Каждые 0.5 секунды
-                print(string.format("📹 Записано idle кадров: %d/%d (БЫСТРО)", currentFrame, totalFrames))
+            if currentFrame % frameRate == 0 then  -- Каждую секунду (как в оригинале)
+                print(string.format("📹 Записано idle кадров: %d/%d (ОРИГИНАЛЬНЫЕ НАСТРОЙКИ)", currentFrame, totalFrames))
             end
         end
         
@@ -426,80 +426,59 @@ local function forceOriginalIdleAnimation(idlePoses, motor6Ds, petModel, origina
     local frameRate = CONFIG.IDLE_FRAME_RATE
     local frameInterval = 1 / frameRate
     local lastFrameTime = tick()
-    local lastBlockTime = tick()
     
     local forceConnection
     forceConnection = RunService.Heartbeat:Connect(function()
         local now = tick()
         
-        -- УЛЬТРА-АГРЕССИВНО блокируем движение каждые 0.1 секунды
-        if now - lastBlockTime >= 0.1 then
-            lastBlockTime = now
-            
-            if humanoid then
-                humanoid.WalkSpeed = 0
-                humanoid.JumpPower = 0
-                humanoid.PlatformStand = true
-                -- ДОПОЛНИТЕЛЬНАЯ БЛОКИРОВКА
-                humanoid.Sit = false
-                if humanoid.MoveDirection.Magnitude > 0 then
-                    humanoid:MoveTo(originalPosition or rootPart.Position)
-                end
+        -- АГРЕССИВНО блокируем движение (КАЖДЫЙ КАДР как в Motor6DIdleForcer)
+        if humanoid then
+            humanoid.WalkSpeed = 0
+            humanoid.JumpPower = 0
+            humanoid.PlatformStand = true
+        end
+        
+        if rootPart and originalPosition then
+            rootPart.Anchored = true
+            -- Телепортируем обратно если сдвинулся
+            if (rootPart.Position - originalPosition).Magnitude > 0.1 then
+                rootPart.Position = originalPosition
+                print("🔄 Питомец телепортирован обратно")
             end
-            
-            if rootPart and originalPosition then
-                rootPart.Anchored = true
-                rootPart.CanCollide = false
-                -- Телепортируем обратно если сдвинулся
-                if (rootPart.Position - originalPosition).Magnitude > 0.05 then
-                    rootPart.Position = originalPosition
-                    rootPart.Velocity = Vector3.new(0, 0, 0)
-                    rootPart.AngularVelocity = Vector3.new(0, 0, 0)
-                    print("🔄 Питомец телепортирован обратно (АНТИ-ГЛИТЧ)")
-                end
-            end
-            
-            -- УЛЬТРА-АГРЕССИВНО уничтожаем walking анимации
-            for _, obj in pairs(petModel:GetDescendants()) do
-                if obj:IsA("Animator") then
-                    local tracks = obj:GetPlayingAnimationTracks()
-                    for _, track in pairs(tracks) do
-                        local name = track.Animation.Name:lower()
-                        local id = track.Animation.AnimationId:lower()
-                        
-                        -- Если это НЕ idle - немедленно уничтожаем
-                        if not name:find("idle") and not id:find("1073293904134356") then
-                            track:Stop()
-                            track:Destroy()
-                            print("💀 АНТИ-ГЛИТЧ: Уничтожена walking анимация:", track.Animation.Name)
-                        end
+        end
+        
+        -- АГРЕССИВНО уничтожаем walking анимации каждый кадр
+        for _, obj in pairs(petModel:GetDescendants()) do
+            if obj:IsA("Animator") then
+                local tracks = obj:GetPlayingAnimationTracks()
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    local id = track.Animation.AnimationId:lower()
+                    
+                    -- Если это НЕ idle - немедленно уничтожаем
+                    if not name:find("idle") and not id:find("1073293904134356") then
+                        track:Stop()
+                        print("💀 Заблокирована walking анимация:", track.Animation.Name)
                     end
                 end
             end
         end
         
-        -- Применяем idle позы с АНТИ-ГЛИТЧ защитой
+        -- Применяем idle позы (ТОЧНО как в Motor6DIdleForcer)
         if now - lastFrameTime >= frameInterval then
             lastFrameTime = now
             
             local framePoses = idlePoses[currentFrame]
             
             if framePoses then
-                -- Применяем idle позы ко всем Motor6D с защитой от глитчей
+                -- Применяем idle позы ко всем Motor6D
                 for _, motor in pairs(motor6Ds) do
                     local pose = framePoses[motor.Name]
                     if pose then
                         pcall(function()
-                            -- ПЛАВНОЕ применение поз для предотвращения глитчей
-                            local currentC0 = motor.C0
-                            local currentC1 = motor.C1
-                            local currentTransform = motor.Transform
-                            
-                            -- Интерполяция для плавности (анти-глитч)
-                            local alpha = 0.8  -- 80% новая поза, 20% текущая
-                            motor.C0 = currentC0:lerp(pose.C0, alpha)
-                            motor.C1 = currentC1:lerp(pose.C1, alpha)
-                            motor.Transform = currentTransform:lerp(pose.Transform, alpha)
+                            motor.C0 = pose.C0
+                            motor.C1 = pose.C1
+                            motor.Transform = pose.Transform
                         end)
                     end
                 end
@@ -509,12 +488,14 @@ local function forceOriginalIdleAnimation(idlePoses, motor6Ds, petModel, origina
             currentFrame = currentFrame + 1
             if currentFrame > #idlePoses then
                 currentFrame = 1  -- Зацикливаем idle
-                print("🔄 Idle анимация зациклена (АНТИ-ГЛИТЧ)")
+                print("🔄 Idle анимация зациклена!")
             end
         end
     end)
     
-    print("✅ Агрессивное форсирование оригинала запущено!")
+    print("✅ Агрессивное форсирование запущено!")
+    print("🔥 Питомец заблокирован в ТОЛЬКО idle анимации!")
+    print("💀 ВСЕ walking анимации уничтожаются каждый кадр!")
     return forceConnection
 end
 
@@ -635,17 +616,16 @@ local function main()
     print("\n🔥 === ЗАПУСК IDLE ФОРСИРОВАНИЯ ОРИГИНАЛА ===")
     local originalIdleConnection = forceOriginalIdleAnimation(idlePoses, motor6Ds, petModel, originalPosition)
     
-    -- Шаг 7: Запустить живое копирование анимации
-    print("\n🎭 === ЗАПУСК ЖИВОГО КОПИРОВАНИЯ АНИМАЦИИ ===")
-    local copyConnection = startLiveMotorCopying(petModel, petCopy, CONFIG.END_SCALE)
+    -- Шаг 7: ОТКЛЮЧЕНО живое копирование (КОНФЛИКТУЕТ с idle форсированием)
+    print("\n🚫 === ЖИВОЕ КОПИРОВАНИЕ ОТКЛЮЧЕНО ===\n💡 Причина: Конфликт с idle форсированием!")
+    print("🔥 Оставляем ТОЛЬКО idle форсирование как в Motor6DIdleForcer.lua")
     
-    if originalIdleConnection and copyConnection then
+    if originalIdleConnection then
         print("\n🎉 === ПОЛНЫЙ УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
         print("✅ Оригинал заблокирован в idle анимации")
-        print("✅ Копия копирует idle анимацию оригинала")
-        print("🔄 Обе модели будут бесконечно играть idle анимацию!")
-        print("💡 Никто никогда не будет ходить!")
+        print("🔥 БЕЗ живого копирования - НЕТ конфликтов!")
+        print("💡 Питомец будет ТОЛЬКО в idle как в Motor6DIdleForcer!")
         
         -- Останавливаем через 300 секунд (5 минут)
         spawn(function()
@@ -653,14 +633,11 @@ local function main()
             if originalIdleConnection then
                 originalIdleConnection:Disconnect()
             end
-            if copyConnection then
-                copyConnection:Disconnect()
-            end
-            print("\n⏹️ Все соединения остановлены через 5 минут")
+            print("\n⏹️ Idle форсирование остановлено через 5 минут")
         end)
         
     else
-        print("⚠️ Частичный успех - проверьте соединения")
+        print("❌ Idle форсирование не запустилось!")
     end
 end
 
