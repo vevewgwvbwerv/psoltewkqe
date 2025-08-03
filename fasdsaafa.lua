@@ -220,111 +220,6 @@ local function smartAnchoredManagement(copyParts)
     return rootPart
 end
 
--- Функция ПОЛНОЙ блокировки движения питомца (только idle анимации)
-local function blockPetMovement(petModel)
-    print("🔒 ПОЛНАЯ блокировка движения питомца - только idle анимации")
-    
-    local rootPart = petModel:FindFirstChild("RootPart") or 
-                     petModel:FindFirstChild("Torso") or 
-                     petModel:FindFirstChild("HumanoidRootPart")
-    
-    if not rootPart then
-        print("  ⚠️ Корневая часть не найдена для блокировки движения")
-        return nil
-    end
-    
-    -- Сохраняем исходную позицию и ориентацию
-    local fixedPosition = rootPart.Position
-    local fixedCFrame = rootPart.CFrame
-    local fixedOrientation = fixedCFrame - fixedCFrame.Position
-    
-    print("  📍 Фиксирую позицию:", fixedPosition)
-    print("  🧭 Фиксирую ориентацию:", fixedOrientation)
-    
-    -- РАДИКАЛЬНАЯ блокировка: заякориваем ВСЕ части кроме тех что нужны для idle анимации
-    for _, part in pairs(petModel:GetDescendants()) do
-        if part:IsA("BasePart") then
-            -- Заякориваем все части - это полностью блокирует движение
-            part.Anchored = true
-            -- Обнуляем скорость
-            part.Velocity = Vector3.new(0, 0, 0)
-            part.AngularVelocity = Vector3.new(0, 0, 0)
-        end
-    end
-    
-    -- Отключаем AI поведение если есть Humanoid
-    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        print("  🤖 Отключаю AI поведение Humanoid")
-        humanoid.PlatformStand = true -- Блокирует управление
-        humanoid.Sit = false
-        humanoid.Jump = false
-        humanoid.WalkSpeed = 0 -- Скорость ходьбы = 0
-        humanoid.JumpPower = 0 -- Сила прыжка = 0
-        humanoid.JumpHeight = 0
-        
-        -- Останавливаем все анимации движения
-        for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
-            if track.Name and (track.Name:lower():find("walk") or track.Name:lower():find("run") or track.Name:lower():find("move")) then
-                print("  🚫 Останавливаю анимацию движения:", track.Name)
-                track:Stop()
-            end
-        end
-    end
-    
-    -- Удаляем ВСЕ объекты которые могут двигать питомца
-    for _, obj in pairs(petModel:GetDescendants()) do
-        if obj:IsA("BodyVelocity") or obj:IsA("BodyPosition") or 
-           obj:IsA("BodyAngularVelocity") or obj:IsA("BodyThrust") or
-           obj:IsA("VectorForce") or obj:IsA("AlignPosition") or
-           obj:IsA("AlignOrientation") or obj:IsA("LineForce") or
-           obj:IsA("Torque") or obj:IsA("VectorForce") then
-            print("  🗑️ Удаляю:", obj.ClassName, "из", obj.Parent.Name)
-            obj:Destroy()
-        end
-        
-        -- Удаляем скрипты которые могут управлять движением
-        if obj:IsA("Script") or obj:IsA("LocalScript") then
-            if obj.Name:lower():find("move") or obj.Name:lower():find("walk") or 
-               obj.Name:lower():find("ai") or obj.Name:lower():find("path") then
-                print("  🗑️ Удаляю скрипт движения:", obj.Name)
-                obj:Destroy()
-            end
-        end
-    end
-    
-    -- ЖЕСТКИЙ контроль позиции и ориентации
-    local connection = RunService.Heartbeat:Connect(function()
-        if not petModel.Parent or not rootPart.Parent then
-            connection:Disconnect()
-            return
-        end
-        
-        -- ПРИНУДИТЕЛЬНО фиксируем позицию и ориентацию
-        if (rootPart.Position - fixedPosition).Magnitude > 0.01 then
-            rootPart.CFrame = CFrame.new(fixedPosition) * fixedOrientation
-        end
-        
-        -- Обнуляем любую скорость на всех частях
-        for _, part in pairs(petModel:GetDescendants()) do
-            if part:IsA("BasePart") and part.Velocity.Magnitude > 0.01 then
-                part.Velocity = Vector3.new(0, 0, 0)
-                part.AngularVelocity = Vector3.new(0, 0, 0)
-            end
-        end
-        
-        -- Дополнительно контролируем Humanoid
-        if humanoid and humanoid.Parent then
-            if humanoid.MoveDirection.Magnitude > 0 then
-                humanoid:MoveTo(fixedPosition) -- Отменяем любое движение
-            end
-        end
-    end)
-    
-    print("  ✅ ПОЛНАЯ блокировка активна - питомец намертво зафиксирован с idle анимацией")
-    return connection
-end
-
 -- Функция копирования состояния Motor6D с масштабированием
 local function copyMotorState(originalMotor, copyMotor, scaleFactor)
     if not originalMotor or not copyMotor then
@@ -578,17 +473,121 @@ local function main()
     
     local connection = startLiveMotorCopying(petModel, petCopy)
     
-    -- Шаг 6: Блокировка движения (питомец стоит на месте)
-    print("\n🔒 === БЛОКИРОВКА ДВИЖЕНИЯ ===")
-    wait(0.5)
-    local movementBlocker = blockPetMovement(petCopy)
+    -- Шаг 6: КОНТРОЛЬ ОРИГИНАЛЬНОГО ПИТОМЦА - ЗАЦИКЛИВАНИЕ IDLE
+    print("\n🎯 === КОНТРОЛЬ ОРИГИНАЛА ===") 
+    
+    -- Заякориваем оригинал чтобы не ходил
+    local originalRoot = petModel:FindFirstChild("RootPart") or 
+                        petModel:FindFirstChild("Torso") or 
+                        petModel:FindFirstChild("HumanoidRootPart")
+    
+    if originalRoot then
+        originalRoot.Anchored = true
+        print("⚓ Оригинал заякорен - не будет ходить")
+        
+        -- Отключаем AI
+        local originalHumanoid = petModel:FindFirstChildOfClass("Humanoid")
+        if originalHumanoid then
+            originalHumanoid.WalkSpeed = 0
+            originalHumanoid.JumpPower = 0
+            print("🤖 AI отключен")
+        end
+        
+        -- 🔥 РАДИКАЛЬНЫЙ ПОДХОД: ПОЛНАЯ ЗАМОРОЗКА ВСЕХ ЧАСТЕЙ!
+        print("🔥 РАДИКАЛЬНЫЙ подход - ЗАМОРАЖИВАЕМ ВСЕ части питомца!")
+        
+        -- ПОЛУЧАЕМ ВСЕ ЧАСТИ ПИТОМЦА
+        local allOriginalParts = {}
+        for _, obj in pairs(petModel:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                table.insert(allOriginalParts, obj)
+            end
+        end
+        
+        print("🧩 Нашел частей для заморозки:", #allOriginalParts)
+        
+        -- СОХРАНЯЕМ ОРИГИНАЛЬНЫЕ ПОЗИЦИИ И ПОВОРОТЫ
+        local originalPositions = {}
+        for _, part in pairs(allOriginalParts) do
+            originalPositions[part] = part.CFrame
+        end
+        
+        -- РАДИКАЛЬНАЯ ЗАМОРОЗКА - ЗАЯКОРИВАЕМ ВСЕ!
+        for _, part in pairs(allOriginalParts) do
+            part.Anchored = true
+        end
+        print("❄️ ВСЕ части питомца заякорены!")
+        
+        -- ОТКЛЮЧАЕМ HUMANOID ПОЛНОСТЬЮ
+        if originalHumanoid then
+            originalHumanoid.WalkSpeed = 0
+            originalHumanoid.JumpPower = 0
+            originalHumanoid.PlatformStand = true
+            print("🤖 Humanoid полностью отключен!")
+        end
+        
+        -- МОНИТОРИНГ: ПОДДЕРЖИВАЕМ ЗАМОРОЗКУ НО РАЗРЕШАЕМ IDLE АНИМАЦИЮ
+        spawn(function()
+            while petModel and petModel.Parent do
+                wait(0.05) -- Очень частая проверка
+                
+                -- ПРОВЕРЯЕМ ЧТО ВСЕ ЧАСТИ ОСТАЮТСЯ ЗАЯКОРЕНЫ
+                for _, part in pairs(allOriginalParts) do
+                    if part and part.Parent and not part.Anchored then
+                        part.Anchored = true
+                        print("⚓ Перезаякорил:", part.Name)
+                    end
+                end
+                
+                -- ПРОВЕРЯЕМ ЧТО HUMANOID ОСТАЕТСЯ ОТКЛЮЧЕН
+                if originalHumanoid and originalHumanoid.Parent then
+                    if originalHumanoid.WalkSpeed ~= 0 then
+                        originalHumanoid.WalkSpeed = 0
+                        print("🚫 Переотключил WalkSpeed!")
+                    end
+                    if originalHumanoid.JumpPower ~= 0 then
+                        originalHumanoid.JumpPower = 0
+                        print("🚫 Переотключил JumpPower!")
+                    end
+                    if not originalHumanoid.PlatformStand then
+                        originalHumanoid.PlatformStand = true
+                        print("🔒 Перевключил PlatformStand!")
+                    end
+                end
+                
+                -- РАЗРЕШАЕМ ЛЕГКИЕ ПОВОРОТЫ ДЛЯ IDLE АНИМАЦИИ
+                -- Но блокируем любое серьезное движение
+                for _, part in pairs(allOriginalParts) do
+                    if part and part.Parent then
+                        local currentCFrame = part.CFrame
+                        local originalCFrame = originalPositions[part]
+                        
+                        if originalCFrame then
+                            local positionDiff = (currentCFrame.Position - originalCFrame.Position).Magnitude
+                            
+                            -- Разрешаем маленькие повороты (для idle), но блокируем движение
+                            if positionDiff > 2.0 then -- Большое движение = ходьба!
+                                part.CFrame = originalCFrame
+                                print("🛑 Вернул на место:", part.Name)
+                            end
+                        end
+                    end
+                end
+            end
+            print("⚠️ Мониторинг заморозки остановлен")
+        end)
+        
+        print("✅ РАДИКАЛЬНАЯ заморозка запущена!")
+        print("❄️ Питомец ПОЛНОСТЬЮ заморожен, но Motor6D анимация должна работать!")
+        print("💡 Копия будет копировать только idle движения!")
+    end
     
     if connection then
-        print("🎉 === ПОЛНЫЙ УСПЕХ! ===")
+        print("\n🎉 === ПОЛНЫЙ УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
         print("✅ Анимация запущена")
-        print("✅ Движение заблокировано")
-        print("💡 Питомец стоит на месте с анимацией стояния!")
+        print("✅ Оригинал остановлен и зациклен на idle")
+        print("💡 Копия должна стоять с idle анимацией!")
     else
         print("⚠️ Масштабирование успешно, но анимация не запустилась")
         print("💡 Возможно проблема с Motor6D соединениями")
