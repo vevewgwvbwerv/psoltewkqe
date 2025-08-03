@@ -1,6 +1,7 @@
--- 🔥 PET SCALER v2.9 IDLE - Масштабирование с ТОЛЬКО IDLE анимацией
--- Объединяет оригинальный PetScaler + SmartMotorCopier
--- Создает масштабированную копию И копирует ТОЛЬКО idle анимацию
+-- 🔥 PET SCALER v2.9 RECORD IDLE - ЗАПИСАТЬ idle и ЗАЦИКЛИТЬ через живое копирование
+-- 1. ЗАПИСАТЬ idle кадры когда питомец стоит
+-- 2. ОСТАНОВИТЬ запись когда питомец движется
+-- 3. ЗАЦИКЛИТЬ записанные кадры через ЖИВОЕ КОПИРОВАНИЕ (не timeline replay!)
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -9,10 +10,10 @@ local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-print("🔥 === PET SCALER v2.9 IDLE - ТОЛЬКО IDLE АНИМАЦИЯ ===")
+print("🔥 === PET SCALER v2.9 RECORD IDLE - ЗАПИСАТЬ И ЗАЦИКЛИТЬ IDLE ===")
 print("=" .. string.rep("=", 60))
 
--- Конфигурация (как в оригинальном PetScaler)
+-- Конфигурация
 local CONFIG = {
     SEARCH_RADIUS = 100,
     SCALE_FACTOR = 3.0,
@@ -76,7 +77,7 @@ local function hasPetVisuals(model)
     return meshCount > 0, petMeshes
 end
 
--- Функция глубокого копирования модели (ОРИГИНАЛЬНАЯ ВЕРСИЯ)
+-- Функция глубокого копирования модели
 local function deepCopyModel(originalModel)
     print("📋 Создаю глубокую копию модели:", originalModel.Name)
     
@@ -84,7 +85,7 @@ local function deepCopyModel(originalModel)
     copy.Name = originalModel.Name .. "_SCALED_COPY"
     copy.Parent = Workspace
     
-    -- Позиционирование копии (оригинальная логика)
+    -- Позиционирование копии
     if copy.PrimaryPart and originalModel.PrimaryPart then
         local originalCFrame = originalModel.PrimaryPart.CFrame
         local offset = Vector3.new(15, 0, 0)
@@ -120,15 +121,11 @@ local function deepCopyModel(originalModel)
         print("⚠️ Не удалось точно позиционировать копию")
     end
     
-    -- ВАЖНО: НЕ устанавливаем Anchored здесь - это сделает SmartAnchoredManagement
-    
     print("✅ Копия создана:", copy.Name)
     return copy
 end
 
--- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
-
--- Функция получения всех BasePart из модели (ОРИГИНАЛЬНАЯ ЛОГИКА PETSCALER)
+-- Функция получения всех BasePart из модели
 local function getAllParts(model)
     local parts = {}
     
@@ -170,7 +167,7 @@ local function createMotorMap(motors)
     return map
 end
 
--- Функция умного управления Anchored (из SmartMotorCopier)
+-- Функция умного управления Anchored
 local function smartAnchoredManagement(copyParts)
     print("🧠 Умное управление Anchored...")
     
@@ -211,11 +208,10 @@ local function copyMotorState(originalMotor, copyMotor, scaleFactor)
         return false
     end
     
-    -- ИСПРАВЛЕНО: Масштабируем позиционные компоненты Motor6D
     local originalC0 = originalMotor.C0
     local originalC1 = originalMotor.C1
     
-    -- Масштабируем позиционные компоненты (Position), но НЕ вращательные (Rotation)
+    -- Масштабируем позиционные компоненты
     local scaledC0 = CFrame.new(originalC0.Position * scaleFactor) * (originalC0 - originalC0.Position)
     local scaledC1 = CFrame.new(originalC1.Position * scaleFactor) * (originalC1 - originalC1.Position)
     
@@ -224,8 +220,6 @@ local function copyMotorState(originalMotor, copyMotor, scaleFactor)
     
     return true
 end
-
--- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
 
 -- Функция плавного масштабирования модели
 local function scaleModelSmoothly(model, scaleFactor, tweenTime)
@@ -254,12 +248,12 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         tweenTime,
         CONFIG.EASING_STYLE,
         CONFIG.EASING_DIRECTION,
-        0, -- Повторений
-        false, -- Обратная анимация
-        0 -- Задержка
+        0,
+        false,
+        0
     )
     
-    -- Масштабирование через CFrame (ОРИГИНАЛЬНАЯ ЛОГИКА)
+    -- Масштабирование через CFrame
     local tweens = {}
     local completedTweens = 0
     
@@ -267,10 +261,7 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         local originalSize = originalData[part].size
         local originalCFrame = originalData[part].cframe
         
-        -- Вычисляем новый размер
         local newSize = originalSize * scaleFactor
-        
-        -- Вычисляем новую позицию (масштабируем относительно центра модели)
         local newCFrame = originalCFrame
         
         local tween = TweenService:Create(part, tweenInfo, {
@@ -293,10 +284,10 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
     return true
 end
 
--- === МОДИФИЦИРОВАННАЯ ФУНКЦИЯ ЖИВОГО КОПИРОВАНИЯ - ТОЛЬКО IDLE ===
+-- === КЛЮЧЕВАЯ ФУНКЦИЯ: ЗАПИСАТЬ IDLE И ЗАЦИКЛИТЬ ЧЕРЕЗ ЖИВОЕ КОПИРОВАНИЕ ===
 
-local function startIdleOnlyMotorCopying(original, copy)
-    print("🔄 Запуск IDLE-ONLY живого копирования Motor6D...")
+local function startIdleRecordingAndLiveLooping(original, copy)
+    print("🔄 Запуск записи idle и живого зацикливания...")
     
     local originalMotors = getMotor6Ds(original)
     local copyMotors = getMotor6Ds(copy)
@@ -318,11 +309,17 @@ local function startIdleOnlyMotorCopying(original, copy)
         return nil
     end
     
+    -- ПЕРЕМЕННЫЕ ДЛЯ ЗАПИСИ IDLE
+    local idleFrames = {}  -- Записанные idle кадры
+    local isRecording = false
+    local isLooping = false
+    local recordingFrameCount = 0
+    local maxRecordingFrames = 90  -- 3 секунды при 30 FPS
+    local loopFrameIndex = 1
+    
     local connection = nil
     local isRunning = true
     local frameCount = 0
-    local idleFrameCount = 0
-    local walkingFrameCount = 0
     
     connection = RunService.Heartbeat:Connect(function()
         if not isRunning then
@@ -339,40 +336,95 @@ local function startIdleOnlyMotorCopying(original, copy)
             return
         end
         
-        -- КЛЮЧЕВАЯ ЛОГИКА: Копируем Motor6D ТОЛЬКО когда питомец стоит (idle)
         local velocity = originalRootPart.AssemblyLinearVelocity.Magnitude
         local isIdle = velocity < 0.5
         
-        if isIdle then
-            -- Питомец стоит - копируем Motor6D позы
-            idleFrameCount = idleFrameCount + 1
+        if isIdle and not isRecording and not isLooping then
+            -- НАЧИНАЕМ ЗАПИСЬ IDLE
+            print("🎬 Начинаю запись idle анимации...")
+            isRecording = true
+            recordingFrameCount = 0
+            idleFrames = {}
             
-            for key, originalMotor in pairs(originalMap) do
+        elseif isRecording then
+            if isIdle and recordingFrameCount < maxRecordingFrames then
+                -- ЗАПИСЫВАЕМ КАДР IDLE
+                recordingFrameCount = recordingFrameCount + 1
+                local frame = {}
+                
+                -- ЗАПИСЫВАЕМ ТЕКУЩИЕ ПОЗИЦИИ Motor6D
+                for key, originalMotor in pairs(originalMap) do
+                    if originalMotor.Parent then
+                        frame[key] = {
+                            C0 = originalMotor.C0,
+                            C1 = originalMotor.C1
+                        }
+                    end
+                end
+                
+                table.insert(idleFrames, frame)
+                
+                if recordingFrameCount >= maxRecordingFrames then
+                    print("✅ Запись idle завершена! Записано кадров: " .. #idleFrames)
+                    print("🔄 Начинаю живое зацикливание записанной idle анимации...")
+                    isRecording = false
+                    isLooping = true
+                    loopFrameIndex = 1
+                end
+                
+            elseif not isIdle then
+                -- Питомец начал двигаться - прерываем запись
+                print("⚠️ Запись прервана - питомец начал двигаться")
+                isRecording = false
+                idleFrames = {}
+            end
+            
+        elseif isLooping and #idleFrames > 0 then
+            -- ЖИВОЕ ЗАЦИКЛИВАНИЕ ЗАПИСАННЫХ IDLE КАДРОВ
+            local currentFrame = idleFrames[loopFrameIndex]
+            
+            -- ПРИМЕНЯЕМ КАДР К КОПИИ ЧЕРЕЗ ЖИВОЕ КОПИРОВАНИЕ (КАК В v2.9!)
+            for key, motorData in pairs(currentFrame) do
                 local copyMotor = copyMap[key]
-                if copyMotor and originalMotor.Parent then
-                    copyMotorState(originalMotor, copyMotor, CONFIG.SCALE_FACTOR)
+                if copyMotor and copyMotor.Parent then
+                    -- Масштабируем и применяем
+                    local originalC0 = motorData.C0
+                    local originalC1 = motorData.C1
+                    
+                    local scaledC0 = CFrame.new(originalC0.Position * CONFIG.SCALE_FACTOR) * (originalC0 - originalC0.Position)
+                    local scaledC1 = CFrame.new(originalC1.Position * CONFIG.SCALE_FACTOR) * (originalC1 - originalC1.Position)
+                    
+                    copyMotor.C0 = scaledC0
+                    copyMotor.C1 = scaledC1
                 end
             end
-        else
-            -- Питомец движется - НЕ копируем, копия остается в последней idle позе
-            walkingFrameCount = walkingFrameCount + 1
+            
+            -- Переходим к следующему кадру
+            loopFrameIndex = loopFrameIndex + 1
+            if loopFrameIndex > #idleFrames then
+                loopFrameIndex = 1  -- Зацикливаем
+            end
         end
         
         -- Статус каждые 3 секунды
         if frameCount % 180 == 0 then
-            print("📊 IDLE-ONLY копирование активно (кадр " .. frameCount .. ")")
-            print("  🟢 Idle кадров: " .. idleFrameCount .. " | 🔴 Walking кадров: " .. walkingFrameCount)
+            if isRecording then
+                print("📊 Запись idle: кадр " .. recordingFrameCount .. "/" .. maxRecordingFrames)
+            elseif isLooping then
+                print("📊 Живое зацикливание idle: кадр " .. loopFrameIndex .. "/" .. #idleFrames)
+            else
+                print("📊 Ожидание idle для записи...")
+            end
         end
     end)
     
-    print("✅ IDLE-ONLY живое копирование Motor6D запущено!")
-    print("💡 Копия будет повторять движения оригинала ТОЛЬКО когда он стоит!")
-    print("🚫 Когда оригинал движется, копия остается в последней idle позе!")
+    print("✅ Система записи idle и живого зацикливания запущена!")
+    print("💡 Ожидаю когда питомец встанет для записи idle анимации...")
     
     return connection
 end
 
--- Функция поиска и масштабирования (из оригинального PetScaler)
+-- Функция поиска питомца
 local function findAndScalePet()
     print("🔍 Поиск UUID моделей питомцев...")
     
@@ -408,9 +460,9 @@ local function findAndScalePet()
     return targetPet.model
 end
 
--- Главная функция v2.0
+-- Главная функция
 local function main()
-    print("🚀 PetScaler v2.9 IDLE запущен!")
+    print("🚀 PetScaler v2.9 RECORD IDLE запущен!")
     
     -- Шаг 1: Найти питомца
     local petModel = findAndScalePet()
@@ -418,16 +470,15 @@ local function main()
         return
     end
     
-    -- Шаг 2: Создать копию (оригинальная логика)
+    -- Шаг 2: Создать копию
     local petCopy = deepCopyModel(petModel)
     if not petCopy then
         print("❌ Не удалось создать копию!")
         return
     end
     
-    -- Шаг 3: СНАЧАЛА масштабируем с закрепленными частями (как в оригинале)
+    -- Шаг 3: Масштабирование
     print("\n📏 === МАСШТАБИРОВАНИЕ ===")
-    -- Убеждаемся что все части закреплены для стабильного масштабирования
     for _, part in pairs(petCopy:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Anchored = true
@@ -442,27 +493,25 @@ local function main()
         return
     end
     
-    -- Шаг 4: ПОСЛЕ масштабирования настраиваем Anchored для анимации
+    -- Шаг 4: Настройка Anchored для анимации
     print("\n🧠 === НАСТРОЙКА ANCHORED ДЛЯ АНИМАЦИИ ===")
-    wait(CONFIG.TWEEN_TIME + 1) -- Ждем завершения масштабирования
+    wait(CONFIG.TWEEN_TIME + 1)
     
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    -- Шаг 5: Запуск IDLE-ONLY живого копирования Motor6D
-    print("\n🎭 === ЗАПУСК IDLE-ONLY АНИМАЦИИ ===")
+    -- Шаг 5: Запуск записи idle и живого зацикливания
+    print("\n🎭 === ЗАПУСК ЗАПИСИ IDLE И ЖИВОГО ЗАЦИКЛИВАНИЯ ===")
     
-    local connection = startIdleOnlyMotorCopying(petModel, petCopy)
+    local connection = startIdleRecordingAndLiveLooping(petModel, petCopy)
     
     if connection then
         print("🎉 === УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
-        print("✅ IDLE-ONLY анимация запущена")
-        print("💡 Копия будет анимироваться ТОЛЬКО когда оригинал стоит!")
-        print("🚫 Когда оригинал движется, копия остается в idle позе!")
+        print("✅ Система записи idle и живого зацикливания запущена")
+        print("💡 Копия будет записывать idle анимацию и зацикливать её!")
     else
-        print("⚠️ Масштабирование успешно, но IDLE-ONLY анимация не запустилась")
-        print("💡 Возможно проблема с Motor6D соединениями")
+        print("⚠️ Масштабирование успешно, но система записи не запустилась")
     end
 end
 
@@ -470,71 +519,70 @@ end
 local function createGUI()
     local playerGui = player:WaitForChild("PlayerGui")
     
-    local oldGui = playerGui:FindFirstChild("PetScalerV29IdleGUI")
+    local oldGui = playerGui:FindFirstChild("PetScalerRecordIdleGUI")
     if oldGui then
         oldGui:Destroy()
     end
     
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetScalerV29IdleGUI"
+    screenGui.Name = "PetScalerRecordIdleGUI"
     screenGui.Parent = playerGui
     
     local frame = Instance.new("Frame")
     frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 280, 0, 80)
-    frame.Position = UDim2.new(0, 50, 0, 150) -- Под оригинальным PetScaler
+    frame.Size = UDim2.new(0, 300, 0, 80)
+    frame.Position = UDim2.new(0, 50, 0, 350)
     frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(255, 165, 0) -- Оранжевая рамка для отличия
+    frame.BorderColor3 = Color3.fromRGB(0, 255, 255) -- Голубая рамка
     frame.Parent = screenGui
     
     local button = Instance.new("TextButton")
     button.Name = "ScaleButton"
-    button.Size = UDim2.new(0, 260, 0, 40)
+    button.Size = UDim2.new(0, 280, 0, 40)
     button.Position = UDim2.new(0, 10, 0, 20)
-    button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    button.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
     button.BorderSizePixel = 0
-    button.Text = "🔥 PetScaler v2.9 IDLE-ONLY"
+    button.Text = "🔥 PetScaler RECORD IDLE"
     button.TextColor3 = Color3.fromRGB(0, 0, 0)
     button.TextSize = 14
     button.Font = Enum.Font.SourceSansBold
     button.Parent = frame
     
     button.MouseButton1Click:Connect(function()
-        button.Text = "⏳ Создаю IDLE-ONLY..."
-        button.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+        button.Text = "⏳ Записываю IDLE..."
+        button.BackgroundColor3 = Color3.fromRGB(0, 200, 200)
         
         spawn(function()
             main()
             
             wait(3)
-            button.Text = "🔥 PetScaler v2.9 IDLE-ONLY"
-            button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+            button.Text = "🔥 PetScaler RECORD IDLE"
+            button.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
         end)
     end)
     
     button.MouseEnter:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(255, 165, 0) then
-            button.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+        if button.BackgroundColor3 == Color3.fromRGB(0, 255, 255) then
+            button.BackgroundColor3 = Color3.fromRGB(0, 200, 200)
         end
     end)
     
     button.MouseLeave:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(255, 140, 0) then
-            button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        if button.BackgroundColor3 == Color3.fromRGB(0, 200, 200) then
+            button.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
         end
     end)
     
-    print("🖥️ PetScaler v2.9 IDLE GUI создан!")
+    print("🖥️ PetScaler RECORD IDLE GUI создан!")
 end
 
 -- Запуск
 createGUI()
 print("=" .. string.rep("=", 60))
-print("💡 PETSCALER v2.9 IDLE-ONLY:")
-print("   1. Создает масштабированную копию")
-print("   2. Настраивает правильные Anchored состояния")
-print("   3. Копирует Motor6D ТОЛЬКО когда оригинал стоит (idle)")
-print("   4. Когда оригинал движется, копия остается в idle позе")
-print("🎯 Нажмите оранжевую кнопку для запуска!")
+print("💡 PETSCALER RECORD IDLE:")
+print("   1. ЗАПИСЫВАЕТ idle анимацию когда питомец стоит")
+print("   2. ОСТАНАВЛИВАЕТ запись когда питомец движется")
+print("   3. ЗАЦИКЛИВАЕТ записанную idle через ЖИВОЕ КОПИРОВАНИЕ")
+print("🎯 Нажмите ГОЛУБУЮ кнопку для запуска!")
 print("=" .. string.rep("=", 60))
