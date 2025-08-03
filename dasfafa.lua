@@ -356,7 +356,20 @@ end
 local function recordIdleAnimation(originalPet)
     print("📹 Начинаю запись idle анимации...")
     
-    local originalMotors = buildMotorMap(originalPet)
+    -- ИСПРАВЛЕНО: Простой поиск всех Motor6D в питомце
+    local originalMotors = {}
+    for _, obj in pairs(originalPet:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(originalMotors, obj)
+        end
+    end
+    
+    if #originalMotors == 0 then
+        print("❌ Motor6D не найдены у питомца!")
+        return nil
+    end
+    
+    print("✅ Найдено Motor6D: " .. #originalMotors)
     local idleFrames = {}
     local frameCount = 0
     local maxFrames = 90 -- 3 секунды при 30 FPS
@@ -375,9 +388,9 @@ local function recordIdleAnimation(originalPet)
         local frameData = {}
         
         -- Записываем позы всех Motor6D
-        for key, motor in pairs(originalMotors) do
+        for i, motor in ipairs(originalMotors) do
             if motor and motor.Parent then
-                frameData[key] = {
+                frameData[motor.Name] = {
                     C0 = motor.C0,
                     C1 = motor.C1
                 }
@@ -408,24 +421,50 @@ local function playIdleAnimation(copyPet, idleFrames)
     
     print("🎭 Запускаю idle анимацию на копии...")
     
-    local copyMotors = buildMotorMap(copyPet)
+    -- ИСПРАВЛЕНО: Простой поиск всех Motor6D в копии
+    local copyMotors = {}
+    for _, obj in pairs(copyPet:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            copyMotors[obj.Name] = obj
+        end
+    end
+    
+    if next(copyMotors) == nil then
+        print("❌ Motor6D не найдены у копии!")
+        return nil
+    end
+    
+    local motorCount = 0
+    for _ in pairs(copyMotors) do motorCount = motorCount + 1 end
+    print("✅ Найдено Motor6D в копии: " .. motorCount)
     local currentFrame = 1
+    
+    local frameCounter = 0
     
     local connection = RunService.Heartbeat:Connect(function()
         local frameData = idleFrames[currentFrame]
-        if not frameData then return end
+        if not frameData then 
+            print("❌ Нет данных для кадра " .. currentFrame)
+            return 
+        end
         
-        -- Применяем позы к копии с масштабированием
-        for key, poseData in pairs(frameData) do
-            local copyMotor = copyMotors[key]
+        local appliedCount = 0
+        
+        -- Применяем позы к копии (без сложного масштабирования)
+        for motorName, poseData in pairs(frameData) do
+            local copyMotor = copyMotors[motorName]
             if copyMotor and copyMotor.Parent then
-                -- Масштабируем позиционные компоненты
-                local scaledC0 = CFrame.new(poseData.C0.Position * CONFIG.SCALE_FACTOR) * (poseData.C0 - poseData.C0.Position)
-                local scaledC1 = CFrame.new(poseData.C1.Position * CONFIG.SCALE_FACTOR) * (poseData.C1 - poseData.C1.Position)
-                
-                copyMotor.C0 = scaledC0
-                copyMotor.C1 = scaledC1
+                -- Простое копирование поз (без масштабирования пока)
+                copyMotor.C0 = poseData.C0
+                copyMotor.C1 = poseData.C1
+                appliedCount = appliedCount + 1
             end
+        end
+        
+        -- Отладка каждые 30 кадров (1 секунда)
+        frameCounter = frameCounter + 1
+        if frameCounter % 30 == 0 then
+            print("🎬 Кадр " .. currentFrame .. "/" .. #idleFrames .. ", применено поз: " .. appliedCount)
         end
         
         -- Переходим к следующему кадру (зацикливаем)
@@ -581,7 +620,35 @@ local function main()
     local idleFrames = recordIdleAnimation(petModel)
     
     if idleFrames then
-        -- Шаг 6: Запуск idle анимации на копии
+        -- Шаг 6: ОСВОБОЖДЕНИЕ частей для анимации
+        print("\n🔓 === ОСВОБОЖДЕНИЕ ЧАСТЕЙ ===")
+        
+        local rootPart = petCopy:FindFirstChild("HumanoidRootPart") or petCopy:FindFirstChild("Torso")
+        local freedParts = 0
+        
+        -- Освобождаем только части для анимации (НЕ ноги!)
+        for _, part in pairs(petCopy:GetDescendants()) do
+            if part:IsA("BasePart") and part ~= rootPart then
+                local partName = part.Name:lower()
+                
+                -- Освобождаем только голову, шею, хвост - НО НЕ ноги!
+                local shouldFree = partName:find("head") or partName:find("neck") or 
+                                  partName:find("tail") or partName:find("ear") or
+                                  partName:find("eye") or partName:find("nose")
+                
+                if shouldFree and part.Anchored then
+                    part.Anchored = false
+                    freedParts = freedParts + 1
+                    print("🔓 Освобождена часть: " .. part.Name)
+                end
+            end
+        end
+        
+        print("✅ Освобождено частей для анимации: " .. freedParts)
+        print("🎯 Корневая часть и ноги остаются Anchored (не проваливается)")
+        print("💡 Только голова, шея, хвост свободны для idle анимации")
+        
+        -- Шаг 7: Запуск idle анимации на копии
         print("\n🎭 === ЗАПУСК IDLE НА КОПИИ ===")
         
         local connection = playIdleAnimation(petCopy, idleFrames)
