@@ -1,5 +1,5 @@
--- 🎮 ДИАГНОСТИКА ANIMATIONCONTROLLER - ФОКУС НА УПРАВЛЕНИИ АНИМАЦИЕЙ
--- Детальный анализ AnimationController и его Animator
+-- 🎯 ТОЧНАЯ КОПИЯ РАБОЧЕГО АВТОМАТИЧЕСКОГО ЛОВЦА
+-- Берем ИМЕННО ту логику которая работала, БЕЗ ИЗМЕНЕНИЙ!
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -7,62 +7,33 @@ local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-print("🎮 === ДИАГНОСТИКА ANIMATIONCONTROLLER ===")
-print("🎯 Цель: ИЗУЧИТЬ AnimationController и его управление анимацией")
-
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
-end
-
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
-
-local playerPos = hrp.Position
-
--- 🐾 РАБОЧАЯ ФУНКЦИЯ ПОИСКА ПИТОМЦА (из PetScaler_v2.2)
-
--- Функция проверки визуальных элементов питомца
+-- 🔍 ПОИСК ПИТОМЦА (РАБОЧАЯ ВЕРСИЯ)
 local function hasPetVisuals(model)
     local meshCount = 0
-    local petMeshes = {}
-    
     for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
             meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or ""
-            }
-            if meshData.meshId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or ""
-            }
-            if meshData.meshId ~= "" or meshData.textureId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
         end
     end
-    
-    return meshCount > 0, petMeshes
+    return meshCount > 0
 end
 
--- Функция поиска питомца
 local function findPet()
-    print("🔍 Поиск UUID моделей питомцев...")
+    local character = player.Character
+    if not character then 
+        print("❌ Персонаж игрока не найден!")
+        return nil 
+    end
+    
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then 
+        print("❌ HumanoidRootPart не найден!")
+        return nil 
+    end
+    
+    local playerPos = hrp.Position
+    
+    print("🔍 Поиск питомцев с фигурными скобками...")
     
     local foundPets = {}
     local SEARCH_RADIUS = 100
@@ -73,12 +44,10 @@ local function findPet()
             if success then
                 local distance = (modelCFrame.Position - playerPos).Magnitude
                 if distance <= SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
+                    if hasPetVisuals(obj) then
                         table.insert(foundPets, {
                             model = obj,
-                            distance = distance,
-                            meshes = meshes
+                            distance = distance
                         })
                         print("🐾 Найден питомец:", obj.Name, "на расстоянии:", math.floor(distance))
                     end
@@ -100,203 +69,255 @@ local function findPet()
     return targetPet.model
 end
 
--- 🎮 ФОКУС НА ANIMATIONCONTROLLER
-local function analyzeAnimationController(petModel)
-    print("\n🎮 === АНАЛИЗ ANIMATIONCONTROLLER ===")
+-- 🎯 ПРОВЕРКА НА МАГИЧЕСКИЙ МОМЕНТ (ТОЧНАЯ КОПИЯ)
+local function isMagicalIdleMoment(petModel)
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
     
-    -- Поиск всех AnimationController в модели
-    local controllers = {}
+    -- Условие 1: Нет движения
+    local noMovement = true
+    if humanoid then
+        noMovement = humanoid.MoveDirection.Magnitude < 0.01
+    end
+    
+    -- Условие 2: Есть только idle анимации
+    local hasOnlyIdleAnimation = false
+    local animationCount = 0
+    
     for _, obj in pairs(petModel:GetDescendants()) do
-        if obj:IsA("AnimationController") then
-            table.insert(controllers, obj)
-        end
-    end
-    
-    print("🎮 Найдено AnimationController:", #controllers)
-    
-    for i, controller in pairs(controllers) do
-        print(string.format("\n🎮 === CONTROLLER %d ===", i))
-        print("📍 Путь:", controller:GetFullName())
-        print("👨‍👩‍👧‍👦 Родитель:", controller.Parent.Name)
-        
-        -- Анализ детей AnimationController
-        local children = controller:GetChildren()
-        print("👥 Детей:", #children)
-        
-        for j, child in pairs(children) do
-            print(string.format("  %d. %s (%s)", j, child.Name, child.ClassName))
+        if obj:IsA("Animator") then
+            local tracks = obj:GetPlayingAnimationTracks()
+            animationCount = #tracks
             
-            -- Если это Animator - детальный анализ
-            if child:IsA("Animator") then
-                print("    🎭 === ДЕТАЛЬНЫЙ АНАЛИЗ ANIMATOR ===")
-                
-                local tracks = child:GetPlayingAnimationTracks()
-                print("    📽️ Играющих анимаций:", #tracks)
-                
-                for k, track in pairs(tracks) do
-                    print(string.format("      %d. %s", k, track.Animation.Name))
-                    print(string.format("         🆔 ID: %s", track.Animation.AnimationId))
-                    print(string.format("         ▶️ Playing: %s", track.IsPlaying))
-                    print(string.format("         🔄 Looped: %s", track.Looped))
-                    print(string.format("         ⚡ Priority: %s", track.Priority.Name))
-                    print(string.format("         ⏱️ Time: %.2f/%.2f", track.TimePosition, track.Length or 0))
-                    print(string.format("         🔊 Weight: %.2f", track.WeightCurrent))
-                    print(string.format("         📈 Speed: %.2f", track.Speed))
-                end
-                
-                -- Попытка получить все анимации (не только играющие)
-                print("    🔍 === ПОИСК ВСЕХ АНИМАЦИЙ ===")
-                local allTracks = child:GetChildren()
-                for l, item in pairs(allTracks) do
-                    if item:IsA("AnimationTrack") then
-                        print(string.format("      Трек %d: %s", l, item.Animation.Name))
-                    end
-                end
-            end
-        end
-    end
-    
-    return controllers
-end
-
--- 🔄 МОНИТОРИНГ ANIMATIONCONTROLLER В РЕАЛЬНОМ ВРЕМЕНИ
-local function startControllerMonitoring(petModel)
-    print("\n📊 === МОНИТОРИНГ ANIMATIONCONTROLLER ===")
-    
-    local rootPart = petModel:FindFirstChild("RootPart") or petModel:FindFirstChild("Torso") or petModel:FindFirstChild("HumanoidRootPart")
-    if not rootPart then
-        print("❌ RootPart не найден!")
-        return
-    end
-    
-    local lastPosition = rootPart.Position
-    local isMoving = false
-    local standingTime = 0
-    local movingTime = 0
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        
-        -- Проверяем движение
-        local currentPos = rootPart.Position
-        local distance = (currentPos - lastPosition).Magnitude
-        
-        if distance > 0.1 then
-            if not isMoving then
-                print("\n🏃 === ПИТОМЕЦ НАЧАЛ ДВИГАТЬСЯ ===")
-                isMoving = true
-                standingTime = 0
-                
-                -- Анализируем AnimationController при начале движения
-                print("🎮 === ANIMATIONCONTROLLER ПРИ ДВИЖЕНИИ ===")
-                analyzeAnimationController(petModel)
-            end
-            movingTime = movingTime + 1
-        else
-            if isMoving then
-                print("\n🛑 === ПИТОМЕЦ ОСТАНОВИЛСЯ ===")
-                isMoving = false
-                movingTime = 0
-                
-                -- Анализируем AnimationController при остановке
-                print("🎮 === ANIMATIONCONTROLLER ПРИ ОСТАНОВКЕ ===")
-                analyzeAnimationController(petModel)
-            end
-            standingTime = standingTime + 1
-        end
-        
-        lastPosition = currentPos
-        
-        -- Периодический анализ каждые 2 секунды
-        if tick() % 2 < 0.02 then
-            print(string.format("\n⏰ === ПЕРИОДИЧЕСКИЙ АНАЛИЗ (%.1f сек) ===", tick()))
-            print("🏃 Движется:", isMoving and "ДА" or "НЕТ")
-            print("⏱️ Стоит:", standingTime, "кадров")
-            print("🏃 Движется:", movingTime, "кадров")
-            
-            -- Быстрый анализ AnimationController
-            local controllers = {}
-            for _, obj in pairs(petModel:GetDescendants()) do
-                if obj:IsA("AnimationController") then
-                    table.insert(controllers, obj)
-                end
-            end
-            
-            print("🎮 AnimationController найдено:", #controllers)
-            
-            for i, controller in pairs(controllers) do
-                local animators = {}
-                for _, child in pairs(controller:GetChildren()) do
-                    if child:IsA("Animator") then
-                        table.insert(animators, child)
-                    end
-                end
-                
-                print(string.format("  Controller %d: %d Animator(s)", i, #animators))
-                
-                for j, animator in pairs(animators) do
-                    local tracks = animator:GetPlayingAnimationTracks()
-                    print(string.format("    Animator %d: %d активных анимаций", j, #tracks))
+            if animationCount > 0 then
+                hasOnlyIdleAnimation = true
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    local id = track.Animation.AnimationId:lower()
                     
-                    for k, track in pairs(tracks) do
-                        print(string.format("      %d. %s (Looped: %s, Playing: %s)", 
-                            k, track.Animation.Name, track.Looped, track.IsPlaying))
+                    if not name:find("idle") and not id:find("1073293904134356") then
+                        hasOnlyIdleAnimation = false
+                        break
+                    end
+                end
+            end
+            break
+        end
+    end
+    
+    return noMovement and hasOnlyIdleAnimation and animationCount > 0
+end
+
+-- 📊 ЗАПИСЬ МАГИЧЕСКИХ ПОЗ (ТОЧНАЯ КОПИЯ)
+local function recordMagicalPoses(petModel, duration)
+    print("🎬 Записываю магические idle позы...")
+    
+    local motor6Ds = {}
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motor6Ds, obj)
+        end
+    end
+    
+    if #motor6Ds == 0 then
+        print("❌ Motor6D не найдены!")
+        return nil
+    end
+    
+    local poses = {}
+    local frameCount = 0
+    local targetFrames = duration * 60
+    
+    local recordConnection
+    recordConnection = RunService.Heartbeat:Connect(function()
+        frameCount = frameCount + 1
+        
+        local framePoses = {}
+        for _, motor in pairs(motor6Ds) do
+            framePoses[motor.Name] = {
+                C0 = motor.C0,
+                C1 = motor.C1,
+                Transform = motor.Transform
+            }
+        end
+        
+        table.insert(poses, framePoses)
+        
+        if frameCount >= targetFrames then
+            recordConnection:Disconnect()
+        end
+    end)
+    
+    while frameCount < targetFrames and recordConnection.Connected do
+        wait(0.1)
+    end
+    
+    print(string.format("✅ Записано %d магических поз!", #poses))
+    return poses, motor6Ds
+end
+
+-- 🔒 ФИКСАЦИЯ В МАГИЧЕСКОМ СОСТОЯНИИ (ТОЧНАЯ КОПИЯ РАБОЧЕЙ ВЕРСИИ!)
+local function lockInMagicalIdle(petModel, magicalPoses, motor6Ds)
+    print("🔒 Фиксирую питомца в МАГИЧЕСКОМ idle состоянии...")
+    
+    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
+    local rootPart = petModel:FindFirstChild("HumanoidRootPart") or petModel:FindFirstChild("Torso")
+    local originalPosition = rootPart and rootPart.Position or Vector3.new(0, 0, 0)
+    
+    local currentFrame = 1
+    local frameRate = 60
+    local frameInterval = 1 / frameRate
+    local lastFrameTime = tick()
+    
+    -- Статистика для отладки
+    local destroyedAnimations = 0
+    local teleportations = 0
+    
+    local lockConnection
+    lockConnection = RunService.Heartbeat:Connect(function()
+        local now = tick()
+        
+        -- БЛОКИРОВКА ДВИЖЕНИЯ (ТОЧНАЯ КОПИЯ!)
+        if humanoid then
+            humanoid.WalkSpeed = 0
+            humanoid.JumpPower = 0
+            humanoid.PlatformStand = true
+        end
+        
+        if rootPart then
+            rootPart.Anchored = true
+            if (rootPart.Position - originalPosition).Magnitude > 0.05 then
+                rootPart.Position = originalPosition
+                rootPart.Velocity = Vector3.new(0, 0, 0)
+                rootPart.AngularVelocity = Vector3.new(0, 0, 0)
+                teleportations = teleportations + 1
+            end
+        end
+        
+        -- УНИЧТОЖЕНИЕ НЕ-IDLE АНИМАЦИЙ (ТОЧНАЯ КОПИЯ!)
+        for _, obj in pairs(petModel:GetDescendants()) do
+            if obj:IsA("Animator") then
+                local tracks = obj:GetPlayingAnimationTracks()
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    local id = track.Animation.AnimationId:lower()
+                    
+                    -- КЛЮЧЕВАЯ ЛОГИКА: Stop() И Destroy()!
+                    if not name:find("idle") and not id:find("1073293904134356") then
+                        track:Stop()
+                        track:Destroy()  -- ЭТО КЛЮЧЕВОЕ ОТЛИЧИЕ!
+                        destroyedAnimations = destroyedAnimations + 1
+                        
+                        if destroyedAnimations <= 5 then
+                            print("💀 УНИЧТОЖЕНА walking анимация:", track.Animation.Name)
+                        end
                     end
                 end
             end
         end
         
-        -- ОСОБЫЙ АНАЛИЗ когда долго стоит
-        if not isMoving and standingTime > 120 then -- 2 секунды стояния
-            print("\n🎯 === ДОЛГОЕ СТОЯНИЕ - ДЕТАЛЬНЫЙ АНАЛИЗ CONTROLLER ===")
-            analyzeAnimationController(petModel)
-            standingTime = 0 -- Сбрасываем чтобы не спамить
+        -- ПРИМЕНЕНИЕ МАГИЧЕСКИХ ПОЗ (ТОЧНАЯ КОПИЯ!)
+        if now - lastFrameTime >= frameInterval then
+            lastFrameTime = now
+            
+            local framePoses = magicalPoses[currentFrame]
+            if framePoses then
+                for _, motor in pairs(motor6Ds) do
+                    local pose = framePoses[motor.Name]
+                    if pose then
+                        pcall(function()
+                            motor.C0 = pose.C0
+                            motor.C1 = pose.C1
+                            motor.Transform = pose.Transform
+                        end)
+                    end
+                end
+            end
+            
+            currentFrame = currentFrame + 1
+            if currentFrame > #magicalPoses then
+                currentFrame = 1
+                
+                -- Статистика каждый цикл
+                if destroyedAnimations > 0 or teleportations > 0 then
+                    print(string.format("🔄 Цикл: уничтожено анимаций=%d, телепортаций=%d", 
+                        destroyedAnimations, teleportations))
+                end
+            end
         end
     end)
     
-    print("✅ Мониторинг AnimationController запущен!")
+    print("🔒 ТОЧНАЯ КОПИЯ рабочей фиксации активна!")
+    print("💀 Walking анимации УНИЧТОЖАЮТСЯ (Stop + Destroy)")
+    print("📍 Позиция корректируется при дрейфе > 0.05")
     
-    -- Останавливаем через 120 секунд
-    spawn(function()
-        wait(120)
-        connection:Disconnect()
-        print("\n⏹️ Мониторинг AnimationController остановлен")
-    end)
-    
-    return connection
+    return lockConnection
 end
 
--- Главная функция
-local function main()
+-- 🔍 АВТОМАТИЧЕСКИЙ ЛОВЕЦ (ТОЧНАЯ КОПИЯ РАБОЧЕЙ ВЕРСИИ!)
+local function exactWorkingCatcher()
     local petModel = findPet()
     if not petModel then
+        print("❌ Питомец не найден!")
         return
     end
     
-    print("\n🎮 === НАЧАЛЬНЫЙ АНАЛИЗ ANIMATIONCONTROLLER ===")
-    analyzeAnimationController(petModel)
+    print("🔍 === ТОЧНАЯ КОПИЯ РАБОЧЕГО АВТОМАТИЧЕСКОГО ЛОВЦА ===")
+    print("🎯 Поиск магического момента... (макс. 60 секунд)")
     
-    print("\n🎮 === ЗАПУСК МОНИТОРИНГА ===")
-    print("💡 Подойдите к питомцу и наблюдайте за AnimationController")
-    print("🔍 Особое внимание на анимации в момент стояния и движения")
+    local searchStartTime = tick()
+    local lastCheckTime = 0
     
-    local connection = startControllerMonitoring(petModel)
+    local searchConnection
+    searchConnection = RunService.Heartbeat:Connect(function()
+        local now = tick()
+        
+        -- Проверяем каждые 0.1 секунды (КАК В ОРИГИНАЛЕ!)
+        if now - lastCheckTime >= 0.1 then
+            lastCheckTime = now
+            
+            if isMagicalIdleMoment(petModel) then
+                print("🌟 === МАГИЧЕСКИЙ МОМЕНТ ПОЙМАН! ===")
+                searchConnection:Disconnect()
+                
+                -- Запись поз (3 секунды как в оригинале)
+                local magicalPoses, motor6Ds = recordMagicalPoses(petModel, 3)
+                if magicalPoses then
+                    local connection = lockInMagicalIdle(petModel, magicalPoses, motor6Ds)
+                    print("🎉 УСПЕХ! Питомец зафиксирован ТОЧНО как в рабочей версии!")
+                    print("💀 Walking анимации будут УНИЧТОЖАТЬСЯ!")
+                    
+                    spawn(function()
+                        wait(300)
+                        connection:Disconnect()
+                        print("⏹️ Фиксация остановлена через 5 минут")
+                    end)
+                end
+                return
+            end
+            
+            -- Показываем статус поиска каждые 10 секунд
+            if math.floor(now - searchStartTime) % 10 == 0 and (now - searchStartTime) % 10 < 0.1 then
+                print(string.format("🔍 Поиск магического момента... %.0f сек", now - searchStartTime))
+            end
+            
+            if now - searchStartTime >= 60 then
+                searchConnection:Disconnect()
+                print("⏰ Время поиска истекло!")
+                print("💡 Попробуй еще раз или дождись когда питомец войдет в idle")
+            end
+        end
+    end)
 end
 
--- 🚀 ПРЯМОЙ ЗАПУСК
-print("\n🚀 === ЗАПУСКАЮ ДИАГНОСТИКУ ANIMATIONCONTROLLER ===")
-print("💡 Фокус на AnimationController и его Animator!")
-print("🔬 Анализ будет идти 120 секунд...")
+-- 🚀 ЗАПУСК
+print("\n🎯 === ТОЧНАЯ КОПИЯ РАБОЧЕГО АВТОМАТИЧЕСКОГО ЛОВЦА ===")
+print("🔒 Используется ИМЕННО та логика которая работала!")
+print("💀 Walking анимации: Stop() + Destroy() (КЛЮЧЕВОЕ ОТЛИЧИЕ!)")
+print("📍 Толерантность позиции: 0.05 (как в оригинале)")
+print("⏰ Интервал проверки: 0.1 сек (как в оригинале)")
+print("🎯 Запуск через 2 секунды...")
 
 spawn(function()
     wait(2)
-    main()
+    exactWorkingCatcher()
 end)
-
-print("\n💡 === ЦЕЛЬ ДИАГНОСТИКИ ===")
-print("🎮 1. ИЗУЧИТЬ структуру AnimationController")
-print("🎭 2. НАЙТИ все Animator внутри AnimationController")
-print("📽️ 3. ОТСЛЕДИТЬ какие анимации играют в idle и walking")
-print("🔄 4. ПОНЯТЬ как зациклить idle анимацию через AnimationController")
-print("🎯 5. НАЙТИ способ принудительного управления анимацией")
-print("\n🚀 ДИАГНОСТИКА ЗАПУЩЕНА!")
