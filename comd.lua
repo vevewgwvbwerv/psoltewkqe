@@ -103,21 +103,12 @@ local function deepCopyModel(originalModel)
         if raycastResult then
             local groundY = raycastResult.Position.Y
             local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
-            -- ИСПРАВЛЕНО: Сохраняем правильную ориентацию (стоячее положение)
-            local upVector = Vector3.new(0, 1, 0) -- Вверх
-            local lookVector = originalCFrame.LookVector
-            -- Обнуляем Y-компонент чтобы питомец не наклонялся
-            lookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-            local newCFrame = CFrame.lookAt(finalPosition, finalPosition + lookVector, upVector)
+            
+            local newCFrame = CFrame.new(finalPosition, finalPosition + originalCFrame.LookVector)
             copy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на земле в стоячем положении")
+            print("📍 Копия размещена на земле рядом с оригиналом")
         else
-            -- ИСПРАВЛЕНО: Правильная ориентация без земли
-            local newPosition = originalCFrame.Position + offset
-            local upVector = Vector3.new(0, 1, 0)
-            local lookVector = Vector3.new(originalCFrame.LookVector.X, 0, originalCFrame.LookVector.Z).Unit
-            local newCFrame = CFrame.lookAt(newPosition, newPosition + lookVector, upVector)
-            copy:SetPrimaryPartCFrame(newCFrame)
+            copy:SetPrimaryPartCFrame(originalCFrame + offset)
             print("📍 Копия размещена на уровне оригинала в стоячем положении")
         end
     elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
@@ -130,6 +121,28 @@ local function deepCopyModel(originalModel)
     end
     
     -- ВАЖНО: НЕ устанавливаем Anchored здесь - это сделает SmartAnchoredManagement
+    
+    -- ДЕБАГ: Проверяем наличие Humanoid в копии
+    local copyHumanoid = copy:FindFirstChild("Humanoid")
+    if copyHumanoid then
+        print("✅ Humanoid найден в копии:", copyHumanoid.Name)
+        
+        -- Проверяем Animator
+        local copyAnimator = copyHumanoid:FindFirstChild("Animator")
+        if copyAnimator then
+            print("✅ Animator найден в копии:", copyAnimator.Name)
+        else
+            print("⚠️ Animator не найден в копии, но Humanoid есть")
+        end
+    else
+        print("❌ Humanoid НЕ НАЙДЕН в копии! Это проблема!")
+        
+        -- Показываем что есть в копии
+        print("🔍 Что есть в копии:")
+        for _, child in pairs(copy:GetChildren()) do
+            print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
+        end
+    end
     
     print("✅ Копия создана:", copy.Name)
     return copy
@@ -332,367 +345,93 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
     return true
 end
 
--- === ФУНКЦИИ ДЛЯ НЕЗАВИСИМОЙ IDLE АНИМАЦИИ ===
-
--- Практичная функция для проверки idle состояния с отладкой
-function isOriginalInStrictIdle(original)
-    local rootPart = original:FindFirstChild("HumanoidRootPart") or original:FindFirstChild("Torso")
-    local humanoid = original:FindFirstChildOfClass("Humanoid")
+-- Функция поиска и зацикливания idle анимации на копии
+local function startIdleAnimationLoop(original, copy)
+    print("🎭 Запуск поиска и зацикливания idle анимации...")
     
-    if not rootPart or not humanoid then
-        print("🔍 DEBUG: Нет rootPart или humanoid")
-        return false
-    end
-    
-    -- Практичные критерии скорости (не слишком строго)
-    local velocity = rootPart.AssemblyLinearVelocity
-    local velocityMag = velocity.Magnitude
-    
-    if velocityMag > 0.3 then -- Разумный порог
-        print("🔍 DEBUG: Скорость слишком высокая: " .. string.format("%.3f", velocityMag) .. " > 0.3")
-        return false
-    end
-    
-    -- Практичные критерии движения
-    local moveDir = humanoid.MoveDirection.Magnitude
-    if moveDir > 0.05 then -- Разумный порог
-        print("🔍 DEBUG: MoveDirection слишком высокий: " .. string.format("%.3f", moveDir) .. " > 0.05")
-        return false
-    end
-    
-    -- Проверяем что питомец не заморожен скриптами
-    if humanoid.WalkSpeed <= 0 then
-        print("🔍 DEBUG: WalkSpeed = " .. humanoid.WalkSpeed .. " (должен быть > 0)")
-        return false
-    end
-    
-    if humanoid.PlatformStand then
-        print("🔍 DEBUG: PlatformStand = true (должен быть false)")
-        return false
-    end
-    
-    -- Если дошли сюда - все проверки пройдены!
-    print("✅ DEBUG: IDLE НАЙДЕН! Velocity=" .. string.format("%.3f", velocityMag) .. ", MoveDir=" .. string.format("%.3f", moveDir) .. ", WalkSpeed=" .. humanoid.WalkSpeed)
-    return true -- Простая проверка без таймеров
-end
-
--- Функция записи idle поз с оригинала
-local function recordIdleFromOriginal(original)
-    print("📸 Запись idle поз с оригинала...")
-    
-    local originalMotors = getMotor6Ds(original)
-    if #originalMotors == 0 then
-        print("❌ Motor6D не найдены в оригинале!")
-        return nil
-    end
-    
-    local idlePoses = {}
-    
-    -- Записываем текущие idle позы всех Motor6D
-    for _, motor in pairs(originalMotors) do
-        if motor and motor.Parent then
-            idlePoses[motor.Name] = {
-                C0 = motor.C0,
-                C1 = motor.C1,
-                Transform = motor.Transform
-            }
-        end
-    end
-    
-    print("✅ Записано idle поз с оригинала:", #originalMotors)
-    return idlePoses
-end
-
--- Функция создания независимой idle анимации для копии
-local function createIndependentIdleForCopy(copy, idlePoses)
-    print("🎭 Создание независимой idle анимации для копии...")
-    
-    if not idlePoses then
-        print("❌ Нет данных idle поз!")
-        return nil
-    end
-    
-    local copyMotors = getMotor6Ds(copy)
-    if #copyMotors == 0 then
-        print("❌ Motor6D не найдены в копии!")
-        return nil
-    end
-    
-    print("🔧 Найдено Motor6D в копии:", #copyMotors)
-    
-    -- КРИТИЧНО: Отключаем AI и анимационные системы копии
-    for _, obj in pairs(copy:GetDescendants()) do
-        if obj:IsA("Humanoid") then
-            obj.WalkSpeed = 0
-            obj.JumpPower = 0
-            obj.PlatformStand = true
-            print("🚫 Humanoid в копии отключен - никакой ходьбы!")
-        end
+    -- Ищем Animator в оригинале
+    local originalAnimator = nil
+    for _, obj in pairs(original:GetDescendants()) do
         if obj:IsA("Animator") then
-            -- НЕ удаляем Animator, но блокируем walking анимации
-            local tracks = obj:GetPlayingAnimationTracks()
-            for _, track in pairs(tracks) do
-                if not track.Animation.Name:lower():find("idle") then
-                    track:Stop()
-                end
-            end
+            originalAnimator = obj
+            break
         end
     end
     
-    -- Применяем idle позы к копии с масштабированием
-    local appliedCount = 0
-    for _, motor in pairs(copyMotors) do
-        if motor and motor.Parent and idlePoses[motor.Name] then
-            local pose = idlePoses[motor.Name]
-            
-            -- Применяем позы с учетом масштабирования
-            local scaledC0 = CFrame.new(pose.C0.Position * CONFIG.SCALE_FACTOR) * pose.C0.Rotation
-            local scaledC1 = CFrame.new(pose.C1.Position * CONFIG.SCALE_FACTOR) * pose.C1.Rotation
-            
-            motor.C0 = scaledC0
-            motor.C1 = scaledC1
-            if pose.Transform then
-                motor.Transform = pose.Transform
-            end
-            appliedCount = appliedCount + 1
-        end
-    end
-    
-    print("✅ Применено idle поз к копии:", appliedCount)
-    
-    -- Запускаем постоянное применение idle поз (зацикливание)
-    local idleConnection = RunService.Heartbeat:Connect(function()
-        for _, motor in pairs(copyMotors) do
-            if motor and motor.Parent and idlePoses[motor.Name] then
-                local pose = idlePoses[motor.Name]
-                
-                -- Постоянно применяем idle позы с масштабированием
-                local scaledC0 = CFrame.new(pose.C0.Position * CONFIG.SCALE_FACTOR) * pose.C0.Rotation
-                local scaledC1 = CFrame.new(pose.C1.Position * CONFIG.SCALE_FACTOR) * pose.C1.Rotation
-                
-                motor.C0 = scaledC0
-                motor.C1 = scaledC1
-                if pose.Transform then
-                    motor.Transform = pose.Transform
-                end
-            end
-        end
-    end)
-    
-    print("🔄 Независимая idle анимация для копии запущена!")
-    print("🚫 Копия НЕ копирует движения оригинала - только idle!")
-    return idleConnection
-end
-
--- Функция записи таймлайна idle анимации
-local function recordIdleTimeline(original)
-    print("📹 Запись таймлайна idle анимации...")
-    print("💡 Ждем когда оригинал встанет в idle позу...")
-    
-    local originalMotors = getMotor6Ds(original)
-    if #originalMotors == 0 then
-        print("❌ Motor6D не найдены в оригинале!")
+    if not originalAnimator then
+        print("❌ Animator не найден в оригинале!")
         return nil
     end
     
-    -- Ждем idle момент
-    local idleFound = false
-    local searchStartTime = tick()
+    print("✅ Найден Animator в оригинале:", originalAnimator.Parent.Name)
     
-    while not idleFound and (tick() - searchStartTime) < 60 do
-        if isOriginalInStrictIdle(original) then
-            idleFound = true
-            print("🌟 СТРОГИЙ IDLE МОМЕНТ НАЙДЕН! Начинаю запись таймлайна...")
-        else
+    -- Копируем Animator на копию
+    local copyAnimator = nil
+    local copyHumanoid = copy:FindFirstChild("Humanoid")
+    if copyHumanoid then
+        -- Создаем новый Animator для копии
+        copyAnimator = Instance.new("Animator")
+        copyAnimator.Parent = copyHumanoid
+        print("✅ Создан Animator для копии")
+    else
+        print("❌ Humanoid не найден в копии!")
+        return nil
+    end
+    
+    -- Ждем и ищем idle анимацию
+    local idleTrack = nil
+    local searchAttempts = 0
+    local maxSearchAttempts = 100
+    
+    local function findIdleAnimation()
+        searchAttempts = searchAttempts + 1
+        
+        local playingTracks = originalAnimator:GetPlayingAnimationTracks()
+        
+        for _, track in pairs(playingTracks) do
+            local animName = track.Name:lower()
+            local animId = tostring(track.Animation.AnimationId):lower()
+            
+            -- Ищем idle/stand анимацию
+            if animName:find("idle") or animName:find("stand") or 
+               animId:find("idle") or animId:find("stand") then
+                
+                print("🎯 Найдена idle анимация:", track.Name, "ID:", track.Animation.AnimationId)
+                
+                -- Создаем копию анимации для копии
+                local idleAnimation = Instance.new("Animation")
+                idleAnimation.AnimationId = track.Animation.AnimationId
+                
+                -- Загружаем и зацикливаем на копии
+                idleTrack = copyAnimator:LoadAnimation(idleAnimation)
+                idleTrack.Looped = true
+                idleTrack:Play()
+                
+                print("🔄 Idle анимация зациклена на копии навсегда!")
+                return true
+            end
+        end
+        
+        if searchAttempts < maxSearchAttempts then
+            -- Продолжаем поиск
             wait(0.1)
-        end
-    end
-    
-    if not idleFound then
-        print("❌ Idle момент не найден за 60 секунд!")
-        return nil
-    end
-    
-    -- Записываем таймлайн idle анимации (3 секунды, 30 FPS)
-    local timeline = {}
-    local recordDuration = 3 -- секунды
-    local fps = 30
-    local frameInterval = 1 / fps
-    local totalFrames = recordDuration * fps
-    
-    print("📸 Записываю idle таймлайн: " .. totalFrames .. " кадров за " .. recordDuration .. " секунд...")
-    
-    local validFramesRecorded = 0
-    local skippedFrames = 0
-    
-    for frame = 1, totalFrames do
-        -- КРИТИЧНО: Проверяем каждый кадр перед записью
-        local rootPart = original:FindFirstChild("HumanoidRootPart") or original:FindFirstChild("Torso")
-        local humanoid = original:FindFirstChildOfClass("Humanoid")
-        
-        -- Проверяем что кадр действительно idle (без строгой проверки времени)
-        local isValidIdleFrame = true
-        
-        if rootPart then
-            local velocity = rootPart.AssemblyLinearVelocity
-            if velocity.Magnitude > 0.8 then -- Менее строго - позволяем небольшое движение
-                isValidIdleFrame = false
-            end
-        end
-        
-        if humanoid then
-            if humanoid.MoveDirection.Magnitude > 0.2 then -- Менее строго - позволяем небольшое движение
-                isValidIdleFrame = false
-            end
-            
-            -- Проверяем что питомец не заморожен
-            if humanoid.WalkSpeed <= 0 or humanoid.PlatformStand then
-                isValidIdleFrame = false
-            end
-        end
-        
-        if isValidIdleFrame then
-            -- ТОЛЬКО чистые idle кадры добавляем в таймлайн
-            local frameData = {}
-            
-            -- Записываем позы всех Motor6D для этого кадра
-            for _, motor in pairs(originalMotors) do
-                if motor and motor.Parent then
-                    frameData[motor.Name] = {
-                        C0 = motor.C0,
-                        C1 = motor.C1,
-                        Transform = motor.Transform
-                    }
-                end
-            end
-            
-            table.insert(timeline, frameData)
-            validFramesRecorded = validFramesRecorded + 1
+            return findIdleAnimation()
         else
-            -- Пропускаем нечистые кадры
-            skippedFrames = skippedFrames + 1
-            if skippedFrames > 10 then
-                print("⚠️ Слишком много нечистых кадров, останавливаю запись")
-                break
-            end
-        end
-        
-        wait(frameInterval)
-    end
-    
-    print("✅ Записано чистых idle кадров: " .. validFramesRecorded)
-    print("⚠️ Пропущено нечистых кадров: " .. skippedFrames)
-    
-    print("✅ Записан idle таймлайн: " .. #timeline .. " кадров")
-    return timeline
-end
-
--- Функция создания независимой idle анимации из таймлайна
-local function createIndependentIdleFromTimeline(copy, timeline)
-    print("🎭 Создание независимой idle анимации из таймлайна...")
-    
-    if not timeline or #timeline == 0 then
-        print("❌ Нет данных таймлайна!")
-        return nil
-    end
-    
-    local copyMotors = getMotor6Ds(copy)
-    if #copyMotors == 0 then
-        print("❌ Motor6D не найдены в копии!")
-        return nil
-    end
-    
-    print("🔧 Найдено Motor6D в копии:", #copyMotors)
-    print("📹 Таймлайн содержит:", #timeline, "кадров")
-    
-    -- КРИТИЧНО: Отключаем AI у копии
-    for _, obj in pairs(copy:GetDescendants()) do
-        if obj:IsA("Humanoid") then
-            obj.WalkSpeed = 0
-            obj.JumpPower = 0
-            obj.PlatformStand = true
-            print("🚫 Humanoid в копии отключен - никакой ходьбы!")
+            print("❌ Idle анимация не найдена после " .. maxSearchAttempts .. " попыток")
+            return false
         end
     end
     
-    -- Переменные для воспроизведения таймлайна
-    local currentFrame = 1
-    local frameTime = 1 / 30 -- 30 FPS
-    local lastFrameTime = tick()
-    
-    local connection = RunService.Heartbeat:Connect(function()
-        local now = tick()
-        
-        -- Переключаем кадр каждые 1/30 секунды
-        if now - lastFrameTime >= frameTime then
-            lastFrameTime = now
-            
-            -- Получаем данные текущего кадра
-            local frameData = timeline[currentFrame]
-            if frameData then
-                -- Применяем позы к копии с масштабированием
-                for _, motor in pairs(copyMotors) do
-                    if motor and motor.Parent and frameData[motor.Name] then
-                        local pose = frameData[motor.Name]
-                        
-                        -- Применяем с масштабированием
-                        local scaledC0 = CFrame.new(pose.C0.Position * CONFIG.SCALE_FACTOR) * pose.C0.Rotation
-                        local scaledC1 = CFrame.new(pose.C1.Position * CONFIG.SCALE_FACTOR) * pose.C1.Rotation
-                        
-                        motor.C0 = scaledC0
-                        motor.C1 = scaledC1
-                        if pose.Transform then
-                            motor.Transform = pose.Transform
-                        end
-                    end
-                end
-            end
-            
-            -- Переходим к следующему кадру (зацикливание)
-            currentFrame = currentFrame + 1
-            if currentFrame > #timeline then
-                currentFrame = 1 -- Зацикливаем
-            end
+    -- Запускаем поиск idle анимации
+    spawn(function()
+        if findIdleAnimation() then
+            print("✅ Копия теперь навсегда проигрывает idle анимацию!")
+        else
+            print("⚠️ Не удалось найти idle анимацию, копия может быть статичной")
         end
     end)
     
-    print("✅ Независимая idle анимация из таймлайна запущена!")
-    print("🔄 Таймлайн зациклен - копия будет ТОЛЬКО в idle анимации!")
-    print("🚫 Копия НЕ связана с оригиналом - полностью независима!")
-    
-    return connection
-end
-
--- Главная функция создания независимой idle анимации
-local function startTimelineBasedIdleAnimation(original, copy)
-    print("🎬 Запуск создания независимой idle анимации на основе таймлайна...")
-    
-    -- Шаг 1: Записываем таймлайн idle анимации с оригинала
-    local timeline = recordIdleTimeline(original)
-    if not timeline then
-        print("❌ Не удалось записать idle таймлайн!")
-        return nil
-    end
-    
-    -- Шаг 2: Создаем независимую анимацию для копии
-    local connection = createIndependentIdleFromTimeline(copy, timeline)
-    
-    if connection then
-        print("🎉 === УСПЕХ! НЕЗАВИСИМАЯ IDLE АНИМАЦИЯ СОЗДАНА ИЗ ТАЙМЛАЙНА! ===")
-        print("✅ Копия получила свою независимую idle анимацию")
-        print("📹 Анимация создана из записанного таймлайна")
-        print("🔄 Таймлайн зациклен - копия ТОЛЬКО в idle!")
-        print("🚫 Копия полностью независима от оригинала")
-        
-        -- Автоматическая остановка через 10 минут
-        spawn(function()
-            wait(600)
-            connection:Disconnect()
-            print("⏹️ Независимая idle анимация остановлена через 10 минут")
-        end)
-    end
-    
-    return connection
+    return copyAnimator
 end
 
 -- === ОСНОВНЫЕ ФУНКЦИИ ===
@@ -774,20 +513,19 @@ local function main()
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    -- Шаг 5: Запуск независимой idle анимации
-    print("\n🎭 === ЗАПУСК НЕЗАВИСИМОЙ IDLE АНИМАЦИИ ===")
+    -- Шаг 5: Запуск idle анимации на копии
+    print("\n🎭 === ЗАПУСК IDLE АНИМАЦИИ ===")
     
-    local connection = startTimelineBasedIdleAnimation(petModel, petCopy)
+    local copyAnimator = startIdleAnimationLoop(petModel, petCopy)
     
-    if connection then
+    if copyAnimator then
         print("🎉 === УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
-        print("✅ Независимая idle анимация запущена")
-        print("🚫 Копия НЕ копирует движения оригинала - только idle!")
-        print("🔄 Копия будет ТОЛЬКО в idle - никакой ходьбы!")
+        print("✅ Idle анимация запущена")
+        print("💡 Копия навсегда проигрывает только idle анимацию!")
     else
         print("⚠️ Масштабирование успешно, но idle анимация не запустилась")
-        print("💡 Возможно проблема с idle позами или Motor6D")
+        print("💡 Возможно проблема с Animator или idle анимацией")
     end
 end
 
@@ -826,14 +564,14 @@ local function createGUI()
     button.Parent = frame
     
     button.MouseButton1Click:Connect(function()
-        button.Text = "⏳ Ищу idle момент..."
+        button.Text = "⏳ Создаю с анимацией..."
         button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
         
         spawn(function()
             main()
             
             wait(3)
-            button.Text = "🎭 PetScaler v2.6 - Независимая IDLE"
+            button.Text = "🔥 PetScaler v2.0 + Анимация"
             button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
         end)
     end)
@@ -850,17 +588,15 @@ local function createGUI()
         end
     end)
     
-    print("🖥️ PetScaler v2.6 GUI создан!")
+    print("🖥️ PetScaler v2.0 GUI создан!")
 end
 
 -- Запуск
 createGUI()
 print("=" .. string.rep("=", 60))
-print("💡 PETSCALER v2.6 - НЕЗАВИСИМАЯ IDLE АНИМАЦИЯ:")
+print("💡 PETSCALER v2.0 - ВСЕ В ОДНОМ:")
 print("   1. Создает масштабированную копию")
-print("   2. Автоматически ищет idle момент оригинала")
-print("   3. Записывает idle позы и создает независимую анимацию")
-print("   4. Копия ТОЛЬКО в idle - никакой ходьбы!")
-print("   5. НЕ копирует движения оригинала")
+print("   2. Настраивает правильные Anchored состояния")
+print("   3. Автоматически запускает живое копирование анимации")
 print("🎯 Нажмите зеленую кнопку для запуска!")
 print("=" .. string.rep("=", 60))
