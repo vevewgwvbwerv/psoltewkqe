@@ -12,12 +12,11 @@ local player = Players.LocalPlayer
 print("🔥 === PET SCALER v2.0 - С АНИМАЦИЕЙ ===")
 print("=" .. string.rep("=", 60))
 
--- Конфигурация
+-- Конфигурация (как в оригинальном PetScaler)
 local CONFIG = {
     SEARCH_RADIUS = 100,
-    START_SCALE = 0.3,   -- Начальный размер (маленький)
-    FINAL_SCALE = 1.0,   -- Конечный размер (нормальный)
-    TWEEN_TIME = 3.0,    -- Время анимации роста (секунды)
+    SCALE_FACTOR = 3.0,
+    TWEEN_TIME = 3.0,
     EASING_STYLE = Enum.EasingStyle.Quad,
     EASING_DIRECTION = Enum.EasingDirection.Out
 }
@@ -38,7 +37,7 @@ end
 local playerPos = hrp.Position
 print("📍 Позиция игрока:", playerPos)
 print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
-print("🌱 Рост от " .. CONFIG.START_SCALE .. "x до " .. CONFIG.FINAL_SCALE .. "x")
+print("📏 Коэффициент увеличения:", CONFIG.SCALE_FACTOR .. "x")
 print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
 print()
 
@@ -221,138 +220,38 @@ local function smartAnchoredManagement(copyParts)
     return rootPart
 end
 
--- Умный контроллер поведения: 10-15 сек idle, потом короткая ходьба
-local function createSmartBehaviorController(petModel)
-    print("🧠 Умный контроллер поведения: 10-15 сек idle, потом короткая ходьба")
-    
-    local rootPart = petModel:FindFirstChild("RootPart") or 
-                     petModel:FindFirstChild("Torso") or 
-                     petModel:FindFirstChild("HumanoidRootPart")
-    
-    if not rootPart then
-        print("  ⚠️ Корневая часть не найдена")
-        return nil
+-- Функция копирования состояния Motor6D с масштабированием
+local function copyMotorState(originalMotor, copyMotor, scaleFactor)
+    if not originalMotor or not copyMotor then
+        return false
     end
     
-    -- Конфигурация циклов
-    local IDLE_TIME_MIN = 10 -- Минимальное время idle (сек)
-    local IDLE_TIME_MAX = 15 -- Максимальное время idle (сек)
-    local WALK_TIME_MAX = 2  -- Максимальное время ходьбы (сек)
+    -- ИСПРАВЛЕНО: Масштабируем позиционные компоненты Motor6D
+    -- Transform содержит текущее смещение - масштабируем его
+    local originalTransform = originalMotor.Transform
+    local scaledTransform = CFrame.new(originalTransform.Position * scaleFactor) * (originalTransform - originalTransform.Position)
+    copyMotor.Transform = scaledTransform
     
-    -- Состояние контроллера
-    local currentState = "IDLE" -- "IDLE" или "WALK"
-    local stateStartTime = tick()
-    local nextStateChangeTime = tick() + math.random(IDLE_TIME_MIN, IDLE_TIME_MAX)
+    -- C0 и C1 - базовые смещения соединения - тоже масштабируем
+    local originalC0 = originalMotor.C0
+    local scaledC0 = CFrame.new(originalC0.Position * scaleFactor) * (originalC0 - originalC0.Position)
+    copyMotor.C0 = scaledC0
     
-    -- Сохраняем базовую позицию
-    local basePosition = rootPart.Position
+    local originalC1 = originalMotor.C1
+    local scaledC1 = CFrame.new(originalC1.Position * scaleFactor) * (originalC1 - originalC1.Position)
+    copyMotor.C1 = scaledC1
     
-    print("  📍 Базовая позиция:", basePosition)
-    print("  ⏰ Начинаю с IDLE режима на", math.floor(nextStateChangeTime - tick()), "сек")
-    
-    -- Находим Humanoid для управления поведением
-    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
-    
-    -- Функция переключения в IDLE режим
-    local function switchToIdle()
-        currentState = "IDLE"
-        stateStartTime = tick()
-        nextStateChangeTime = tick() + math.random(IDLE_TIME_MIN, IDLE_TIME_MAX)
-        
-        print("  😴 Переключаю в IDLE на", math.floor(nextStateChangeTime - tick()), "сек")
-        
-        -- Заякориваем только корень для анимации
-        rootPart.Anchored = true
-        
-        -- Останавливаем движение через Humanoid
-        if humanoid then
-            humanoid.WalkSpeed = 0
-            humanoid:MoveTo(basePosition)
-        end
-        
-        -- Возвращаем к базовой позиции
-        rootPart.CFrame = CFrame.new(basePosition, basePosition + Vector3.new(0, 0, 1))
-    end
-    
-    -- Функция переключения в WALK режим
-    local function switchToWalk()
-        currentState = "WALK"
-        stateStartTime = tick()
-        nextStateChangeTime = tick() + math.random(1, WALK_TIME_MAX)
-        
-        print("  🚶 Разрешаю ходьбу на", math.floor(nextStateChangeTime - tick()), "сек")
-        
-        -- Освобождаем корень для движения
-        rootPart.Anchored = false
-        
-        -- Разрешаем медленное движение
-        if humanoid then
-            humanoid.WalkSpeed = 4 -- Медленная ходьба
-        end
-    end
-    
-    -- Начинаем с IDLE
-    switchToIdle()
-    
-    -- Основной цикл контроллера
-    local connection = RunService.Heartbeat:Connect(function()
-        if not petModel.Parent or not rootPart.Parent then
-            connection:Disconnect()
-            return
-        end
-        
-        local currentTime = tick()
-        
-        -- Проверяем нужно ли переключить состояние
-        if currentTime >= nextStateChangeTime then
-            if currentState == "IDLE" then
-                switchToWalk()
-            else
-                switchToIdle()
-            end
-        end
-        
-        -- В IDLE режиме принудительно удерживаем позицию
-        if currentState == "IDLE" then
-            local distanceFromBase = (rootPart.Position - basePosition).Magnitude
-            if distanceFromBase > 3 then -- Если ушел далеко от базы
-                rootPart.CFrame = CFrame.new(basePosition, basePosition + Vector3.new(0, 0, 1))
-                if humanoid then
-                    humanoid:MoveTo(basePosition)
-                end
-            end
-        end
-        
-        -- В WALK режиме ограничиваем радиус ходьбы
-        if currentState == "WALK" then
-            local distanceFromBase = (rootPart.Position - basePosition).Magnitude
-            if distanceFromBase > 8 then -- Максимальный радиус ходьбы
-                if humanoid then
-                    humanoid:MoveTo(basePosition) -- Возвращаем к базе
-                end
-            end
-        end
-    end)
-    
-    print("  ✅ Умный контроллер активен - циклы IDLE/WALK запущены")
-    return connection
-end
-
--- ВОЗВРАТ К ОСНОВАМ: Простое копирование без фильтров!
-local function copyMotorStateNoFilter(originalMotor, copyMotor, scaleFactor, original, copy)
-    -- ПРОСТО копируем ВСЕ анимации без ограничений
-    return copyMotorState(originalMotor, copyMotor, scaleFactor)
+    return true
 end
 
 -- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
 
--- Функция РОСТА модели (от маленького до нормального размера)
-local function growModelFromSmall(model, startScale, finalScale, tweenTime)
-    print("🌱 Начинаю РОСТ модели:", model.Name)
-    print("📈 От", startScale .. "x", "до", finalScale .. "x", "за", tweenTime, "сек")
+-- Функция плавного масштабирования модели
+local function scaleModelSmoothly(model, scaleFactor, tweenTime)
+    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
     
     local parts = getAllParts(model)
-    print("🧩 Найдено частей для роста:", #parts)
+    print("🧩 Найдено частей для масштабирования:", #parts)
     
     if #parts == 0 then
         print("❌ Нет частей для масштабирования!")
@@ -394,29 +293,7 @@ local function growModelFromSmall(model, startScale, finalScale, tweenTime)
         0 -- Задержка
     )
     
-    -- НОВАЯ ЛОГИКА РОСТА: сначала уменьшаем мгновенно, потом плавно увеличиваем
-    print("🔄 Шаг 1: Мгновенно уменьшаю все части до " .. startScale .. "x")
-    
-    -- Сначала МГНОВЕННО уменьшаем все части до маленького размера
-    for _, part in ipairs(parts) do
-        local originalSize = originalData[part].size
-        local originalCFrame = originalData[part].cframe
-        
-        -- Уменьшаем до стартового размера МГНОВЕННО
-        local smallSize = originalSize * startScale
-        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
-        local smallRelativeCFrame = CFrame.new(relativeCFrame.Position * startScale) * (relativeCFrame - relativeCFrame.Position)
-        local smallCFrame = centerCFrame * smallRelativeCFrame
-        
-        -- Устанавливаем маленький размер сразу
-        part.Size = smallSize
-        part.CFrame = smallCFrame
-    end
-    
-    print("✅ Все части уменьшены до " .. startScale .. "x")
-    print("🔄 Шаг 2: Плавно увеличиваю до " .. finalScale .. "x за " .. tweenTime .. " сек")
-    
-    -- Теперь ПЛАВНО увеличиваем до финального размера
+    -- Масштабирование через CFrame (ОРИГИНАЛЬНАЯ ЛОГИКА)
     local tweens = {}
     local completedTweens = 0
     
@@ -424,24 +301,26 @@ local function growModelFromSmall(model, startScale, finalScale, tweenTime)
         local originalSize = originalData[part].size
         local originalCFrame = originalData[part].cframe
         
-        -- Вычисляем финальный размер
-        local finalSize = originalSize * finalScale
-        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
-        local finalRelativeCFrame = CFrame.new(relativeCFrame.Position * finalScale) * (relativeCFrame - relativeCFrame.Position)
-        local finalCFrame = centerCFrame * finalRelativeCFrame
+        -- Вычисляем новый размер
+        local newSize = originalSize * scaleFactor
         
-        -- Создаем твин для роста от маленького до финального размера
+        -- Вычисляем новый CFrame относительно центра
+        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
+        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
+        local newCFrame = centerCFrame * scaledRelativeCFrame
+        
+        -- Создаем твин для размера и CFrame
         local tween = TweenService:Create(part, tweenInfo, {
-            Size = finalSize,
-            CFrame = finalCFrame
+            Size = newSize,
+            CFrame = newCFrame
         })
         
         -- Обработчик завершения твина
         tween.Completed:Connect(function()
             completedTweens = completedTweens + 1
             if completedTweens == #parts then
-                print("✅ РОСТ завершен!")
-                print("🎉 Питомец вырос от " .. startScale .. "x до " .. finalScale .. "x!")
+                print("✅ Масштабирование завершено!")
+                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
             end
         end)
         
@@ -449,7 +328,7 @@ local function growModelFromSmall(model, startScale, finalScale, tweenTime)
         tween:Play()
     end
     
-    print("🚀 Запущено " .. #tweens .. " твинов для плавного роста")
+    print("🚀 Запущено " .. #tweens .. " твинов для плавного масштабирования")
     return true
 end
 
@@ -471,6 +350,28 @@ local function startLiveMotorCopying(original, copy)
     local originalMap = createMotorMap(originalMotors)
     local copyMap = createMotorMap(copyMotors)
     
+    -- ПЕРЕМЕННЫЕ ДЛЯ ЗАПИСИ И ЗАЦИКЛИВАНИЯ IDLE АНИМАЦИИ
+    local originalRootPart = original:FindFirstChild("HumanoidRootPart") or original:FindFirstChild("Torso")
+    local lastPosition = nil
+    local idleFrameCount = 0
+    local requiredIdleFrames = 30 -- 1 секунда неподвижности для начала записи
+    
+    -- ПЕРЕМЕННЫЕ ДЛЯ ЗАПИСИ IDLE АНИМАЦИИ
+    local isRecording = false
+    local isLooping = false
+    local recordedIdleFrames = {}
+    local recordingFrameCount = 0
+    local maxRecordingFrames = 90 -- 3 секунды записи idle анимации
+    local loopFrameIndex = 1
+    
+    if originalRootPart then
+        lastPosition = originalRootPart.Position
+        print("✅ Найден rootPart для отслеживания позиции:", originalRootPart.Name)
+        print("💡 Будет записана idle анимация (" .. maxRecordingFrames .. " кадров) и зациклена навсегда!")
+    else
+        print("⚠️ rootPart не найден - будем копировать всегда")
+    end
+    
     local connection = nil
     local isRunning = true
     local frameCount = 0
@@ -490,17 +391,101 @@ local function startLiveMotorCopying(original, copy)
             return
         end
         
-        -- Копируем состояния Motor6D с масштабированием И фильтрацией
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                copyMotorStateNoFilter(originalMotor, copyMotor, CONFIG.FINAL_SCALE, original, copy)
+        -- ЛОГИКА ЗАПИСИ И ЗАЦИКЛИВАНИЯ IDLE АНИМАЦИИ
+        local positionChange = 0
+        local currentlyIdle = false
+        
+        -- Определяем состояние idle по позиции
+        if originalRootPart and lastPosition then
+            local currentPosition = originalRootPart.Position
+            positionChange = (currentPosition - lastPosition).Magnitude
+            
+            if positionChange < 0.1 then
+                idleFrameCount = idleFrameCount + 1
+            else
+                idleFrameCount = 0
+            end
+            
+            lastPosition = currentPosition
+            currentlyIdle = idleFrameCount >= requiredIdleFrames
+        end
+        
+        if not isRecording and not isLooping and currentlyIdle then
+            -- НАЧИНАЕМ ЗАПИСЬ IDLE АНИМАЦИИ
+            print("🎬 Начинаю запись idle анимации (" .. maxRecordingFrames .. " кадров)...")
+            isRecording = true
+            recordingFrameCount = 0
+            recordedIdleFrames = {}
+            
+        elseif isRecording then
+            if currentlyIdle and recordingFrameCount < maxRecordingFrames then
+                -- ЗАПИСЫВАЕМ КАДР IDLE АНИМАЦИИ
+                recordingFrameCount = recordingFrameCount + 1
+                local frame = {}
+                
+                for key, originalMotor in pairs(originalMap) do
+                    if originalMotor.Parent then
+                        frame[key] = {
+                            C0 = originalMotor.C0,
+                            C1 = originalMotor.C1
+                        }
+                    end
+                end
+                
+                table.insert(recordedIdleFrames, frame)
+                
+                if recordingFrameCount >= maxRecordingFrames then
+                    print("✅ Запись idle анимации завершена! Записано: " .. #recordedIdleFrames .. " кадров")
+                    print("🔄 Начинаю бесконечное зацикливание idle анимации!")
+                    isRecording = false
+                    isLooping = true
+                    loopFrameIndex = 1
+                end
+                
+            elseif not currentlyIdle then
+                -- Питомец начал двигаться - прерываем запись
+                print("⚠️ Запись прервана - питомец начал двигаться")
+                isRecording = false
+                recordedIdleFrames = {}
+            end
+            
+        elseif isLooping and #recordedIdleFrames > 0 then
+            -- БЕСКОНЕЧНОЕ ЗАЦИКЛИВАНИЕ ЗАПИСАННОЙ IDLE АНИМАЦИИ
+            local currentFrame = recordedIdleFrames[loopFrameIndex]
+            
+            for key, motorData in pairs(currentFrame) do
+                local copyMotor = copyMap[key]
+                if copyMotor and copyMotor.Parent then
+                    -- Масштабируем и применяем записанные позы
+                    local originalC0 = motorData.C0
+                    local originalC1 = motorData.C1
+                    
+                    local scaledC0 = CFrame.new(originalC0.Position * CONFIG.SCALE_FACTOR) * (originalC0 - originalC0.Position)
+                    local scaledC1 = CFrame.new(originalC1.Position * CONFIG.SCALE_FACTOR) * (originalC1 - originalC1.Position)
+                    
+                    copyMotor.C0 = scaledC0
+                    copyMotor.C1 = scaledC1
+                end
+            end
+            
+            -- Переходим к следующему кадру
+            loopFrameIndex = loopFrameIndex + 1
+            if loopFrameIndex > #recordedIdleFrames then
+                loopFrameIndex = 1 -- Зацикливаем
             end
         end
         
         -- Статус каждые 3 секунды
         if frameCount % 180 == 0 then
-            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
+            if isRecording then
+                print("📊 Запись idle анимации (кадр " .. frameCount .. ") - 🎬 ЗАПИСЬ (" .. recordingFrameCount .. "/" .. maxRecordingFrames .. ")")
+            elseif isLooping then
+                print("📊 Зацикливание idle анимации (кадр " .. frameCount .. ") - 🔄 ЛУП (" .. loopFrameIndex .. "/" .. #recordedIdleFrames .. ")")
+            elseif currentlyIdle then
+                print("📊 Ожидание начала записи (кадр " .. frameCount .. ") - IDLE ✅ (idle: " .. idleFrameCount .. "/" .. requiredIdleFrames .. ")")
+            else
+                print("📊 Ожидание idle (кадр " .. frameCount .. ") - WALKING ❌ (pos change: " .. string.format("%.3f", positionChange) .. ")")
+            end
         end
     end)
     
@@ -575,7 +560,7 @@ local function main()
     end
     
     wait(0.5)
-    local scaleSuccess = growModelFromSmall(petCopy, CONFIG.START_SCALE, CONFIG.FINAL_SCALE, CONFIG.TWEEN_TIME)
+    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
     
     if not scaleSuccess then
         print("❌ Масштабирование не удалось!")
@@ -594,17 +579,11 @@ local function main()
     
     local connection = startLiveMotorCopying(petModel, petCopy)
     
-    -- НОВЫЙ ПОДХОД: Оригинал свободен, копия фильтрует анимации
-    print("\n🎆 === НОВЫЙ ПОДХОД: СВОБОДНЫЙ ОРИГИНАЛ ===")
-    print("💡 Оригинал свободно движется, копия фильтрует только быструю ходьбу!")
-    print("✨ Копия будет копировать: idle, медленные движения, нО НЕ быструю ходьбу")
-    
     if connection then
-        print("🎉 === ПОЛНЫЙ УСПЕХ! ===")
+        print("🎉 === УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
         print("✅ Анимация запущена")
-        print("✅ Движение заблокировано")
-        print("💡 Питомец стоит на месте с анимацией стояния!")
+        print("💡 Копия должна повторять движения оригинала!")
     else
         print("⚠️ Масштабирование успешно, но анимация не запустилась")
         print("💡 Возможно проблема с Motor6D соединениями")
