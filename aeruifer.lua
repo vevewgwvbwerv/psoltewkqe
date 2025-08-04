@@ -76,13 +76,53 @@ local function hasPetVisuals(model)
     return meshCount > 0, petMeshes
 end
 
--- Функция глубокого копирования модели (ОРИГИНАЛЬНАЯ ВЕРСИЯ)
+-- Функция исправления Attachment связей после клонирования
+local function fixAttachmentParenting(model)
+    print("🔧 Исправляю Attachment связи...")
+    
+    local attachments = {}
+    local fixedCount = 0
+    
+    -- Собираем все Attachments
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Attachment") then
+            table.insert(attachments, obj)
+        end
+    end
+    
+    -- Исправляем родительские связи
+    for _, attachment in pairs(attachments) do
+        if attachment.Parent and not attachment.Parent:IsA("BasePart") then
+            -- Ищем ближайший BasePart в иерархии
+            local parent = attachment.Parent
+            while parent and not parent:IsA("BasePart") do
+                parent = parent.Parent
+            end
+            
+            if parent and parent:IsA("BasePart") then
+                attachment.Parent = parent
+                fixedCount = fixedCount + 1
+            else
+                -- Если не нашли BasePart, удаляем проблемный Attachment
+                print("⚠️ Удаляю проблемный Attachment:", attachment.Name)
+                attachment:Destroy()
+            end
+        end
+    end
+    
+    print("✅ Исправлено Attachment связей:", fixedCount)
+end
+
+-- Функция глубокого копирования модели (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 local function deepCopyModel(originalModel)
     print("📋 Создаю глубокую копию модели:", originalModel.Name)
     
     local copy = originalModel:Clone()
     copy.Name = originalModel.Name .. "_SCALED_COPY"
     copy.Parent = Workspace
+    
+    -- ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ СРАЗУ ПОСЛЕ КЛОНИРОВАНИЯ
+    fixAttachmentParenting(copy)
     
     -- Позиционирование копии (оригинальная логика)
     if copy.PrimaryPart and originalModel.PrimaryPart then
@@ -103,12 +143,21 @@ local function deepCopyModel(originalModel)
         if raycastResult then
             local groundY = raycastResult.Position.Y
             local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
-            
-            local newCFrame = CFrame.new(finalPosition, finalPosition + originalCFrame.LookVector)
+            -- ИСПРАВЛЕНО: Сохраняем правильную ориентацию (стоячее положение)
+            local upVector = Vector3.new(0, 1, 0) -- Вверх
+            local lookVector = originalCFrame.LookVector
+            -- Обнуляем Y-компонент чтобы питомец не наклонялся
+            lookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+            local newCFrame = CFrame.lookAt(finalPosition, finalPosition + lookVector, upVector)
             copy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на земле рядом с оригиналом")
+            print("📍 Копия размещена на земле в стоячем положении")
         else
-            copy:SetPrimaryPartCFrame(originalCFrame + offset)
+            -- ИСПРАВЛЕНО: Правильная ориентация без земли
+            local newPosition = originalCFrame.Position + offset
+            local upVector = Vector3.new(0, 1, 0)
+            local lookVector = Vector3.new(originalCFrame.LookVector.X, 0, originalCFrame.LookVector.Z).Unit
+            local newCFrame = CFrame.lookAt(newPosition, newPosition + lookVector, upVector)
+            copy:SetPrimaryPartCFrame(newCFrame)
             print("📍 Копия размещена на уровне оригинала в стоячем положении")
         end
     elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
@@ -323,167 +372,286 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
     return true
 end
 
--- === ФУНКЦИЯ ЗАПУСКА ЖИВОГО КОПИРОВАНИЯ ===
+-- === АГРЕССИВНОЕ ФОРСИРОВАНИЕ IDLE АНИМАЦИИ ===
+-- Интегрированная логика из Motor6DIdleForcer.lua
 
-local function startLiveMotorCopying(original, copy)
-    print("🔄 Запуск живого копирования Motor6D...")
+-- Функция записи чистых idle поз
+local function recordPureIdlePoses(petModel)
+    print("\n🎬 === ЗАПИСЬ ЧИСТЫХ IDLE ПОЗ ===")
     
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
+    local motor6Ds = {}
+    local idlePoses = {}
     
-    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
+    -- Находим все Motor6D
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motor6Ds, obj)
+        end
+    end
     
-    if #originalMotors == 0 or #copyMotors == 0 then
-        print("❌ Недостаточно Motor6D для копирования")
+    print("🔧 Найдено Motor6D:", #motor6Ds)
+    
+    if #motor6Ds == 0 then
+        print("❌ Motor6D не найдены!")
         return nil
     end
     
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
+    -- Находим RootPart и якорим для записи
+    local rootPart = petModel:FindFirstChild("RootPart") or petModel:FindFirstChild("HumanoidRootPart")
+    local originalPosition = nil
     
-    -- ПЕРЕМЕННЫЕ ДЛЯ ЗАПИСИ И ЗАЦИКЛИВАНИЯ IDLE АНИМАЦИИ
-    local originalRootPart = original:FindFirstChild("HumanoidRootPart") or original:FindFirstChild("Torso")
-    local lastPosition = nil
-    local idleFrameCount = 0
-    local requiredIdleFrames = 30 -- 1 секунда неподвижности для начала записи
-    
-    -- ПЕРЕМЕННЫЕ ДЛЯ ЗАПИСИ IDLE АНИМАЦИИ
-    local isRecording = false
-    local isLooping = false
-    local recordedIdleFrames = {}
-    local recordingFrameCount = 0
-    local maxRecordingFrames = 90 -- 3 секунды записи idle анимации
-    local loopFrameIndex = 1
-    
-    if originalRootPart then
-        lastPosition = originalRootPart.Position
-        print("✅ Найден rootPart для отслеживания позиции:", originalRootPart.Name)
-        print("💡 Будет записана idle анимация (" .. maxRecordingFrames .. " кадров) и зациклена навсегда!")
-    else
-        print("⚠️ rootPart не найден - будем копировать всегда")
+    if rootPart then
+        originalPosition = rootPart.Position
+        rootPart.Anchored = true
+        print("⚓ RootPart заякорен для записи")
     end
     
-    local connection = nil
-    local isRunning = true
-    local frameCount = 0
+    -- АГРЕССИВНО уничтожаем ВСЕ walking анимации
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Animator") then
+            local tracks = obj:GetPlayingAnimationTracks()
+            for _, track in pairs(tracks) do
+                local name = track.Animation.Name:lower()
+                if name:find("walk") or name:find("run") or name:find("move") then
+                    track:Stop()
+                    print("💀 Остановлена walking анимация:", track.Animation.Name)
+                end
+            end
+        end
+    end
     
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRunning then
-            connection:Disconnect()
-            return
-        end
+    -- ОЖИДАНИЕ ПОЛНОГО ПЕРЕХОДА К IDLE
+    print("⏳ Ожидаю 3 секунды для полного перехода к idle...")
+    wait(3) -- Даем время питомцу полностью перейти в idle состояние
+    
+    -- Настройки записи (УВЕЛИЧЕНО ДЛЯ ПОЛНОЙ IDLE АНИМАЦИИ)
+    local recordingTime = 8 -- 8 секунд записи для полного idle цикла
+    local frameRate = 60
+    local frameInterval = 1 / frameRate
+    local totalFrames = recordingTime * frameRate
+    
+    print("📹 Записываю ПОЛНУЮ idle анимацию:", recordingTime, "секунд (", totalFrames, "кадров)")
+    
+    local currentFrame = 0
+    local startTime = tick()
+    
+    local recordConnection
+    recordConnection = RunService.Heartbeat:Connect(function()
+        local elapsed = tick() - startTime
         
-        frameCount = frameCount + 1
-        
-        -- Проверяем существование моделей
-        if not original.Parent or not copy.Parent then
-            print("⚠️ Модель удалена, останавливаю копирование")
-            isRunning = false
-            return
-        end
-        
-        -- ЛОГИКА ЗАПИСИ И ЗАЦИКЛИВАНИЯ IDLE АНИМАЦИИ
-        local positionChange = 0
-        local currentlyIdle = false
-        
-        -- Определяем состояние idle по позиции
-        if originalRootPart and lastPosition then
-            local currentPosition = originalRootPart.Position
-            positionChange = (currentPosition - lastPosition).Magnitude
+        if elapsed >= frameInterval * currentFrame then
+            currentFrame = currentFrame + 1
             
-            if positionChange < 0.1 then
-                idleFrameCount = idleFrameCount + 1
-            else
-                idleFrameCount = 0
+            -- Записываем текущие позы Motor6D
+            local framePoses = {}
+            for _, motor in pairs(motor6Ds) do
+                framePoses[motor.Name] = {
+                    C0 = motor.C0,
+                    C1 = motor.C1,
+                    Transform = motor.Transform
+                }
             end
             
-            lastPosition = currentPosition
-            currentlyIdle = idleFrameCount >= requiredIdleFrames
-        end
-        
-        if not isRecording and not isLooping and currentlyIdle then
-            -- НАЧИНАЕМ ЗАПИСЬ IDLE АНИМАЦИИ
-            print("🎬 Начинаю запись idle анимации (" .. maxRecordingFrames .. " кадров)...")
-            isRecording = true
-            recordingFrameCount = 0
-            recordedIdleFrames = {}
+            table.insert(idlePoses, framePoses)
             
-        elseif isRecording then
-            if currentlyIdle and recordingFrameCount < maxRecordingFrames then
-                -- ЗАПИСЫВАЕМ КАДР IDLE АНИМАЦИИ
-                recordingFrameCount = recordingFrameCount + 1
-                local frame = {}
-                
-                for key, originalMotor in pairs(originalMap) do
-                    if originalMotor.Parent then
-                        frame[key] = {
-                            C0 = originalMotor.C0,
-                            C1 = originalMotor.C1
-                        }
-                    end
-                end
-                
-                table.insert(recordedIdleFrames, frame)
-                
-                if recordingFrameCount >= maxRecordingFrames then
-                    print("✅ Запись idle анимации завершена! Записано: " .. #recordedIdleFrames .. " кадров")
-                    print("🔄 Начинаю бесконечное зацикливание idle анимации!")
-                    isRecording = false
-                    isLooping = true
-                    loopFrameIndex = 1
-                end
-                
-            elseif not currentlyIdle then
-                -- Питомец начал двигаться - прерываем запись
-                print("⚠️ Запись прервана - питомец начал двигаться")
-                isRecording = false
-                recordedIdleFrames = {}
-            end
-            
-        elseif isLooping and #recordedIdleFrames > 0 then
-            -- БЕСКОНЕЧНОЕ ЗАЦИКЛИВАНИЕ ЗАПИСАННОЙ IDLE АНИМАЦИИ
-            local currentFrame = recordedIdleFrames[loopFrameIndex]
-            
-            for key, motorData in pairs(currentFrame) do
-                local copyMotor = copyMap[key]
-                if copyMotor and copyMotor.Parent then
-                    -- Масштабируем и применяем записанные позы
-                    local originalC0 = motorData.C0
-                    local originalC1 = motorData.C1
-                    
-                    local scaledC0 = CFrame.new(originalC0.Position * CONFIG.SCALE_FACTOR) * (originalC0 - originalC0.Position)
-                    local scaledC1 = CFrame.new(originalC1.Position * CONFIG.SCALE_FACTOR) * (originalC1 - originalC1.Position)
-                    
-                    copyMotor.C0 = scaledC0
-                    copyMotor.C1 = scaledC1
-                end
-            end
-            
-            -- Переходим к следующему кадру
-            loopFrameIndex = loopFrameIndex + 1
-            if loopFrameIndex > #recordedIdleFrames then
-                loopFrameIndex = 1 -- Зацикливаем
-            end
-        end
-        
-        -- Статус каждые 3 секунды
-        if frameCount % 180 == 0 then
-            if isRecording then
-                print("📊 Запись idle анимации (кадр " .. frameCount .. ") - 🎬 ЗАПИСЬ (" .. recordingFrameCount .. "/" .. maxRecordingFrames .. ")")
-            elseif isLooping then
-                print("📊 Зацикливание idle анимации (кадр " .. frameCount .. ") - 🔄 ЛУП (" .. loopFrameIndex .. "/" .. #recordedIdleFrames .. ")")
-            elseif currentlyIdle then
-                print("📊 Ожидание начала записи (кадр " .. frameCount .. ") - IDLE ✅ (idle: " .. idleFrameCount .. "/" .. requiredIdleFrames .. ")")
-            else
-                print("📊 Ожидание idle (кадр " .. frameCount .. ") - WALKING ❌ (pos change: " .. string.format("%.3f", positionChange) .. ")")
+            if currentFrame >= totalFrames then
+                recordConnection:Disconnect()
+                print("📹 Запись завершена! Записано кадров:", #idlePoses)
             end
         end
     end)
     
-    print("✅ Живое копирование Motor6D запущено!")
-    print("💡 Копия будет повторять движения оригинала")
+    -- Ждем завершения записи
+    while #idlePoses < totalFrames and recordConnection.Connected do
+        wait(0.1)
+    end
     
-    return connection
+    return idlePoses, motor6Ds, originalPosition
+end
+
+-- Функция агрессивного форсирования только idle
+local function forceOnlyIdleAnimation(idlePoses, motor6Ds, petModel, originalPosition)
+    print("\n🔥 === АГРЕССИВНОЕ ФОРСИРОВАНИЕ ТОЛЬКО IDLE ===")
+    
+    if not idlePoses or #idlePoses == 0 then
+        print("❌ Нет записанных idle поз!")
+        return nil
+    end
+    
+    local humanoid = petModel:FindFirstChild("Humanoid")
+    local rootPart = petModel:FindFirstChild("RootPart") or petModel:FindFirstChild("HumanoidRootPart")
+    
+    local currentFrame = 1
+    local frameRate = 60
+    local frameInterval = 1 / frameRate
+    local lastFrameTime = tick()
+    
+    local forceConnection
+    forceConnection = RunService.Heartbeat:Connect(function()
+        local now = tick()
+        
+        -- АГРЕССИВНО блокируем движение
+        if humanoid then
+            humanoid.WalkSpeed = 0
+            humanoid.JumpPower = 0
+            humanoid.PlatformStand = true
+        end
+        
+        -- АГРЕССИВНО телепортируем обратно при движении
+        if rootPart and originalPosition then
+            if rootPart.Position ~= originalPosition then
+                rootPart.Position = originalPosition
+                print("🔄 Питомец телепортирован обратно")
+            end
+        end
+        
+        -- АГРЕССИВНО уничтожаем walking анимации каждый кадр
+        for _, obj in pairs(petModel:GetDescendants()) do
+            if obj:IsA("Animator") then
+                local tracks = obj:GetPlayingAnimationTracks()
+                for _, track in pairs(tracks) do
+                    local name = track.Animation.Name:lower()
+                    if name:find("walk") or name:find("run") or name:find("move") then
+                        track:Stop()
+                        print("💀 Заблокирована walking анимация:", track.Animation.Name)
+                    end
+                end
+            end
+        end
+        
+        -- Применяем idle позы
+        if now - lastFrameTime >= frameInterval then
+            lastFrameTime = now
+            
+            local framePoses = idlePoses[currentFrame]
+            
+            if framePoses then
+                -- Применяем idle позы ко всем Motor6D
+                for _, motor in pairs(motor6Ds) do
+                    local pose = framePoses[motor.Name]
+                    if pose then
+                        pcall(function()
+                            motor.C0 = pose.C0
+                            motor.C1 = pose.C1
+                            motor.Transform = pose.Transform
+                        end)
+                    end
+                end
+            end
+            
+            -- Переходим к следующему кадру с ПЛАВНЫМ зацикливанием
+            currentFrame = currentFrame + 1
+            if currentFrame > #idlePoses then
+                currentFrame = 1  -- Зацикливаем idle
+                print("🔄 Полный idle цикл завершен, начинаю заново естественно")
+            end
+        end
+    end)
+    
+    print("✅ Агрессивное форсирование запущено!")
+    print("🔥 Питомец заблокирован в ТОЛЬКО idle анимации!")
+    print("💀 ВСЕ walking анимации уничтожаются каждый кадр!")
+    
+    return forceConnection
+end
+
+-- Функция запуска LIVE COPYING с умной фильтрацией idle
+local function startSmartIdleLiveCopying(originalModel, copyModel)
+    print("\n🎯 === ЗАПУСК LIVE COPYING С IDLE ФИЛЬТРОМ ===")
+    
+    -- Находим Motor6D в обеих моделях
+    local originalMotors = {}
+    local copyMotors = {}
+    
+    for _, obj in pairs(originalModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(originalMotors, obj)
+        end
+    end
+    
+    for _, obj in pairs(copyModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(copyMotors, obj)
+        end
+    end
+    
+    print("🔧 Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
+    
+    if #originalMotors == 0 or #copyMotors == 0 then
+        print("❌ Недостаточно Motor6D!")
+        return nil
+    end
+    
+    -- Находим RootPart для отслеживания позиции
+    local originalRootPart = originalModel:FindFirstChild("RootPart") or originalModel:FindFirstChild("HumanoidRootPart")
+    local lastPosition = originalRootPart and originalRootPart.Position or Vector3.new(0, 0, 0)
+    local idleStartTime = tick()
+    local isCurrentlyIdle = false
+    
+    -- Агрессивно блокируем walking анимации каждые 0.5 секунд
+    local walkingBlocker = RunService.Heartbeat:Connect(function()
+        if tick() % 30 == 0 then -- Каждые 0.5 сек
+            for _, obj in pairs(originalModel:GetDescendants()) do
+                if obj:IsA("Animator") then
+                    local tracks = obj:GetPlayingAnimationTracks()
+                    for _, track in pairs(tracks) do
+                        local name = track.Animation.Name:lower()
+                        if name:find("walk") or name:find("run") or name:find("move") then
+                            track:Stop()
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    -- LIVE COPYING с умной фильтрацией
+    local copyConnection = RunService.Heartbeat:Connect(function()
+        -- Проверяем движение питомца
+        if originalRootPart then
+            local currentPosition = originalRootPart.Position
+            local distance = (currentPosition - lastPosition).Magnitude
+            
+            -- Если питомец не двигается (меньше 0.1 стад)
+            if distance < 0.1 then
+                if not isCurrentlyIdle then
+                    isCurrentlyIdle = true
+                    idleStartTime = tick()
+                    print("📍 Питомец в idle - начинаю live copying")
+                end
+                
+                -- Копируем Motor6D только в idle состоянии
+                for _, originalMotor in pairs(originalMotors) do
+                    for _, copyMotor in pairs(copyMotors) do
+                        if copyMotor.Name == originalMotor.Name then
+                            pcall(function()
+                                local scaledC0 = CFrame.new(originalMotor.C0.Position * CONFIG.SCALE_FACTOR) * (originalMotor.C0 - originalMotor.C0.Position)
+                                local scaledC1 = CFrame.new(originalMotor.C1.Position * CONFIG.SCALE_FACTOR) * (originalMotor.C1 - originalMotor.C1.Position)
+                                
+                                copyMotor.C0 = scaledC0
+                                copyMotor.C1 = scaledC1
+                                copyMotor.Transform = originalMotor.Transform
+                            end)
+                            break
+                        end
+                    end
+                end
+            else
+                -- Питомец двигается - останавливаем copying
+                if isCurrentlyIdle then
+                    isCurrentlyIdle = false
+                    print("🏃 Питомец двигается - останавливаю copying")
+                end
+                lastPosition = currentPosition
+            end
+        end
+    end)
+    
+    print("🎉 LIVE COPYING С IDLE ФИЛЬТРОМ ЗАПУЩЕН!")
+    print("💡 Копия будет анимирована ТОЛЬКО в idle состоянии")
+    print("💀 Walking анимации блокируются каждые 0.5 сек")
+    
+    return {walkingBlocker = walkingBlocker, copyConnection = copyConnection}
 end
 
 -- === ОСНОВНЫЕ ФУНКЦИИ ===
@@ -565,18 +733,20 @@ local function main()
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    -- Шаг 5: Запуск живого копирования Motor6D
-    print("\n🎭 === ЗАПУСК АНИМАЦИИ ===")
+    -- Шаг 5: Запуск LIVE COPYING с умной фильтрацией idle
+    print("\n🎯 === ЗАПУСК LIVE COPYING С IDLE ФИЛЬТРОМ ===")
     
-    local connection = startLiveMotorCopying(petModel, petCopy)
+    local connections = startSmartIdleLiveCopying(petModel, petCopy)
     
-    if connection then
+    if connections then
         print("🎉 === УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
-        print("✅ Анимация запущена")
-        print("💡 Копия должна повторять движения оригинала!")
+        print("✅ Live copying с idle фильтром запущен")
+        print("💡 Оригинал: Обычный питомец с блокировкой walking")
+        print("💡 Копия: Анимируется ТОЛЬКО в idle состоянии")
+        print("🔥 Копия НИКОГДА не будет ходить!")
     else
-        print("⚠️ Масштабирование успешно, но анимация не запустилась")
+        print("⚠️ Масштабирование успешно, но live copying не запустился")
         print("💡 Возможно проблема с Motor6D соединениями")
     end
 end
