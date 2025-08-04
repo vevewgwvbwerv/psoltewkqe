@@ -1,6 +1,6 @@
--- 📹 PET SCALER v2.7 - IDLE Анимация
--- Записывает IDLE анимацию когда питомец стоит
--- Создает масштабированную копию с бесконечной IDLE анимацией
+-- 🔥 PET SCALER v2.0 - Масштабирование с анимацией
+-- Объединяет оригинальный PetScaler + SmartMotorCopier
+-- Создает масштабированную копию И сразу включает анимацию
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -9,7 +9,7 @@ local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-print("📹 === PET SCALER v2.7 - IDLE АНИМАЦИЯ ===")
+print("🔥 === PET SCALER v2.0 - С АНИМАЦИЕЙ ===")
 print("=" .. string.rep("=", 60))
 
 -- Конфигурация (как в оригинальном PetScaler)
@@ -332,95 +332,10 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
     return true
 end
 
--- === РАБОЧАЯ ФУНКЦИЯ ЖИВОГО КОПИРОВАНИЯ (из PetScaler_v2.8) ===
-
--- Получаем все Motor6D из модели
-local function getMotor6Ds(model)
-    local motors = {}
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            table.insert(motors, obj)
-        end
-    end
-    return motors
-end
-
--- Создаем карту Motor6D по именам
-local function createMotorMap(motors)
-    local map = {}
-    for _, motor in ipairs(motors) do
-        local key = motor.Name
-        if motor.Part0 then
-            key = key .. "_" .. motor.Part0.Name
-        end
-        if motor.Part1 then
-            key = key .. "_" .. motor.Part1.Name
-        end
-        map[key] = motor
-    end
-    return map
-end
-
--- РАБОЧАЯ функция живого копирования Motor6D
-local function startLiveMotorCopying(original, copy)
-    print("🔄 Запуск живого копирования Motor6D...")
-    
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
-    
-    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
-    
-    if #originalMotors == 0 or #copyMotors == 0 then
-        print("❌ Недостаточно Motor6D для копирования")
-        return nil
-    end
-    
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
-    
-    local connection = nil
-    local isRunning = true
-    local frameCount = 0
-    
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRunning then
-            connection:Disconnect()
-            return
-        end
-        
-        frameCount = frameCount + 1
-        
-        -- Проверяем существование моделей
-        if not original.Parent or not copy.Parent then
-            print("⚠️ Модель удалена, останавливаю копирование")
-            isRunning = false
-            return
-        end
-        
-        -- Копируем состояния Motor6D с масштабированием
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                copyMotorState(originalMotor, copyMotor, CONFIG.SCALE_FACTOR)
-            end
-        end
-        
-        -- Статус каждые 3 секунды
-        if frameCount % 180 == 0 then
-            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
-        end
-    end)
-    
-    print("✅ Живое копирование Motor6D запущено!")
-    print("💡 Копия будет повторять движения оригинала")
-    
-    return connection
-end
-
 -- === ФУНКЦИЯ ЗАПУСКА ЖИВОГО КОПИРОВАНИЯ ===
 
 local function startLiveMotorCopying(original, copy)
-    print("🔄 Запуск живого копирования Motor6D...")
+    print("🔄 Запуск живого копирования Motor6D с IDLE фильтром...")
     
     local originalMotors = getMotor6Ds(original)
     local copyMotors = getMotor6Ds(copy)
@@ -435,9 +350,17 @@ local function startLiveMotorCopying(original, copy)
     local originalMap = createMotorMap(originalMotors)
     local copyMap = createMotorMap(copyMotors)
     
+    -- IDLE DETECTION VARIABLES
+    local rootPart = original:FindFirstChild("HumanoidRootPart") or original:FindFirstChild("RootPart")
+    local lastPosition = rootPart and rootPart.Position or Vector3.new(0, 0, 0)
+    local idleFrameCount = 0
+    local IDLE_THRESHOLD = 30 -- 0.5 секунды при 60 FPS
+    local POSITION_TOLERANCE = 0.1
+    
     local connection = nil
     local isRunning = true
     local frameCount = 0
+    local idleFramesCopied = 0
     
     connection = RunService.Heartbeat:Connect(function()
         if not isRunning then
@@ -454,22 +377,45 @@ local function startLiveMotorCopying(original, copy)
             return
         end
         
-        -- Копируем состояния Motor6D с масштабированием
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                copyMotorState(originalMotor, copyMotor, CONFIG.SCALE_FACTOR)
+        -- IDLE DETECTION
+        local isIdle = false
+        if rootPart and rootPart.Parent then
+            local currentPosition = rootPart.Position
+            local positionDelta = (currentPosition - lastPosition).Magnitude
+            
+            if positionDelta < POSITION_TOLERANCE then
+                idleFrameCount = idleFrameCount + 1
+                if idleFrameCount >= IDLE_THRESHOLD then
+                    isIdle = true
+                end
+            else
+                idleFrameCount = 0
+            end
+            
+            lastPosition = currentPosition
+        end
+        
+        -- Копируем состояния Motor6D ТОЛЬКО во время IDLE
+        if isIdle then
+            idleFramesCopied = idleFramesCopied + 1
+            for key, originalMotor in pairs(originalMap) do
+                local copyMotor = copyMap[key]
+                if copyMotor and originalMotor.Parent then
+                    copyMotorState(originalMotor, copyMotor, CONFIG.SCALE_FACTOR)
+                end
             end
         end
         
         -- Статус каждые 3 секунды
         if frameCount % 180 == 0 then
-            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
+            local idleStatus = isIdle and "IDLE" or "WALKING"
+            print("📊 Живое копирование: " .. idleStatus .. " | Кадр: " .. frameCount .. " | Idle кадров: " .. idleFramesCopied)
         end
     end)
     
-    print("✅ Живое копирование Motor6D запущено!")
-    print("💡 Копия будет повторять движения оригинала")
+    print("✅ Живое копирование Motor6D с IDLE фильтром запущено!")
+    print("💡 Копия будет анимироваться ТОЛЬКО когда оригинал стоит (idle)")
+    print("🚫 Копия НЕ будет ходить - только idle анимация!")
     
     return connection
 end
@@ -530,16 +476,21 @@ local function main()
     end
     
     -- Шаг 3: СНАЧАЛА масштабируем с закрепленными частями (как в оригинале)
-    print("\n📏 === РАБОЧЕЕ ЖИВОЕ КОПИРОВАНИЕ MOTOR6D ===\n")
-    
-    -- Запускаем живое копирование Motor6D (как в рабочем PetScaler_v2.8)
-    local liveConnection = startLiveMotorCopying(petModel, petCopy)
-    if not liveConnection then
-        print("❌ Не удалось запустить живое копирование!")
-        return false
+    print("\n📏 === МАСШТАБИРОВАНИЕ ===")
+    -- Убеждаемся что все части закреплены для стабильного масштабирования
+    for _, part in pairs(petCopy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = true
+        end
     end
     
-    print("✅ Живое копирование Motor6D успешно запущено!")
+    wait(0.5)
+    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    
+    if not scaleSuccess then
+        print("❌ Масштабирование не удалось!")
+        return
+    end
     
     -- Шаг 4: ПОСЛЕ масштабирования настраиваем Anchored для анимации
     print("\n🧠 === НАСТРОЙКА ANCHORED ДЛЯ АНИМАЦИИ ===")
@@ -548,11 +499,19 @@ local function main()
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    print("🎉 === УСПЕХ! ===")
-    print("✅ Масштабированная копия создана")
-    print("✅ Живое копирование Motor6D запущено")
-    print("💡 Копия будет повторять все движения оригинала в реальном времени!")
-        print("💡 Попробуйте остановить питомца на несколько секунд")
+    -- Шаг 5: Запуск живого копирования Motor6D
+    print("\n🎭 === ЗАПУСК АНИМАЦИИ ===")
+    
+    local connection = startLiveMotorCopying(petModel, petCopy)
+    
+    if connection then
+        print("🎉 === УСПЕХ! ===")
+        print("✅ Масштабированная копия создана")
+        print("✅ Анимация запущена")
+        print("💡 Копия должна повторять движения оригинала!")
+    else
+        print("⚠️ Масштабирование успешно, но анимация не запустилась")
+        print("💡 Возможно проблема с Motor6D соединениями")
     end
 end
 
@@ -584,21 +543,21 @@ local function createGUI()
     button.Position = UDim2.new(0, 10, 0, 20)
     button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     button.BorderSizePixel = 0
-    button.Text = "📹 PetScaler v2.7 - IDLE Анимация"
+    button.Text = "🔥 PetScaler v2.0 + Анимация"
     button.TextColor3 = Color3.fromRGB(0, 0, 0)
     button.TextSize = 14
     button.Font = Enum.Font.SourceSansBold
     button.Parent = frame
     
     button.MouseButton1Click:Connect(function()
-        button.Text = "⏳ Записываю IDLE..."
+        button.Text = "⏳ Создаю с анимацией..."
         button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
         
         spawn(function()
             main()
             
             wait(3)
-            button.Text = "📹 PetScaler v2.7 - IDLE Анимация"
+            button.Text = "🔥 PetScaler v2.0 + Анимация"
             button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
         end)
     end)
@@ -615,15 +574,15 @@ local function createGUI()
         end
     end)
     
-    print("🕮️ PetScaler v2.7 GUI создан!")
+    print("🖥️ PetScaler v2.0 GUI создан!")
 end
 
 -- Запуск
 createGUI()
 print("=" .. string.rep("=", 60))
-print("💡 PETSCALER v2.7 - IDLE АНИМАЦИЯ:")
+print("💡 PETSCALER v2.0 - ВСЕ В ОДНОМ:")
 print("   1. Создает масштабированную копию")
-print("   2. Записывает IDLE анимацию когда питомец стоит")
-print("   3. Зацикливает IDLE анимацию на копии бесконечно")
+print("   2. Настраивает правильные Anchored состояния")
+print("   3. Автоматически запускает живое копирование анимации")
 print("🎯 Нажмите зеленую кнопку для запуска!")
 print("=" .. string.rep("=", 60))
