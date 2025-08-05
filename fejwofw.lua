@@ -678,14 +678,63 @@ local function startEndlessIdleLoop(originalModel, copyModel)
         print("✅ Humanoid найден:", originalHumanoid.Name)
     end
     
-    -- Переменные для записи idle цикла
-    local idleFrames = {}
-    local isRecording = false
-    local isLooping = false
-    local recordingStartTime = 0
-    local recordingDuration = 5.0 -- 5 секунд записи idle цикла
-    local idleDetectionFrames = 0
-    local requiredIdleFrames = 30 -- 1 секунда неподвижности
+    -- === 📡 СИСТЕМА LIVE ПОТОКОВОЙ IDLE АНИМАЦИИ ===
+    -- 🎬 РЕАЛЬНОЕ ВРЕМЯ: КОПИРОВАНИЕ Motor6D С ПИТОМЦА В РУКЕ
+    
+    -- 🔍 ПОИСК ПИТОМЦА В РУКЕ (ИНСТРУМЕНТ)
+    local function findHandHeldPet()
+        local player = Players.LocalPlayer
+        if not player then return nil end
+        
+        -- Поиск в инвентаре
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            for _, tool in pairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") and tool.Name:find("[") and tool.Name:find("KG") then
+                    -- Нашли питомца в инвентаре
+                    local petModel = tool:FindFirstChildOfClass("Model")
+                    if petModel then
+                        return petModel, tool
+                    end
+                end
+            end
+        end
+        
+        -- Поиск в руках (экипированный инструмент)
+        local character = player.Character
+        if character then
+            for _, tool in pairs(character:GetChildren()) do
+                if tool:IsA("Tool") and tool.Name:find("[") and tool.Name:find("KG") then
+                    local petModel = tool:FindFirstChildOfClass("Model")
+                    if petModel then
+                        return petModel, tool
+                    end
+                end
+            end
+        end
+        
+        return nil, nil
+    end
+    
+    -- 🔧 ПОЛУЧЕНИЕ Motor6D ИЗ МОДЕЛИ
+    local function getMotor6DsFromModel(model)
+        local motors = {}
+        if not model then return motors end
+        
+        for _, obj in pairs(model:GetDescendants()) do
+            if obj:IsA("Motor6D") then
+                table.insert(motors, obj)
+            end
+        end
+        
+        return motors
+    end
+    
+    -- Глобальные переменные для live системы
+    local handPetModel = nil
+    local handPetMotors = {}
+    local lastHandPetCheck = 0
+    local HAND_PET_CHECK_INTERVAL = 1.0  -- Проверяем каждую секунду
     
     -- Переменные для позиционной детекции
     local lastPosition = usePositionDetection and originalRootPart and originalRootPart.Position or Vector3.new(0, 0, 0)
@@ -696,7 +745,9 @@ local function startEndlessIdleLoop(originalModel, copyModel)
         print("💡 Использую Humanoid.MoveDirection для детекции idle")
     end
     
-    print("💡 Жду когда питомец встанет на 1 секунду для записи idle цикла...")
+    print("📡 ЗАПУСКАЮ LIVE ПОТОКОВУЮ СИСТЕМУ IDLE АНИМАЦИИ!")
+    print("🎬 Копирование в реальном времени с питомца в руке")
+    print("🔄 Копия будет повторять ВСЕ движения оригинала!")
     
     local connection = RunService.Heartbeat:Connect(function()
         -- Проверяем существование моделей
@@ -706,106 +757,70 @@ local function startEndlessIdleLoop(originalModel, copyModel)
             return
         end
         
-        -- === ЭТАП 1: ЗАПИСЬ IDLE ЦИКЛА ===
-        if not isLooping then
-            local isWalking = false
+        local currentTime = tick()
+        
+        -- === 🔍 ПОИСК ПИТОМЦА В РУКЕ ===
+        if currentTime - lastHandPetCheck >= HAND_PET_CHECK_INTERVAL then
+            local foundPetModel, foundTool = findHandHeldPet()
             
-            -- УНИВЕРСАЛЬНАЯ ДЕТЕКЦИЯ IDLE
-            if usePositionDetection and originalRootPart then
-                -- Метод 1: Позиционная детекция
-                local currentPosition = originalRootPart.Position
-                local positionChange = (currentPosition - lastPosition).Magnitude
-                isWalking = positionChange > 0.05 -- Порог движения
-                lastPosition = currentPosition
-            elseif originalHumanoid then
-                -- Метод 2: Humanoid.MoveDirection
-                isWalking = originalHumanoid.MoveDirection.Magnitude > 0.1
-            else
-                -- Нет способа детекции - считаем что всегда idle
-                isWalking = false
-            end
-            
-            if not isWalking then
-                idleDetectionFrames = idleDetectionFrames + 1
-            else
-                idleDetectionFrames = 0
-                if isRecording then
-                    print("⚠️ Запись прервана - питомец начал двигаться")
-                    isRecording = false
-                    idleFrames = {}
-                    recordingStartTime = 0
+            if foundPetModel ~= handPetModel then
+                handPetModel = foundPetModel
+                handPetMotors = getMotor6DsFromModel(handPetModel)
+                
+                if handPetModel then
+                    print("🎯 НАШЛИ ПИТОМЦА В РУКЕ:", foundTool and foundTool.Name or "Неизвестный")
+                    print("🔧 Motor6D суставов:", #handPetMotors)
+                else
+                    print("⚠️ Питомец в руке не найден")
                 end
             end
             
-            -- Начинаем запись когда питомец стоит достаточно долго
-            if not isRecording and idleDetectionFrames >= requiredIdleFrames then
-                print("🎬 НАЧИНАЮ ЗАПИСЬ IDLE ЦИКЛА!")
-                isRecording = true
-                idleFrames = {}
-                recordingStartTime = tick()
-            end
-            
-            -- Записываем кадры idle анимации
-            if isRecording and idleDetectionFrames >= requiredIdleFrames then
-                local frame = {}
-                
-                for i, originalMotor in ipairs(originalMotors) do
-                    if originalMotor.Parent then
-                        frame[i] = {
-                            C0 = originalMotor.C0,
-                            C1 = originalMotor.C1,
-                            Transform = originalMotor.Transform
-                        }
-                    end
-                end
-                
-                table.insert(idleFrames, frame)
-                
-                -- Проверяем время записи
-                if tick() - recordingStartTime >= recordingDuration then
-                    print("✅ ЗАПИСЬ IDLE ЦИКЛА ЗАВЕРШЕНА! Записано:", #idleFrames, "кадров")
-                    print("🔄 НАЧИНАЮ БЕСКОНЕЧНОЕ ЗАЦИКЛИВАНИЕ!")
-                    isRecording = false
-                    isLooping = true
-                end
-            end
+            lastHandPetCheck = currentTime
         end
         
-        -- === ЭТАП 2: БЕСКОНЕЧНОЕ ЗАЦИКЛИВАНИЕ IDLE ===
-        if isLooping and #idleFrames > 0 then
-            -- Вычисляем текущий кадр для бесконечного зацикливания
-            local frameIndex = math.floor((tick() * 30) % #idleFrames) + 1 -- 30 FPS
-            local currentFrame = idleFrames[frameIndex]
+        -- === 📡 LIVE КОПИРОВАНИЕ Motor6D СОСТОЯНИЙ ===
+        if handPetModel and #handPetMotors > 0 then
+            local appliedCount = 0
             
-            if currentFrame then
-                local appliedCount = 0
-                
-                -- ПРИМЕНЯЕМ IDLE КАДР К КОПИИ (НЕЗАВИСИМО ОТ ОРИГИНАЛА)
-                for i, copyMotor in ipairs(copyMotors) do
-                    if copyMotor and copyMotor.Parent and currentFrame[i] then
-                        local motorData = currentFrame[i]
-                        local success = pcall(function()
-                            -- Масштабируем позиционные компоненты
-                            local originalC0 = motorData.C0
-                            local originalC1 = motorData.C1
+            -- Копируем Motor6D состояния с питомца в руке на копию
+            for _, handMotor in ipairs(handPetMotors) do
+                if handMotor and handMotor.Parent then
+                    -- Находим соответствующий Motor6D в копии
+                    for _, copyMotor in ipairs(copyMotors) do
+                        if copyMotor and copyMotor.Parent and copyMotor.Name == handMotor.Name then
+                            local success = pcall(function()
+                                -- Копируем C0 с масштабированием
+                                local originalC0 = handMotor.C0
+                                local scaledPosition = originalC0.Position * CONFIG.SCALE_FACTOR
+                                local scaledC0 = CFrame.new(scaledPosition) * (originalC0 - originalC0.Position)
+                                
+                                -- Плавное применение для сглаживания
+                                copyMotor.C0 = copyMotor.C0:Lerp(scaledC0, 0.3)
+                                
+                                -- Копируем C1 с масштабированием
+                                local originalC1 = handMotor.C1
+                                local scaledC1Position = originalC1.Position * CONFIG.SCALE_FACTOR
+                                local scaledC1 = CFrame.new(scaledC1Position) * (originalC1 - originalC1.Position)
+                                copyMotor.C1 = copyMotor.C1:Lerp(scaledC1, 0.3)
+                            end)
                             
-                            local scaledC0 = CFrame.new(originalC0.Position * CONFIG.SCALE_FACTOR) * (originalC0 - originalC0.Position)
-                            local scaledC1 = CFrame.new(originalC1.Position * CONFIG.SCALE_FACTOR) * (originalC1 - originalC1.Position)
-                            
-                            copyMotor.C0 = scaledC0
-                            copyMotor.C1 = scaledC1
-                            copyMotor.Transform = motorData.Transform
-                        end)
-                        if success then
-                            appliedCount = appliedCount + 1
+                            if success then
+                                appliedCount = appliedCount + 1
+                            end
+                            break
                         end
                     end
                 end
-                
-                -- Отладочная информация каждые 5 секунд
-                if math.floor(tick()) % 5 == 0 and math.floor(tick() * 10) % 10 == 0 then
-                    print("🔄 БЕСКОНЕЧНОЕ IDLE: кадр", frameIndex, "/", #idleFrames, "- применено:", appliedCount, "/", #copyMotors)
-                end
+            end
+            
+            -- 📊 Отладочная информация каждые 3 секунды
+            if math.floor(currentTime) % 3 == 0 and math.floor(currentTime * 10) % 10 == 0 then
+                print("📡 LIVE АНИМАЦИЯ: применено", appliedCount, "/", #handPetMotors, "Motor6D состояний")
+            end
+        else
+            -- Питомец в руке не найден - используем стандартную idle позу
+            if math.floor(currentTime) % 5 == 0 and math.floor(currentTime * 10) % 10 == 0 then
+                print("⚠️ Питомец в руке не найден - копия в статичной позе")
             end
         end
     end)
@@ -1013,9 +1028,9 @@ local function main()
         end)
         
         -- Проверяем результат
-        local newPos = rootPart.Position
-        local newUpVector = rootPart.CFrame.UpVector
-        local newLookVector = rootPart.CFrame.LookVector
+        local newPos = copyRootPart.Position
+        local newUpVector = copyRootPart.CFrame.UpVector
+        local newLookVector = copyRootPart.CFrame.LookVector
         
         print("\n📊 ПОСЛЕ коррекции:")
         print("   Позиция:", newPos)
