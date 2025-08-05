@@ -12,11 +12,13 @@ local player = Players.LocalPlayer
 print("🔥 === PET SCALER v2.0 - С АНИМАЦИЕЙ ===")
 print("=" .. string.rep("=", 60))
 
--- Конфигурация (как в оригинальном PetScaler)
+-- Конфигурация ПЛАВНОГО УВЕЛИЧЕНИЯ ДО ОРИГИНАЛЬНОГО РАЗМЕРА
 local CONFIG = {
     SEARCH_RADIUS = 100,
-    SCALE_FACTOR = 3.0,
-    TWEEN_TIME = 3.0,
+    START_SCALE = 0.3,      -- Начальный размер копии (30% от оригинала)
+    TARGET_SCALE = 1.0,     -- Целевой размер (как оригинал)
+    SCALE_FACTOR = 1.0,     -- Для совместимости с Motor6D логикой
+    TWEEN_TIME = 3.0,       -- Время плавного увеличения
     EASING_STYLE = Enum.EasingStyle.Quad,
     EASING_DIRECTION = Enum.EasingDirection.Out
 }
@@ -286,9 +288,11 @@ end
 
 -- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
 
--- Функция плавного масштабирования модели
+-- Функция плавного увеличения с маленького до оригинального размера
 local function scaleModelSmoothly(model, scaleFactor, tweenTime)
-    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
+    print("🔥 Начинаю плавное увеличение с маленького до оригинального размера:", model.Name)
+    print("📍 Начальный размер:", CONFIG.START_SCALE .. "x (маленький)")
+    print("🎯 Целевой размер:", CONFIG.TARGET_SCALE .. "x (как оригинал)")
     
     local parts = getAllParts(model)
     print("🧩 Найдено частей для масштабирования:", #parts)
@@ -314,14 +318,44 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         end
     end
     
-    -- Сохраняем исходные данные всех частей
+    -- НОВАЯ ЛОГИКА: СНАЧАЛА УМЕНЬШАЕМ КОПИЮ, ПОТОМ УВЕЛИЧИВАЕМ
+    
+    -- Шаг 1: Сохраняем оригинальные размеры (это будет целевой размер)
     local originalData = {}
     for _, part in ipairs(parts) do
         originalData[part] = {
-            size = part.Size,
+            size = part.Size,  -- Оригинальный размер (целевой)
             cframe = part.CFrame
         }
     end
+    
+    -- Шаг 2: СНАЧАЛА уменьшаем копию до START_SCALE (МГНОВЕННО)
+    print("🔍 Шаг 1: Уменьшаю копию до маленького размера (" .. CONFIG.START_SCALE .. "x)")
+    
+    for _, part in ipairs(parts) do
+        local originalSize = originalData[part].size
+        local originalCFrame = originalData[part].cframe
+        
+        -- Уменьшаем размер до START_SCALE
+        local startSize = originalSize * CONFIG.START_SCALE
+        
+        -- Уменьшаем позицию относительно центра
+        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
+        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * CONFIG.START_SCALE) * (relativeCFrame - relativeCFrame.Position)
+        local startCFrame = centerCFrame * scaledRelativeCFrame
+        
+        -- МГНОВЕННО устанавливаем маленький размер
+        part.Size = startSize
+        part.CFrame = startCFrame
+    end
+    
+    print("✅ Копия уменьшена до маленького размера!")
+    
+    -- Небольшая пауза чтобы увидеть маленькую копию
+    wait(0.5)
+    
+    -- Шаг 3: Теперь ПЛАВНО увеличиваем до оригинального размера
+    print("🚀 Шаг 2: Плавно увеличиваю до оригинального размера (" .. CONFIG.TARGET_SCALE .. "x)")
     
     -- Создаем TweenInfo
     local tweenInfo = TweenInfo.new(
@@ -333,34 +367,74 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         0 -- Задержка
     )
     
-    -- Масштабирование через CFrame (ОРИГИНАЛЬНАЯ ЛОГИКА)
+    -- ПЛАВНОЕ УВЕЛИЧЕНИЕ ДО ОРИГИНАЛЬНОГО РАЗМЕРА
     local tweens = {}
     local completedTweens = 0
     
     for _, part in ipairs(parts) do
-        local originalSize = originalData[part].size
-        local originalCFrame = originalData[part].cframe
+        local targetSize = originalData[part].size * CONFIG.TARGET_SCALE  -- Оригинальный размер
+        local targetCFrame = originalData[part].cframe  -- Оригинальная позиция
         
-        -- Вычисляем новый размер
-        local newSize = originalSize * scaleFactor
-        
-        -- Вычисляем новый CFrame относительно центра
-        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
-        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
-        local newCFrame = centerCFrame * scaledRelativeCFrame
-        
-        -- Создаем твин для размера и CFrame
+        -- Создаем твин для плавного увеличения до оригинального размера
         local tween = TweenService:Create(part, tweenInfo, {
-            Size = newSize,
-            CFrame = newCFrame
+            Size = targetSize,
+            CFrame = targetCFrame
         })
         
         -- Обработчик завершения твина
         tween.Completed:Connect(function()
             completedTweens = completedTweens + 1
             if completedTweens == #parts then
-                print("✅ Масштабирование завершено!")
-                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
+                print("✅ Плавное увеличение завершено!")
+                print("🎉 Копия теперь точно такого же размера как оригинал!")
+                
+                -- КРИТИЧЕСКИ ВАЖНО: ПРИНУДИТЕЛЬНО СТАВИМ КОПИЮ В ВЕРТИКАЛЬНОЕ ПОЛОЖЕНИЕ
+                print("🔧 ПРИНУДИТЕЛЬНО ставлю копию в вертикальное положение (не лежачее)...")
+                
+                if model.PrimaryPart then
+                    local currentPosition = model.PrimaryPart.Position
+                    
+                    -- ПРИНУДИТЕЛЬНО создаем вертикальный CFrame
+                    -- Y-ось направлена вверх (0, 1, 0)
+                    -- Z-ось направлена вперед (0, 0, -1) - стандартное направление
+                    local uprightCFrame = CFrame.new(
+                        currentPosition,  -- Позиция
+                        currentPosition + Vector3.new(0, 0, -1)  -- Направление вперед
+                    )
+                    
+                    -- Применяем вертикальную ориентацию
+                    model:SetPrimaryPartCFrame(uprightCFrame)
+                    
+                    print("✅ Копия принудительно поставлена в вертикальное положение!")
+                    
+                    -- Дополнительная коррекция: проверяем все части модели
+                    print("🔍 Проверяю и корректирую ориентацию всех частей...")
+                    
+                    local correctedParts = 0
+                    for _, part in pairs(model:GetDescendants()) do
+                        if part:IsA("BasePart") and part ~= model.PrimaryPart then
+                            -- Проверяем нет ли странных поворотов
+                            local partCFrame = part.CFrame
+                            local upVector = partCFrame.UpVector
+                            
+                            -- Если часть повернута неправильно (не вверх)
+                            if math.abs(upVector.Y) < 0.7 then -- Y-компонент должен быть близок к 1
+                                -- Корректируем ориентацию части
+                                local correctedPartCFrame = CFrame.new(
+                                    partCFrame.Position,
+                                    partCFrame.Position + Vector3.new(0, 0, -1)
+                                )
+                                part.CFrame = correctedPartCFrame
+                                correctedParts = correctedParts + 1
+                            end
+                        end
+                    end
+                    
+                    print("✅ Коррекция завершена! Исправлено частей:", correctedParts)
+                    print("🚀 Копия теперь должна стоять правильно!")
+                else
+                    print("⚠️ Нет PrimaryPart для коррекции ориентации")
+                end
             end
         end)
         
@@ -841,7 +915,7 @@ local function main()
     end
     
     wait(0.5)
-    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.TARGET_SCALE, CONFIG.TWEEN_TIME)
     
     if not scaleSuccess then
         print("❌ Масштабирование не удалось!")
