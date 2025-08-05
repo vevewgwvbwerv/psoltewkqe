@@ -1,257 +1,268 @@
--- 🎯 АНАЛИЗАТОР ПИТОМЦА В РУКЕ
--- Изучает идеальную бесконечную idle анимацию питомца в руке
+-- 📊 ЗАПИСЫВАЮЩИЙ СКРИПТ MOTOR6D IDLE АНИМАЦИИ
+-- Записывает идеальную idle анимацию питомца в руке для применения на копии
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
--- 📊 КОНФИГУРАЦИЯ
+-- 📊 КОНФИГУРАЦИЯ ЗАПИСИ
 local CONFIG = {
-    ANALYSIS_DURATION = 30,  -- Анализируем 30 секунд
-    LOG_INTERVAL = 0.5,      -- Логируем каждые 0.5 секунды
-    MOTOR6D_PRECISION = 3    -- Точность записи углов
+    RECORD_DURATION = 8,      -- Записываем 8 секунд (полный цикл анимации)
+    FRAME_RATE = 30,          -- 30 кадров в секунду
+    EXPORT_FORMAT = "LUA"     -- Формат экспорта данных
 }
 
--- 🔍 ПОИСК ПИТОМЦА В РУКЕ
-local function findHandPet()
+-- 📊 ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+local recordedFrames = {}
+local motor6DList = {}
+local isRecording = false
+
+-- 🔍 ПОИСК И АНАЛИЗ ПИТОМЦА В РУКЕ
+local function findHandPetMotor6Ds()
     local character = player.Character
     if not character then
+        print("❌ Character не найден!")
         return nil
     end
     
-    -- Ищем питомца в руке (обычно в Backpack или как Tool)
-    local backpack = player.Backpack
     local handTool = character:FindFirstChildOfClass("Tool")
-    
-    print("🔍 === ПОИСК ПИТОМЦА В РУКЕ ===")
-    
-    -- Проверяем активный инструмент в руке
-    if handTool then
-        print("🎯 Найден активный инструмент:", handTool.Name)
-        
-        -- Ищем модель питомца внутри инструмента
-        for _, child in pairs(handTool:GetChildren()) do
-            if child:IsA("Model") and child.Name:find("{") and child.Name:find("}") then
-                print("🐕 Найден питомец в руке:", child.Name)
-                return child
-            end
-        end
+    if not handTool then
+        print("❌ Tool в руке не найден!")
+        print("💡 Возьмите питомца в руку и запустите снова")
+        return nil
     end
     
-    -- Проверяем рюкзак
-    if backpack then
-        for _, tool in pairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                for _, child in pairs(tool:GetChildren()) do
-                    if child:IsA("Model") and child.Name:find("{") and child.Name:find("}") then
-                        print("🎒 Найден питомец в рюкзаке:", child.Name)
-                        print("💡 Возьмите питомца в руку для анализа!")
-                        return child
-                    end
-                end
-            end
-        end
-    end
+    print("🎯 Найден Tool:", handTool.Name)
     
-    print("❌ Питомец в руке не найден!")
-    print("💡 Убедитесь что питомец экипирован как инструмент")
-    return nil
-end
-
--- 🦴 АНАЛИЗ СТРУКТУРЫ МОДЕЛИ
-local function analyzeModelStructure(petModel)
-    print("\n🦴 === АНАЛИЗ СТРУКТУРЫ МОДЕЛИ ===")
-    
-    local motor6Ds = {}
-    local animators = {}
-    local humanoids = {}
-    
-    -- Собираем все важные компоненты
-    for _, obj in pairs(petModel:GetDescendants()) do
+    -- Собираем все Motor6D из Tool
+    local motor6ds = {}
+    for _, obj in pairs(handTool:GetDescendants()) do
         if obj:IsA("Motor6D") then
-            table.insert(motor6Ds, obj)
-        elseif obj:IsA("Animator") then
-            table.insert(animators, obj)
-        elseif obj:IsA("Humanoid") then
-            table.insert(humanoids, obj)
+            table.insert(motor6ds, obj)
         end
     end
     
-    print("📊 Найдено Motor6D:", #motor6Ds)
-    print("📊 Найдено Animator:", #animators)
-    print("📊 Найдено Humanoid:", #humanoids)
-    
-    -- Детальная информация о Motor6D
-    if #motor6Ds > 0 then
-        print("\n🔧 MOTOR6D ДЕТАЛИ:")
-        for i, motor in ipairs(motor6Ds) do
-            print(string.format("  %d. %s (%s → %s)", 
-                i, motor.Name, 
-                motor.Part0 and motor.Part0.Name or "nil",
-                motor.Part1 and motor.Part1.Name or "nil"))
-        end
+    if #motor6ds == 0 then
+        print("❌ Motor6D не найдены в Tool!")
+        return nil
     end
     
-    -- Информация об аниматорах
-    if #animators > 0 then
-        print("\n🎭 ANIMATOR ДЕТАЛИ:")
-        for i, animator in ipairs(animators) do
-            print(string.format("  %d. %s (Parent: %s)", 
-                i, animator.Name, animator.Parent.Name))
-        end
+    print(string.format("✅ Найдено Motor6D: %d", #motor6ds))
+    
+    -- Показываем структуру
+    for i, motor in ipairs(motor6ds) do
+        print(string.format("  %d. %s (%s → %s)", 
+            i, motor.Name,
+            motor.Part0 and motor.Part0.Name or "nil",
+            motor.Part1 and motor.Part1.Name or "nil"))
     end
     
-    return motor6Ds, animators, humanoids
+    return motor6ds
 end
 
--- 🎬 АНАЛИЗ АКТИВНЫХ АНИМАЦИЙ
-local function analyzeActiveAnimations(animators)
-    print("\n🎬 === АНАЛИЗ АКТИВНЫХ АНИМАЦИЙ ===")
+-- 📊 ЗАПИСЬ КАДРА АНИМАЦИИ
+local function recordFrame(frameIndex, elapsedTime)
+    local frame = {
+        index = frameIndex,
+        time = elapsedTime,
+        motor6ds = {}
+    }
     
-    for i, animator in ipairs(animators) do
-        print(string.format("\n🎭 Аниматор %d: %s", i, animator.Name))
-        
-        -- Получаем активные треки
-        local tracks = animator:GetPlayingAnimationTracks()
-        print("📊 Активных треков:", #tracks)
-        
-        for j, track in ipairs(tracks) do
-            print(string.format("  🎵 Трек %d:", j))
-            print(string.format("    ID: %s", track.Animation.AnimationId))
-            print(string.format("    Время: %.2f / %.2f", track.TimePosition, track.Length))
-            print(string.format("    Скорость: %.2f", track.Speed))
-            print(string.format("    Зацикливание: %s", tostring(track.Looped)))
-            print(string.format("    Приоритет: %s", tostring(track.Priority)))
-            print(string.format("    Вес: %.2f", track.WeightCurrent))
+    for _, motor in ipairs(motor6DList) do
+        if motor.Parent then
+            frame.motor6ds[motor.Name] = {
+                c0 = motor.C0,
+                c1 = motor.C1,
+                -- Дополнительная информация для отладки
+                part0 = motor.Part0 and motor.Part0.Name or "nil",
+                part1 = motor.Part1 and motor.Part1.Name or "nil"
+            }
         end
     end
+    
+    table.insert(recordedFrames, frame)
 end
 
--- 📊 ЗАПИСЬ MOTOR6D СОСТОЯНИЙ
-local function recordMotor6DStates(motor6Ds, duration)
-    print("\n📊 === ЗАПИСЬ MOTOR6D СОСТОЯНИЙ ===")
-    print(string.format("⏱️ Записываем %d секунд...", duration))
+-- 🎬 ГЛАВНАЯ ФУНКЦИЯ ЗАПИСИ
+local function startRecording()
+    print("\n🎬 === ЗАПИСЬ MOTOR6D IDLE АНИМАЦИИ ===")
     
-    local recordings = {}
-    local startTime = tick()
-    
-    -- Инициализируем записи для каждого Motor6D
-    for _, motor in ipairs(motor6Ds) do
-        recordings[motor.Name] = {
-            motor = motor,
-            states = {}
-        }
-    end
-    
-    local connection = RunService.Heartbeat:Connect(function()
-        local elapsed = tick() - startTime
-        
-        if elapsed >= duration then
-            connection:Disconnect()
-            return
-        end
-        
-        -- Записываем состояние каждого Motor6D
-        for _, motor in ipairs(motor6Ds) do
-            if motor.Parent then
-                local c0 = motor.C0
-                local c1 = motor.C1
-                
-                -- Конвертируем в углы Эйлера для удобства
-                local x, y, z = c0:ToEulerAnglesXYZ()
-                
-                table.insert(recordings[motor.Name].states, {
-                    time = elapsed,
-                    c0 = c0,
-                    c1 = c1,
-                    angles = {
-                        x = math.deg(x),
-                        y = math.deg(y),
-                        z = math.deg(z)
-                    }
-                })
-            end
-        end
-        
-        -- Прогресс
-        if math.floor(elapsed) % 5 == 0 and math.floor(elapsed * 10) % 10 == 0 then
-            print(string.format("⏱️ Прогресс: %.1f/%.1f секунд", elapsed, duration))
-        end
-    end)
-    
-    -- Ждем завершения записи
-    wait(duration + 1)
-    
-    return recordings
-end
-
--- 📈 АНАЛИЗ ЗАПИСАННЫХ ДАННЫХ
-local function analyzeRecordings(recordings)
-    print("\n📈 === АНАЛИЗ ЗАПИСАННЫХ ДАННЫХ ===")
-    
-    for motorName, data in pairs(recordings) do
-        local states = data.states
-        if #states > 0 then
-            print(string.format("\n🔧 Motor6D: %s", motorName))
-            print(string.format("📊 Записано состояний: %d", #states))
-            
-            -- Анализируем изменения углов
-            local firstState = states[1]
-            local lastState = states[#states]
-            
-            local deltaX = math.abs(lastState.angles.x - firstState.angles.x)
-            local deltaY = math.abs(lastState.angles.y - firstState.angles.y)
-            local deltaZ = math.abs(lastState.angles.z - firstState.angles.z)
-            
-            print(string.format("📊 Изменение углов:"))
-            print(string.format("    X: %.2f° (%.2f° → %.2f°)", deltaX, firstState.angles.x, lastState.angles.x))
-            print(string.format("    Y: %.2f° (%.2f° → %.2f°)", deltaY, firstState.angles.y, lastState.angles.y))
-            print(string.format("    Z: %.2f° (%.2f° → %.2f°)", deltaZ, firstState.angles.z, lastState.angles.z))
-            
-            -- Определяем активность
-            local totalDelta = deltaX + deltaY + deltaZ
-            if totalDelta > 5 then
-                print("✅ АКТИВНЫЙ - участвует в анимации")
-            else
-                print("⚪ СТАТИЧНЫЙ - не анимируется")
-            end
-        end
-    end
-end
-
--- 🚀 ГЛАВНАЯ ФУНКЦИЯ
-local function startHandPetAnalysis()
-    print("🎯 === АНАЛИЗАТОР ПИТОМЦА В РУКЕ ===")
-    print("🎯 Цель: изучить идеальную бесконечную idle анимацию")
-    
-    -- Шаг 1: Найти питомца в руке
-    local handPet = findHandPet()
-    if not handPet then
+    -- Поиск Motor6D в питомце
+    motor6DList = findHandPetMotor6Ds()
+    if not motor6DList then
         return
     end
     
-    -- Шаг 2: Анализ структуры
-    local motor6Ds, animators, humanoids = analyzeModelStructure(handPet)
+    -- Подготовка к записи
+    recordedFrames = {}
+    isRecording = true
     
-    -- Шаг 3: Анализ активных анимаций
-    if #animators > 0 then
-        analyzeActiveAnimations(animators)
-    end
+    local startTime = tick()
+    local frameInterval = 1 / CONFIG.FRAME_RATE
+    local nextFrameTime = 0
+    local frameIndex = 0
     
-    -- Шаг 4: Запись Motor6D состояний
-    if #motor6Ds > 0 then
-        print(string.format("\n🎬 Начинаем запись анимации на %d секунд...", CONFIG.ANALYSIS_DURATION))
-        local recordings = recordMotor6DStates(motor6Ds, CONFIG.ANALYSIS_DURATION)
+    print(string.format("🎯 Начинаем запись на %.1f секунд с частотой %d FPS", 
+        CONFIG.RECORD_DURATION, CONFIG.FRAME_RATE))
+    print("⏱️ Убедитесь что питомец играет idle анимацию...")
+    
+    -- Основной цикл записи
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        local elapsedTime = tick() - startTime
         
-        -- Шаг 5: Анализ записанных данных
-        analyzeRecordings(recordings)
+        -- Проверяем время окончания записи
+        if elapsedTime >= CONFIG.RECORD_DURATION then
+            if connection then
+                connection:Disconnect()
+                connection = nil
+            end
+            isRecording = false
+            finishRecording()
+            return
+        end
+        
+        -- Записываем кадр с нужной частотой
+        if elapsedTime >= nextFrameTime then
+            frameIndex = frameIndex + 1
+            recordFrame(frameIndex, elapsedTime)
+            nextFrameTime = nextFrameTime + frameInterval
+            
+            -- Показываем прогресс каждые 2 секунды
+            if frameIndex % (CONFIG.FRAME_RATE * 2) == 0 then
+                print(string.format("📊 Записано кадров: %d (%.1f/%.1f сек)", 
+                    frameIndex, elapsedTime, CONFIG.RECORD_DURATION))
+            end
+        end
+    end)
+end
+
+-- 🎉 ЗАВЕРШЕНИЕ ЗАПИСИ И ЭКСПОРТ
+local function finishRecording()
+    print(string.format("\n🎉 === ЗАПИСЬ ЗАВЕРШЕНА ==="))
+    print(string.format("📊 Записано кадров: %d", #recordedFrames))
+    print(string.format("⏱️ Длительность: %.2f секунд", CONFIG.RECORD_DURATION))
+    print(string.format("🎯 Частота: %d FPS", CONFIG.FRAME_RATE))
+    
+    if #recordedFrames == 0 then
+        print("❌ Кадры не записаны!")
+        return
     end
     
-    print("\n🎉 === АНАЛИЗ ЗАВЕРШЕН ===")
-    print("💡 Теперь мы знаем как работает идеальная idle анимация!")
+    -- Анализ записанных данных
+    analyzeRecordedData()
+    
+    -- Экспорт данных
+    exportAnimationData()
+end
+
+-- 📈 АНАЛИЗ ЗАПИСАННЫХ ДАННЫХ
+local function analyzeRecordedData()
+    print("\n📈 === АНАЛИЗ ЗАПИСАННЫХ ДАННЫХ ===")
+    
+    if #recordedFrames < 2 then
+        print("❌ Недостаточно кадров для анализа")
+        return
+    end
+    
+    local firstFrame = recordedFrames[1]
+    local lastFrame = recordedFrames[#recordedFrames]
+    
+    -- Анализируем каждый Motor6D
+    for motorName, _ in pairs(firstFrame.motor6ds) do
+        local firstC0 = firstFrame.motor6ds[motorName].c0
+        local lastC0 = lastFrame.motor6ds[motorName].c0
+        
+        -- Вычисляем изменение углов
+        local firstX, firstY, firstZ = firstC0:ToEulerAnglesXYZ()
+        local lastX, lastY, lastZ = lastC0:ToEulerAnglesXYZ()
+        
+        local deltaX = math.abs(math.deg(lastX - firstX))
+        local deltaY = math.abs(math.deg(lastY - firstY))
+        local deltaZ = math.abs(math.deg(lastZ - firstZ))
+        local totalDelta = deltaX + deltaY + deltaZ
+        
+        print(string.format("🔧 %s:", motorName))
+        print(string.format("  Изменение углов: X=%.1f°, Y=%.1f°, Z=%.1f°", deltaX, deltaY, deltaZ))
+        
+        if totalDelta > 5 then
+            print("  ✅ АКТИВНЫЙ - участвует в анимации")
+        else
+            print("  ⚪ СТАТИЧНЫЙ - не анимируется")
+        end
+    end
+end
+
+-- 💾 ЭКСПОРТ ДАННЫХ АНИМАЦИИ
+local function exportAnimationData()
+    print("\n💾 === ЭКСПОРТ ДАННЫХ АНИМАЦИИ ===")
+    
+    -- Создаем Lua код для интеграции в PetScaler
+    local luaCode = "-- 🎬 ЗАПИСАННАЯ IDLE АНИМАЦИЯ ПИТОМЦА В РУКЕ\n"
+    luaCode = luaCode .. "-- Автоматически сгенерировано Motor6DIdleRecorder.lua\n\n"
+    
+    luaCode = luaCode .. "local RECORDED_IDLE_ANIMATION = {\n"
+    luaCode = luaCode .. string.format("    duration = %.2f,\n", CONFIG.RECORD_DURATION)
+    luaCode = luaCode .. string.format("    frameRate = %d,\n", CONFIG.FRAME_RATE)
+    luaCode = luaCode .. string.format("    totalFrames = %d,\n", #recordedFrames)
+    luaCode = luaCode .. "    frames = {\n"
+    
+    -- Экспортируем каждый кадр (каждый 5-й для оптимизации)
+    local exportStep = math.max(1, math.floor(#recordedFrames / 60)) -- Максимум 60 кадров
+    
+    for i = 1, #recordedFrames, exportStep do
+        local frame = recordedFrames[i]
+        luaCode = luaCode .. string.format("        [%d] = {\n", i)
+        luaCode = luaCode .. string.format("            time = %.3f,\n", frame.time)
+        luaCode = luaCode .. "            motor6ds = {\n"
+        
+        for motorName, data in pairs(frame.motor6ds) do
+            local c0 = data.c0
+            luaCode = luaCode .. string.format("                [\"%s\"] = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),\n",
+                motorName, c0.X, c0.Y, c0.Z, c0.RightVector.X, c0.UpVector.X, -c0.LookVector.X,
+                c0.RightVector.Y, c0.UpVector.Y, -c0.LookVector.Y, c0.RightVector.Z, c0.UpVector.Z, -c0.LookVector.Z)
+        end
+        
+        luaCode = luaCode .. "            },\n"
+        luaCode = luaCode .. "        },\n"
+    end
+    
+    luaCode = luaCode .. "    }\n"
+    luaCode = luaCode .. "}\n\n"
+    
+    -- Добавляем функцию воспроизведения
+    luaCode = luaCode .. "-- 🎯 ФУНКЦИЯ ВОСПРОИЗВЕДЕНИЯ ЗАПИСАННОЙ АНИМАЦИИ\n"
+    luaCode = luaCode .. "local function playRecordedIdleAnimation(petModel)\n"
+    luaCode = luaCode .. "    -- Ваш код воспроизведения здесь\n"
+    luaCode = luaCode .. "    print('🎬 Воспроизводим записанную idle анимацию!')\n"
+    luaCode = luaCode .. "end\n\n"
+    
+    luaCode = luaCode .. "return RECORDED_IDLE_ANIMATION\n"
+    
+    -- Выводим код в консоль
+    print("📋 === ЭКСПОРТИРОВАННЫЙ КОД ===")
+    print("💾 Скопируйте этот код для интеграции в PetScaler:")
+    print("\n" .. string.rep("=", 50))
+    print(luaCode)
+    print(string.rep("=", 50))
+    
+    print(string.format("\n✅ Экспорт завершен! Записано %d ключевых кадров", 
+        math.ceil(#recordedFrames / exportStep)))
+    print("🎯 Теперь можно интегрировать эти данные в PetScaler!")
+end
+
+-- 🚀 ГЛАВНАЯ ФУНКЦИЯ ЗАПУСКА
+local function main()
+    print("📊 === MOTOR6D IDLE RECORDER ===")
+    print("🎯 Цель: записать идеальную idle анимацию питомца в руке")
+    print("💡 Убедитесь что питомец в руке играет idle анимацию")
+    print("\n⏱️ Запуск записи через 3 секунды...")
+    
+    wait(3)
+    startRecording()
 end
 
 -- 🚀 ЗАПУСК
-startHandPetAnalysis()
+main()
