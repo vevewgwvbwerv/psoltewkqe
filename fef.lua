@@ -681,39 +681,44 @@ local function startEndlessIdleLoop(originalModel, copyModel)
     -- === 📡 СИСТЕМА LIVE ПОТОКОВОЙ IDLE АНИМАЦИИ ===
     -- 🎬 РЕАЛЬНОЕ ВРЕМЯ: КОПИРОВАНИЕ Motor6D С ПИТОМЦА В РУКЕ
     
-    -- 🔍 ПОИСК ПИТОМЦА В РУКЕ (ИНСТРУМЕНТ)
+    -- 🔍 ПОИСК ПИТОМЦА В РУКЕ (ТОЧНАЯ КОПИЯ QuickDataExporter)
     local function findHandHeldPet()
         local player = Players.LocalPlayer
-        if not player then return nil end
-        
-        -- Поиск в инвентаре
-        local backpack = player:FindFirstChild("Backpack")
-        if backpack then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and tool.Name:find("[") and tool.Name:find("KG") then
-                    -- Нашли питомца в инвентаре
-                    local petModel = tool:FindFirstChildOfClass("Model")
-                    if petModel then
-                        return petModel, tool
-                    end
-                end
-            end
+        if not player then 
+            print("❌ Player не найден")
+            return nil, nil 
         end
         
-        -- Поиск в руках (экипированный инструмент)
+        print("🔍 Поиск питомца в руке...")
+        
+        -- ТОЧНО КАК В QuickDataExporter - поиск Tool в character
         local character = player.Character
-        if character then
-            for _, tool in pairs(character:GetChildren()) do
-                if tool:IsA("Tool") and tool.Name:find("[") and tool.Name:find("KG") then
-                    local petModel = tool:FindFirstChildOfClass("Model")
-                    if petModel then
-                        return petModel, tool
-                    end
-                end
-            end
+        if not character then
+            print("❌ Character не найден!")
+            return nil, nil
         end
         
-        return nil, nil
+        print("👤 Проверяем character...")
+        
+        -- Поиск любого Tool в руках (как в QuickDataExporter)
+        local handTool = character:FindFirstChildOfClass("Tool")
+        if not handTool then
+            print("❌ Tool в руке не найден!")
+            return nil, nil
+        end
+        
+        print("🎯 Найден Tool:", handTool.Name)
+        
+        -- Проверяем что это питомец (содержит KG)
+        if not handTool.Name:find("KG") then
+            print("⚠️ Tool не является питомцем (KG не найден)")
+            return nil, nil
+        end
+        
+        print("✅ Питомец найден в руках:", handTool.Name)
+        
+        -- ТОЧНО КАК В QuickDataExporter - возвращаем Tool как модель
+        return handTool, handTool
     end
     
     -- 🔧 ПОЛУЧЕНИЕ Motor6D ИЗ МОДЕЛИ
