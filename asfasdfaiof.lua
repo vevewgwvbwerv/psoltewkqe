@@ -710,44 +710,33 @@ local function startEndlessIdleLoop(originalModel, copyModel)
         
         print("🎯 Найден Tool:", handTool.Name)
         
-        -- 🔥 ОБОБЩЕННАЯ ПРОВЕРКА ПИТОМЦА (ДЛЯ DOG + DRAGONFLY)
-        -- Проверяем по нескольким критериям:
+        -- 🔥 ПРОВЕРЯЕМ ЧТО ЭТО ПИТОМЕЦ (DOG ИЛИ DRAGONFLY)
         local isPet = false
         local petType = "Unknown"
         
-        -- Критерий 1: Содержит "KG" (классические питомцы как Dog)
+        -- Проверка на Dog (содержит KG)
         if handTool.Name:find("KG") then
             isPet = true
-            petType = "Dog/KG Pet"
+            petType = "Dog"
         end
         
-        -- Критерий 2: Содержит "Dragonfly" (специально для Dragonfly)
+        -- 🐉 ПРОВЕРКА НА DRAGONFLY (содержит Dragonfly или UUID формат с Age)
         if handTool.Name:find("Dragonfly") then
             isPet = true
             petType = "Dragonfly"
-        end
-        
-        -- Критерий 3: Содержит "Age" (общий признак питомцев)
-        if handTool.Name:find("Age") then
+        elseif handTool.Name:find("%[") and handTool.Name:find("%]") and handTool.Name:find("Age") then
+            -- UUID формат с квадратными скобками и Age - возможный Dragonfly
             isPet = true
-            if petType == "Unknown" then
-                petType = "Age Pet"
-            end
-        end
-        
-        -- Критерий 4: Содержит квадратные скобки (общий формат питомцев)
-        if handTool.Name:find("%[") and handTool.Name:find("%]") then
-            isPet = true
-            if petType == "Unknown" then
-                petType = "Bracket Pet"
-            end
+            petType = "Dragonfly (UUID)"
         end
         
         if not isPet then
-            print("⚠️ Tool не является питомцем (не найдено KG, Dragonfly, Age или [])")
-            print("🔍 Проверяемый Tool:", handTool.Name)
+            print("⚠️ Tool не является питомцем (ни Dog, ни Dragonfly не найден)")
+            print("🔍 Имя Tool:", handTool.Name)
             return nil, nil
         end
+        
+        print(string.format("✅ %s питомец найден в руках: %s", petType, handTool.Name))
         
         print("✅ Питомец найден в руках:", handTool.Name)
         
@@ -1056,117 +1045,81 @@ end
 
 -- === ОСНОВНЫЕ ФУНКЦИИ ===
 
--- Функция поиска и масштабирования (из оригинального PetScaler)
--- 🐉 ПОИСК ТОЛЬКО DRAGONFLY (НЕ ВСЕ ПИТОМЦЫ!)
+-- 🔥 Функция поиска питомцев в Workspace (DOG И DRAGONFLY)
 local function findAndScalePet()
-    print("🐉 Поиск только DRAGONFLY питомцев рядом с игроком...")
+    print("🔍 Поиск UUID моделей питомцев (Dog и Dragonfly)...")
+    print("📍 Позиция игрока:", playerPos)
+    print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS, "стадов")
     
-    local foundDragonflies = {}
-    local scannedModels = 0
-    local dragonflyCount = 0
+    local foundPets = {}
+    local totalModels = 0
+    local uuidModels = 0
     
-    -- 🔍 ПОИСК В МАЛОМ РАДИУСЕ (20 стадов вместо 100)
-    local DRAGONFLY_SEARCH_RADIUS = 20  -- Малый радиус для точности
-    
-    -- 🎯 ОПТИМИЗИРОВАННЫЙ ПОИСК - СНАЧАЛА ПРОВЕРЯЕМ РАССТОЯНИЕ, ПОТОМ UUID!
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") then
-            scannedModels = scannedModels + 1
+            totalModels = totalModels + 1
             
-            -- 🚀 СНАЧАЛА ПРОВЕРЯЕМ РАССТОЯНИЕ (НЕ ТРАТИМ ВРЕМЯ НА ДАЛЕКИЕ МОДЕЛИ)
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
+            -- 🔍 ПРОВЕРКА UUID ФОРМАТА (ПОДДЕРЖИВАЕТ И DOG И DRAGONFLY)
+            if obj.Name:find("%{") and obj.Name:find("%}") then
+                uuidModels = uuidModels + 1
                 
-                -- ⚡ ТОЛЬКО ЕСЛИ МОДЕЛЬ РЯДОМ - ПРОВЕРЯЕМ UUID
-                if distance <= DRAGONFLY_SEARCH_RADIUS then
-                    local modelName = obj.Name
-                    local isDragonfly = false
+                -- 🐉 ОПРЕДЕЛЯЕМ ТИП ПИТОМЦА ПО ИМЕНИ
+                local petType = "Unknown"
+                if obj.Name:find("Dog") or obj.Name:find("KG") then
+                    petType = "Dog"
+                elseif obj.Name:find("Dragonfly") then
+                    petType = "Dragonfly"
+                elseif obj.Name:find("Age") then
+                    petType = "Possible Dragonfly (Age)"
+                end
+                
+                print(string.format("🔍 UUID модель: %s [%s]", obj.Name, petType))
+                
+                local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+                if success then
+                    local distance = (modelCFrame.Position - playerPos).Magnitude
+                    print(string.format("  📍 Расстояние: %.1f стадов", distance))
                     
-                    -- 🔥 КРИТЕРИЙ 1: UUID ФОРМАТ С ФИГУРНЫМИ СКОБКАМИ {a1b2c3d4-e5f6-7890-abcd-ef1234567890}
-                    if modelName:find("%{") and modelName:find("%}") then
-                        -- Проверяем что внутри скобок есть UUID-подобная строка
-                        local uuidPattern = modelName:match("%{([^%}]+)%}")
-                        if uuidPattern and #uuidPattern > 10 then -- UUID должен быть длинным
-                            print(string.format("🐉 🔍 Найден UUID рядом: %s (%.1f стадов)", modelName, distance))
-                            
-                            -- Проверяем визуальные признаки что это питомец
-                            local hasVisuals, meshes = hasPetVisuals(obj)
-                            if hasVisuals then
-                                print(string.format("🐉 ✅ UUID модель с визуалами: %s", modelName))
-                                
-                                -- Дополнительная проверка на Dragonfly по частям модели
-                                local hasDragonflyParts = false
-                                for _, part in pairs(obj:GetDescendants()) do
-                                    if part:IsA("BasePart") then
-                                        local partName = part.Name:lower()
-                                        if partName:find("wing") or partName:find("tail") or partName:find("dragon") or partName:find("fly") then
-                                            hasDragonflyParts = true
-                                            print(string.format("🐉 🔍 Найдена Dragonfly часть: %s", part.Name))
-                                            break
-                                        end
-                                    end
-                                end
-                                
-                                -- Считаем UUID модель с визуалами потенциальным Dragonfly
-                                isDragonfly = true
-                                dragonflyCount = dragonflyCount + 1
-                                
-                                if hasDragonflyParts then
-                                    print(string.format("🐉 🎯 ПОДТВЕРЖДЕН Dragonfly по частям: %s", modelName))
-                                else
-                                    print(string.format("🐉 🤔 Возможный Dragonfly (UUID + визуалы): %s", modelName))
-                                end
-                                
-                                -- ДОБАВЛЯЕМ В СПИСОК НАЙДЕННЫХ
-                                table.insert(foundDragonflies, {
-                                    model = obj,
-                                    distance = distance,
-                                    meshes = meshes,
-                                    petType = "Dragonfly"
-                                })
-                            end
-                        end
-                    end
-                    
-                    -- 🔥 КРИТЕРИЙ 2: Прямое упоминание "Dragonfly" (резервный)
-                    if modelName:find("Dragonfly") then
-                        isDragonfly = true
-                        dragonflyCount = dragonflyCount + 1
-                        print(string.format("🐉 ✅ Прямое упоминание Dragonfly рядом: %s (%.1f стадов)", modelName, distance))
-                        
+                    if distance <= CONFIG.SEARCH_RADIUS then
                         local hasVisuals, meshes = hasPetVisuals(obj)
+                        print(string.format("  👀 Визуалы: %s (%d meshов)", hasVisuals and "✅ Есть" or "❌ Нет", meshes and #meshes or 0))
+                        
                         if hasVisuals then
-                            table.insert(foundDragonflies, {
+                            print(string.format("🎉 ✅ НАЙДЕН %s: %s (расстояние: %.1f)", petType, obj.Name, distance))
+                            table.insert(foundPets, {
                                 model = obj,
                                 distance = distance,
                                 meshes = meshes,
-                                petType = "Dragonfly"
+                                petType = petType
                             })
                         end
+                    else
+                        print(string.format("  ❌ Слишком далеко (%.1f > %d)", distance, CONFIG.SEARCH_RADIUS))
                     end
                 end
             end
         end
     end
     
-    print(string.format("📊 Просканировано: %d моделей, %d Dragonfly обнаружено, %d в радиусе", scannedModels, dragonflyCount, #foundDragonflies))
+    print(string.format("📊 Просканировано: %d моделей, %d UUID моделей, %d питомцев найдено", totalModels, uuidModels, #foundPets))
     
-    if #foundDragonflies == 0 then
-        print("🐉 ❌ DRAGONFLY не найден в радиусе", DRAGONFLY_SEARCH_RADIUS, "стадов!")
-        print("📍 Позиция игрока:", playerPos)
-        print("💡 Подойдите ближе к DRAGONFLY и попробуйте снова!")
+    if #foundPets == 0 then
+        print("❌ Питомцы не найдены!")
+        if uuidModels == 0 then
+            print("🚨 Ни одной UUID модели не найдено! Проверьте что питомец рядом.")
+        else
+            print("🚨 UUID модели найдены, но не прошли проверки расстояния или визуалов.")
+        end
         return nil
     end
     
-    -- Сортируем по расстоянию (ближайший первый)
-    table.sort(foundDragonflies, function(a, b) return a.distance < b.distance end)
+    -- Сортируем по расстоянию
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
     
-    local targetDragonfly = foundDragonflies[1]
-    print(string.format("🐉 🎯 Выбран ближайший DRAGONFLY: %s (расстояние: %.1f)", 
-        targetDragonfly.model.Name, targetDragonfly.distance))
+    local targetPet = foundPets[1]
+    print(string.format("🎯 ✅ ВЫБРАН %s: %s (расстояние: %.1f)", targetPet.petType or "питомец", targetPet.model.Name, targetPet.distance))
     
-    return targetDragonfly.model
+    return targetPet.model
 end
 
 -- Главная функция v2.0
