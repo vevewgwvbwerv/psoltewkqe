@@ -710,42 +710,9 @@ local function startEndlessIdleLoop(originalModel, copyModel)
         
         print("🎯 Найден Tool:", handTool.Name)
         
-        -- 🔥 ОБОБЩЕННАЯ ПРОВЕРКА ПИТОМЦА (ДЛЯ DOG + DRAGONFLY)
-        -- Проверяем по нескольким критериям:
-        local isPet = false
-        local petType = "Unknown"
-        
-        -- Критерий 1: Содержит "KG" (классические питомцы как Dog)
-        if handTool.Name:find("KG") then
-            isPet = true
-            petType = "Dog/KG Pet"
-        end
-        
-        -- Критерий 2: Содержит "Dragonfly" (специально для Dragonfly)
-        if handTool.Name:find("Dragonfly") then
-            isPet = true
-            petType = "Dragonfly"
-        end
-        
-        -- Критерий 3: Содержит "Age" (общий признак питомцев)
-        if handTool.Name:find("Age") then
-            isPet = true
-            if petType == "Unknown" then
-                petType = "Age Pet"
-            end
-        end
-        
-        -- Критерий 4: Содержит квадратные скобки (общий формат питомцев)
-        if handTool.Name:find("%[") and handTool.Name:find("%]") then
-            isPet = true
-            if petType == "Unknown" then
-                petType = "Bracket Pet"
-            end
-        end
-        
-        if not isPet then
-            print("⚠️ Tool не является питомцем (не найдено KG, Dragonfly, Age или [])")
-            print("🔍 Проверяемый Tool:", handTool.Name)
+        -- Проверяем что это питомец (содержит KG)
+        if not handTool.Name:find("KG") then
+            print("⚠️ Tool не является питомцем (KG не найден)")
             return nil, nil
         end
         
@@ -1058,68 +1025,36 @@ end
 
 -- Функция поиска и масштабирования (из оригинального PetScaler)
 local function findAndScalePet()
-    print("🔍 Поиск UUID моделей питомцев (включая Dog, Dragonfly и все другие)...")
+    print("🔍 Поиск UUID моделей питомцев...")
     
     local foundPets = {}
-    local scannedModels = 0
-    local uuidModels = 0
     
     for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            scannedModels = scannedModels + 1
-            
-            -- 🔥 ОБОБЩЕННАЯ ПРОВЕРКА UUID ФОРМАТА (для всех питомцев)
-            if obj.Name:find("%{") and obj.Name:find("%}") then
-                uuidModels = uuidModels + 1
-                
-                -- Определяем тип питомца
-                local petType = "Unknown"
-                if obj.Name:find("Dog") or obj.Name:find("KG") then
-                    petType = "Dog"
-                elseif obj.Name:find("Dragonfly") then
-                    petType = "Dragonfly"
-                elseif obj.Name:find("Age") then
-                    petType = "Age Pet"
-                end
-                
-                local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-                if success then
-                    local distance = (modelCFrame.Position - playerPos).Magnitude
-                    if distance <= CONFIG.SEARCH_RADIUS then
-                        local hasVisuals, meshes = hasPetVisuals(obj)
-                        if hasVisuals then
-                            print(string.format("✅ Найден %s: %s (расстояние: %.1f)", petType, obj.Name, distance))
-                            table.insert(foundPets, {
-                                model = obj,
-                                distance = distance,
-                                meshes = meshes,
-                                petType = petType
-                            })
-                        end
-                    else
-                        if petType ~= "Unknown" then
-                            print(string.format("⚠️ %s слишком далеко: %s (%.1f > %d)", petType, obj.Name, distance, CONFIG.SEARCH_RADIUS))
-                        end
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            if success then
+                local distance = (modelCFrame.Position - playerPos).Magnitude
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    local hasVisuals, meshes = hasPetVisuals(obj)
+                    if hasVisuals then
+                        table.insert(foundPets, {
+                            model = obj,
+                            distance = distance,
+                            meshes = meshes
+                        })
                     end
                 end
             end
         end
     end
     
-    print(string.format("📊 Просканировано: %d моделей, %d UUID моделей, %d питомцев найдено", scannedModels, uuidModels, #foundPets))
-    
     if #foundPets == 0 then
-        print("❌ Питомцы не найдены в радиусе!", CONFIG.SEARCH_RADIUS, "стадов")
-        print("📍 Позиция игрока:", playerPos)
+        print("❌ Питомцы не найдены!")
         return nil
     end
     
-    -- Сортируем по расстоянию (ближайший первый)
-    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
-    
     local targetPet = foundPets[1]
-    print(string.format("🎯 Выбран ближайший %s: %s (расстояние: %.1f)", 
-        targetPet.petType, targetPet.model.Name, targetPet.distance))
+    print("🎯 Выбран питомец:", targetPet.model.Name)
     
     return targetPet.model
 end
