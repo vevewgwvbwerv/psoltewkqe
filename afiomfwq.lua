@@ -1305,193 +1305,110 @@ local function findAndScalePet()
     return targetPet.model
 end
 
--- Главная функция v2.0
+-- 🚀 ГЛАВНАЯ ФУНКЦИЯ (РАБОЧАЯ ЛОГИКА ИЗ v3.219)
 local function main()
-    print("🚀 PetScaler v2.0 запущен!")
+    print("\n🚀 === ЗАПУСК PETSCALER v3.221 (РАБОЧАЯ ЛОГИКА ИЗ v3.219) ===")
     
-    -- Шаг 1: Найти питомца
-    local petModel = findAndScalePet()
+    -- 🔍 ПОИСК ПИТОМЦА В РУКЕ (ТОЧНАЯ КОПИЯ ИЗ v3.219)
+    local function findHandHeldPet()
+        local player = Players.LocalPlayer
+        if not player then 
+            print("❌ Player не найден")
+            return nil, nil 
+        end
+        
+        print("🔍 Поиск питомца в руке...")
+        
+        local character = player.Character
+        if not character then
+            print("❌ Character не найден!")
+            return nil, nil
+        end
+        
+        print("👤 Проверяем character...")
+        
+        -- Поиск любого Tool в руках
+        local handTool = character:FindFirstChildOfClass("Tool")
+        if not handTool then
+            print("❌ Tool в руке не найден!")
+            return nil, nil
+        end
+        
+        print("🎯 Найден Tool:", handTool.Name)
+        
+        -- Проверяем что это питомец (содержит KG)
+        if not handTool.Name:find("KG") then
+            print("⚠️ Tool не является питомцем (KG не найден)")
+            return nil, nil
+        end
+        
+        print("✅ Питомец найден в руках:", handTool.Name)
+        
+        -- Возвращаем Tool как модель
+        return handTool, handTool
+    end
+    
+    -- Ищем питомца в руке
+    local petModel, petTool = findHandHeldPet()
     if not petModel then
+        print("❌ Питомец в руке не найден!")
         return
     end
     
-    -- Шаг 2: Создать копию (оригинальная логика)
+    print("🎯 === НАЙДЕН ПИТОМЕЦ В РУКЕ ===")
+    print("📋 Tool:", petTool.Name)
+    
+    -- Создаем глубокую копию
+    print("\n📦 === СОЗДАНИЕ ГЛУБОКОЙ КОПИИ ===")
     local petCopy = deepCopyModel(petModel)
     if not petCopy then
         print("❌ Не удалось создать копию!")
         return
     end
     
-    -- Шаг 3: СНАЧАЛА масштабируем с закрепленными частями (как в оригинале)
+    petCopy.Name = "Copy_" .. petModel.Name
+    print("✅ Глубокая копия создана:", petCopy.Name)
+    
+    -- Размещаем копию в руке игрока
+    petCopy.Parent = player.Character
+    print("✅ Копия размещена В РУКЕ игрока!")
+    
+    -- Масштабирование
     print("\n📏 === МАСШТАБИРОВАНИЕ ===")
-    -- Убеждаемся что все части закреплены для стабильного масштабирования
-    for _, part in pairs(petCopy:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Anchored = true
-        end
-    end
+    local scaleFactor = CONFIG.SCALE_FACTOR
     
-    wait(0.5)
-    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.TARGET_SCALE, CONFIG.TWEEN_TIME)
-    
-    if not scaleSuccess then
-        print("❌ Масштабирование не удалось!")
-        return
-    end
-    
-    -- Шаг 4: ПОСЛЕ масштабирования настраиваем Anchored для анимации
-    print("\n🧠 === НАСТРОЙКА ANCHORED ДЛЯ АНИМАЦИИ ===")
-    wait(CONFIG.TWEEN_TIME + 1) -- Ждем завершения масштабирования
-    
-    -- 🎯 КОПИРОВАНИЕ ТОЧНОЙ ОРИЕНТАЦИИ ОРИГИНАЛА
-    print("\n🎯 === КОПИРОВАНИЕ ОРИЕНТАЦИИ ОРИГИНАЛА ===")
-    print("📊 Анализатор показал: UpVector оригинала = (0, 0, -1)")
-    print("📊 Копируем ТОЧНУЮ ориентацию оригинального питомца!")
-    
-    if petCopy.PrimaryPart and petModel and petModel.PrimaryPart then
-        local copyRootPart = petCopy.PrimaryPart
-        local originalRootPart = petModel.PrimaryPart
-        
-        local currentPos = copyRootPart.Position
-        local originalCFrame = originalRootPart.CFrame
-        
-        print("📊 ДО коррекции:")
-        print("   Копия позиция:", currentPos)
-        print("   Копия UpVector:", copyRootPart.CFrame.UpVector)
-        print("📊 ОРИГИНАЛ (эталон):")
-        print("   Оригинал позиция:", originalCFrame.Position)
-        print("   Оригинал UpVector:", originalCFrame.UpVector)
-        print("   Оригинал LookVector:", originalCFrame.LookVector)
-        
-        -- ЭТАП 1: ПОДНИМАЕМ НА ПРАВИЛЬНУЮ ВЫСОТУ
-        local correctedPosition = Vector3.new(
-            currentPos.X,
-            currentPos.Y + 1.33,  -- Поднимаем как Roblox
-            currentPos.Z
-        )
-        
-        -- ЭТАП 2: КОПИРУЕМ ТОЧНУЮ ОРИЕНТАЦИЮ ОРИГИНАЛА
-        -- Берем UpVector и LookVector прямо с оригинала!
-        local exactCFrame = CFrame.lookAt(
-            correctedPosition,
-            correctedPosition + originalCFrame.LookVector,  -- Точный LookVector
-            originalCFrame.UpVector  -- Точный UpVector (0, 0, -1)
-        )
-        
-        -- Применяем точное копирование
-        copyRootPart.CFrame = exactCFrame
-        
-        print("\n✅ ПРИМЕНЕНО ТОЧНОЕ КОПИРОВАНИЕ CFrame!")
-        print("📊 Поднято на +1.33 стада")
-        print("🦴 Скопирована ориентация оригинала")
-        
-        -- 🔍 НЕМЕДЛЕННАЯ ПРОВЕРКА ПОСЛЕ ПРИМЕНЕНИЯ
-        wait(0.1)  -- Небольшая задержка
-        local immediateCheck = copyRootPart.CFrame
-        print("\n🔍 ПРОВЕРКА СРАЗУ ПОСЛЕ ПРИМЕНЕНИЯ:")
-        print("   Копия UpVector:", immediateCheck.UpVector)
-        print("   Копия LookVector:", immediateCheck.LookVector)
-        print("   Копия позиция:", immediateCheck.Position)
-        
-        -- Сравниваем с оригиналом
-        local currentOriginal = originalRootPart.CFrame
-        print("\n📊 СРАВНЕНИЕ С ОРИГИНАЛОМ:")
-        print("   Оригинал UpVector:", currentOriginal.UpVector)
-        print("   Копия UpVector:   ", immediateCheck.UpVector)
-        print("   СОВПАДАЮТ?", 
-            math.abs(currentOriginal.UpVector.X - immediateCheck.UpVector.X) < 0.01 and
-            math.abs(currentOriginal.UpVector.Y - immediateCheck.UpVector.Y) < 0.01 and
-            math.abs(currentOriginal.UpVector.Z - immediateCheck.UpVector.Z) < 0.01)
-        
-        -- 🕐 ОТЛОЖЕННАЯ ПРОВЕРКА (через 2 секунды)
-        spawn(function()
-            wait(2)
-            if copyRootPart and copyRootPart.Parent then
-                local delayedCheck = copyRootPart.CFrame
-                print("\n⏰ ПРОВЕРКА ЧЕРЕЗ 2 СЕКУНДЫ:")
-                print("   Копия UpVector:", delayedCheck.UpVector)
-                print("   Копия LookVector:", delayedCheck.LookVector)
-                print("   Копия позиция:", delayedCheck.Position)
-                
-                -- Проверяем изменилось ли
-                local upVectorChanged = 
-                    math.abs(immediateCheck.UpVector.X - delayedCheck.UpVector.X) > 0.01 or
-                    math.abs(immediateCheck.UpVector.Y - delayedCheck.UpVector.Y) > 0.01 or
-                    math.abs(immediateCheck.UpVector.Z - delayedCheck.UpVector.Z) > 0.01
-                
-                if upVectorChanged then
-                    print("⚠️ ОРИЕНТАЦИЯ ИЗМЕНИЛАСЬ! Что-то перезаписывает CFrame!")
-                    print("🎭 Возможно анимационная система или другой скрипт")
-                else
-                    print("✅ Ориентация стабильна, проблема в другом")
-                    print("🤔 Возможно проблема в структуре модели или визуальном отображении")
-                end
+    -- 📏 ПРОСТОЕ РАБОЧЕЕ МАСШТАБИРОВАНИЕ (БЕЗ ОШИБОК)
+    if scaleFactor and scaleFactor ~= 1.0 then
+        print("🔧 Применяем масштабирование:", scaleFactor)
+        for _, obj in pairs(petCopy:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.Size = obj.Size * scaleFactor
             end
-        end)
-        
-        -- Проверяем результат
-        local newPos = copyRootPart.Position
-        local newUpVector = copyRootPart.CFrame.UpVector
-        local newLookVector = copyRootPart.CFrame.LookVector
-        
-        print("\n📊 ПОСЛЕ коррекции:")
-        print("   Позиция:", newPos)
-        print("   UpVector:", newUpVector)
-        print("   LookVector:", newLookVector)
-        
-        -- Проверка успешности
-        local heightDifference = newPos.Y - currentPos.Y
-        local isUpright = math.abs(newUpVector.Y - 1.0) < 0.1
-        
-        if math.abs(heightDifference - 1.33) < 0.1 and isUpright then
-            print("\n🎉 ИДЕАЛЬНО! Питомец поднят и стоит на лапах!")
-            print("✅ Высота: +", string.format("%.2f", heightDifference), "стадов")
-            print("✅ UpVector.Y =", string.format("%.2f", newUpVector.Y), "(должно быть ~1.0)")
-            print("🐕 Питомец теперь стоит как оригинал!")
-        else
-            print("\n⚠️ Проверьте результат:")
-            print("📊 Высота: +", heightDifference, "стадов")
-            print("📊 UpVector.Y =", newUpVector.Y, "(должно быть ~1.0)")
         end
-        
-        -- Проверка что UpVector остался как у оригинала
-        if math.abs(newUpVector.Y) < 0.1 and math.abs(newUpVector.Z + 1) < 0.1 then
-            print("✅ UpVector остался как у оригинала (-0.00,-0.00,-1.00)")
-        else
-            print("⚠️ UpVector изменился, но это может быть нормально")
-        end
-        
-        print("🚀 Нативная коррекция Roblox применена!")
-        print("🎯 Питомец теперь должен стоять на земле КАК ОРИГИНАЛ!")
+        print("✅ Масштабирование применено успешно!")
     else
-        print("❌ Нет PrimaryPart у копии для нативной коррекции!")
+        print("ℹ️ Масштабирование пропущено (фактор = 1.0)")
     end
     
+    print("✅ Копия готова к анимации!")
+    
+    -- Anchoring управление
+    print("\n⚓ === ANCHORING УПРАВЛЕНИЕ ===")
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
+    print("✅ Anchoring настроен - только root part заякорен")
     
-    -- 👁️ ПОКАЗЫВАЕМ КОПИЮ ПЕРЕД ЗАПУСКОМ АНИМАЦИИ
-    print("👁️ Показываем готовую копию...")
-    for _, part in pairs(petCopy:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 0  -- Делаем видимой
-        end
-    end
-    
-    -- Шаг 5: ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ
-    print("\n🎭 === ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ ===")
+    -- Запуск анимационной системы
+    print("\n🎭 === ЗАПУСК АНИМАЦИОННОЙ СИСТЕМЫ ===")
     local endlessConnection = startEndlessIdleLoop(petModel, petCopy)
     
     if endlessConnection then
-        print("🎉 === УСПЕХ! ===")
-        print("✅ Масштабированная копия создана")
-        print("✅ Бесконечная idle анимация запущена")
-        print("📍 Копия БЕСКОНЕЧНО играет idle анимацию")
-        print("🚀 НИКОГДА не замирает - плавный бесконечный цикл!")
-        print("🔥 Копия всегда в движении - как живая!")
+        print("🎉 === УСПЕХ! РАБОЧАЯ ЛОГИКА ИЗ v3.219 ПРИМЕНЕНА! ===")
+        print("✅ Копия создана В РУКЕ")
+        print("✅ Анимационная система запущена")
+        print("✅ Копия должна анимироваться!")
     else
-        print("⚠️ Масштабирование успешно, но idle анимация не запустилась")
-        print("💡 Возможно проблема с Motor6D или Humanoid")
+        print("⚠️ Копия создана, но анимация не запустилась")
     end
 end
 
