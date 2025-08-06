@@ -123,14 +123,6 @@ local function deepCopyModel(originalModel)
     copy.Name = originalModel.Name .. "_SCALED_COPY"
     copy.Parent = Workspace
     
-    -- 🙈 СКРЫВАЕМ КОПИЮ ВО ВРЕМЯ СОЗДАНИЯ И МАСШТАБИРОВАНИЯ
-    for _, part in pairs(copy:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 1  -- Делаем невидимой
-        end
-    end
-    print("🙈 Копия скрыта во время создания")
-    
     -- ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ СРАЗУ ПОСЛЕ КЛОНИРОВАНИЯ
     fixAttachmentParenting(copy)
     
@@ -771,10 +763,6 @@ local function startEndlessIdleLoop(originalModel, copyModel)
     local lastHandPetCheck = 0
     local HAND_PET_CHECK_INTERVAL = 1.0  -- Интервал поиска питомца в руке
     
-    -- 📍 ФИКСИРОВАННАЯ ПОЗИЦИЯ КОПИИ (устанавливается один раз)
-    local copyFixedPosition = nil
-    local copyPositionSet = false
-    
     -- 📊 ОТСЛЕЖИВАНИЕ ИЗМЕНЕНИЙ CFrame В ПИТОМЦЕ В РУКЕ
     local previousCFrameStates = {}
     local cframeChangeCount = 0
@@ -889,26 +877,6 @@ local function startEndlessIdleLoop(originalModel, copyModel)
                         local success, errorMsg = pcall(function()
                             -- 📐 МАСШТАБИРОВАНИЕ И ПРИМЕНЕНИЕ CFrame
                             local scaledCFrame = scaleCFrame(currentCFrame, CONFIG.SCALE_FACTOR)
-                            
-                            -- 📍 УСТАНАВЛИВАЕМ ФИКСИРОВАННУЮ ПОЗИЦИЮ КОПИИ (ТОЛЬКО ОДИН РАЗ!)
-                            if not copyPositionSet and originalModel and originalModel.PrimaryPart then
-                                local originalPos = originalModel.PrimaryPart.Position
-                                local offset = Vector3.new(15, 0, 0)  -- Смещение от оригинала
-                                copyFixedPosition = originalPos + offset
-                                copyPositionSet = true
-                                print("📍 ФИКСИРОВАННАЯ ПОЗИЦИЯ КОПИИ УСТАНОВЛЕНА:", copyFixedPosition)
-                            end
-                            
-                            -- 🎭 ПРИМЕНЯЕМ ТОЛЬКО АНИМАЦИЮ ЧАСТЕЙ, НЕ ОБЩУЮ ПОЗИЦИЮ
-                            if copyFixedPosition and copyPart.Name ~= "RootPart" and copyPart.Name ~= "Torso" and copyPart.Name ~= "HumanoidRootPart" then
-                                -- Для НЕ-корневых частей: применяем анимацию относительно фиксированной позиции
-                                local relativePos = scaledCFrame.Position - currentCFrame.Position  -- Относительное смещение
-                                local newPos = copyFixedPosition + relativePos
-                                scaledCFrame = CFrame.new(newPos) * (scaledCFrame - scaledCFrame.Position)
-                            elseif copyFixedPosition then
-                                -- Для корневых частей: фиксируем на месте, применяем только поворот
-                                scaledCFrame = CFrame.new(copyFixedPosition) * (scaledCFrame - scaledCFrame.Position)
-                            end
                             
                             -- 🔒 ПРОВЕРКА БЕЗОПАСНОСТИ CFrame
                             local copyRootPart = copyModel.PrimaryPart or copyModel:FindFirstChild("RootPart") or copyModel:FindFirstChild("Torso")
@@ -1256,16 +1224,9 @@ local function main()
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    -- 👁️ ПОКАЗЫВАЕМ КОПИЮ ПЕРЕД ЗАПУСКОМ АНИМАЦИИ
-    print("👁️ Показываем готовую копию...")
-    for _, part in pairs(petCopy:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 0  -- Делаем видимой
-        end
-    end
+    -- Шаг 5: Запуск бесконечной idle анимации
+    print("\n🔄 === БЕСКОНЕЧНАЯ IDLE АНИМАЦИЯ ===")
     
-    -- Шаг 5: ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ
-    print("\n🎭 === ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ ===")
     local endlessConnection = startEndlessIdleLoop(petModel, petCopy)
     
     if endlessConnection then
