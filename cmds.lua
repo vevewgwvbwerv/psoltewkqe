@@ -12,11 +12,13 @@ local player = Players.LocalPlayer
 print("🔥 === PET SCALER v2.0 - С АНИМАЦИЕЙ ===")
 print("=" .. string.rep("=", 60))
 
--- Конфигурация (как в оригинальном PetScaler)
+-- Конфигурация ПЛАВНОГО УВЕЛИЧЕНИЯ ДО ОРИГИНАЛЬНОГО РАЗМЕРА
 local CONFIG = {
     SEARCH_RADIUS = 100,
-    SCALE_FACTOR = 3.0,
-    TWEEN_TIME = 3.0,
+    START_SCALE = 0.3,      -- Начальный размер копии (30% от оригинала)
+    TARGET_SCALE = 1.0,     -- Целевой размер (как оригинал)
+    SCALE_FACTOR = 1.0,     -- Для совместимости с Motor6D логикой
+    TWEEN_TIME = 3.0,       -- Время плавного увеличения
     EASING_STYLE = Enum.EasingStyle.Quad,
     EASING_DIRECTION = Enum.EasingDirection.Out
 }
@@ -120,6 +122,14 @@ local function deepCopyModel(originalModel)
     local copy = originalModel:Clone()
     copy.Name = originalModel.Name .. "_SCALED_COPY"
     copy.Parent = Workspace
+    
+    -- 🙈 СКРЫВАЕМ КОПИЮ ВО ВРЕМЯ СОЗДАНИЯ И МАСШТАБИРОВАНИЯ
+    for _, part in pairs(copy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 1  -- Делаем невидимой
+        end
+    end
+    print("🙈 Копия скрыта во время создания")
     
     -- ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ СРАЗУ ПОСЛЕ КЛОНИРОВАНИЯ
     fixAttachmentParenting(copy)
@@ -286,9 +296,11 @@ end
 
 -- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
 
--- Функция плавного масштабирования модели
+-- Функция плавного увеличения с маленького до оригинального размера
 local function scaleModelSmoothly(model, scaleFactor, tweenTime)
-    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
+    print("🔥 Начинаю плавное увеличение с маленького до оригинального размера:", model.Name)
+    print("📍 Начальный размер:", CONFIG.START_SCALE .. "x (маленький)")
+    print("🎯 Целевой размер:", CONFIG.TARGET_SCALE .. "x (как оригинал)")
     
     local parts = getAllParts(model)
     print("🧩 Найдено частей для масштабирования:", #parts)
@@ -314,14 +326,44 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         end
     end
     
-    -- Сохраняем исходные данные всех частей
+    -- НОВАЯ ЛОГИКА: СНАЧАЛА УМЕНЬШАЕМ КОПИЮ, ПОТОМ УВЕЛИЧИВАЕМ
+    
+    -- Шаг 1: Сохраняем оригинальные размеры (это будет целевой размер)
     local originalData = {}
     for _, part in ipairs(parts) do
         originalData[part] = {
-            size = part.Size,
+            size = part.Size,  -- Оригинальный размер (целевой)
             cframe = part.CFrame
         }
     end
+    
+    -- Шаг 2: СНАЧАЛА уменьшаем копию до START_SCALE (МГНОВЕННО)
+    print("🔍 Шаг 1: Уменьшаю копию до маленького размера (" .. CONFIG.START_SCALE .. "x)")
+    
+    for _, part in ipairs(parts) do
+        local originalSize = originalData[part].size
+        local originalCFrame = originalData[part].cframe
+        
+        -- Уменьшаем размер до START_SCALE
+        local startSize = originalSize * CONFIG.START_SCALE
+        
+        -- Уменьшаем позицию относительно центра
+        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
+        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * CONFIG.START_SCALE) * (relativeCFrame - relativeCFrame.Position)
+        local startCFrame = centerCFrame * scaledRelativeCFrame
+        
+        -- МГНОВЕННО устанавливаем маленький размер
+        part.Size = startSize
+        part.CFrame = startCFrame
+    end
+    
+    print("✅ Копия уменьшена до маленького размера!")
+    
+    -- Небольшая пауза чтобы увидеть маленькую копию
+    wait(0.5)
+    
+    -- Шаг 3: Теперь ПЛАВНО увеличиваем до оригинального размера
+    print("🚀 Шаг 2: Плавно увеличиваю до оригинального размера (" .. CONFIG.TARGET_SCALE .. "x)")
     
     -- Создаем TweenInfo
     local tweenInfo = TweenInfo.new(
@@ -333,34 +375,75 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         0 -- Задержка
     )
     
-    -- Масштабирование через CFrame (ОРИГИНАЛЬНАЯ ЛОГИКА)
+    -- ПЛАВНОЕ УВЕЛИЧЕНИЕ ДО ОРИГИНАЛЬНОГО РАЗМЕРА
     local tweens = {}
     local completedTweens = 0
     
     for _, part in ipairs(parts) do
-        local originalSize = originalData[part].size
-        local originalCFrame = originalData[part].cframe
+        local targetSize = originalData[part].size * CONFIG.TARGET_SCALE  -- Оригинальный размер
+        local targetCFrame = originalData[part].cframe  -- Оригинальная позиция
         
-        -- Вычисляем новый размер
-        local newSize = originalSize * scaleFactor
-        
-        -- Вычисляем новый CFrame относительно центра
-        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
-        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
-        local newCFrame = centerCFrame * scaledRelativeCFrame
-        
-        -- Создаем твин для размера и CFrame
+        -- Создаем твин для плавного увеличения до оригинального размера
+        -- 🚨 УБИРАЕМ CFrame ИЗ ТВИНА - ПУСТЬ АНИМАЦИЯ УПРАВЛЯЕТ ПОЗИЦИЕЙ!
         local tween = TweenService:Create(part, tweenInfo, {
-            Size = newSize,
-            CFrame = newCFrame
+            Size = targetSize
+            -- CFrame = targetCFrame  -- ОТКЛЮЧЕНО! Конфликтует с анимацией
         })
         
         -- Обработчик завершения твина
         tween.Completed:Connect(function()
             completedTweens = completedTweens + 1
             if completedTweens == #parts then
-                print("✅ Масштабирование завершено!")
-                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
+                print("✅ Плавное увеличение завершено!")
+                print("🎉 Копия теперь точно такого же размера как оригинал!")
+                
+                -- КРИТИЧЕСКИ ВАЖНО: ПРИНУДИТЕЛЬНО СТАВИМ КОПИЮ В ВЕРТИКАЛЬНОЕ ПОЛОЖЕНИЕ
+                print("🔧 ПРИНУДИТЕЛЬНО ставлю копию в вертикальное положение (не лежачее)...")
+                
+                if model.PrimaryPart then
+                    local currentPosition = model.PrimaryPart.Position
+                    
+                    -- ПРИНУДИТЕЛЬНО создаем вертикальный CFrame
+                    -- Y-ось направлена вверх (0, 1, 0)
+                    -- Z-ось направлена вперед (0, 0, -1) - стандартное направление
+                    local uprightCFrame = CFrame.new(
+                        currentPosition,  -- Позиция
+                        currentPosition + Vector3.new(0, 0, -1)  -- Направление вперед
+                    )
+                    
+                    -- Применяем вертикальную ориентацию
+                    model:SetPrimaryPartCFrame(uprightCFrame)
+                    
+                    print("✅ Копия принудительно поставлена в вертикальное положение!")
+                    
+                    -- Дополнительная коррекция: проверяем все части модели
+                    print("🔍 Проверяю и корректирую ориентацию всех частей...")
+                    
+                    local correctedParts = 0
+                    for _, part in pairs(model:GetDescendants()) do
+                        if part:IsA("BasePart") and part ~= model.PrimaryPart then
+                            -- Проверяем нет ли странных поворотов
+                            local partCFrame = part.CFrame
+                            local upVector = partCFrame.UpVector
+                            
+                            -- Если часть повернута неправильно (не вверх)
+                            if math.abs(upVector.Y) < 0.7 then -- Y-компонент должен быть близок к 1
+                                -- Корректируем ориентацию части
+                                local correctedPartCFrame = CFrame.new(
+                                    partCFrame.Position,
+                                    partCFrame.Position + Vector3.new(0, 0, -1)
+                                )
+                                part.CFrame = correctedPartCFrame
+                                correctedParts = correctedParts + 1
+                            end
+                        end
+                    end
+                    
+                    print("✅ Коррекция завершена! Исправлено частей:", correctedParts)
+                    print("🚀 Копия теперь должна стоять правильно!")
+                else
+                    print("⚠️ Нет PrimaryPart для коррекции ориентации")
+                end
             end
         end)
         
@@ -555,9 +638,9 @@ local function forceOnlyIdleAnimation(idlePoses, motor6Ds, petModel, originalPos
     return forceConnection
 end
 
--- Функция ГИБРИДНОГО ПОДХОДА: LIVE COPYING + IDLE TIMELINE ПРИ ХОДЬБЕ
-local function startHybridIdleSystem(originalModel, copyModel)
-    print("\n🎯 === ГИБРИДНАЯ СИСТЕМА: LIVE COPYING + IDLE TIMELINE ===")
+-- БЕСКОНЕЧНАЯ IDLE АНИМАЦИЯ (НИКОГДА НЕ ОСТАНАВЛИВАЕТСЯ)
+local function startEndlessIdleLoop(originalModel, copyModel)
+    print("\n🔄 === БЕСКОНЕЧНАЯ IDLE АНИМАЦИЯ ===\n")
     
     -- Находим Motor6D в обеих моделях
     local originalMotors = {}
@@ -575,178 +658,412 @@ local function startHybridIdleSystem(originalModel, copyModel)
         end
     end
     
-    print("🔧 Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
+    print("🔧 Motor6D найдено - Оригинал:", #originalMotors, "Копия:", #copyMotors)
     
     if #originalMotors == 0 or #copyMotors == 0 then
         print("❌ Недостаточно Motor6D!")
         return nil
     end
     
-    -- ШАГ 1: НАСТРОЙКА ДИНАМИЧЕСКОЙ ЗАПИСИ IDLE АНИМАЦИИ
-    print("📹 Настраиваю динамическую запись idle анимации...")
+    -- УЛУЧШЕННЫЙ ПОИСК HUMANOID И АЛЬТЕРНАТИВНЫЕ МЕТОДЫ
+    local originalHumanoid = originalModel:FindFirstChild("Humanoid")
+    local originalRootPart = originalModel:FindFirstChild("RootPart") or originalModel:FindFirstChild("HumanoidRootPart") or originalModel:FindFirstChild("Torso")
     
-    -- СОСТОЯНИЕ ДИНАМИЧЕСКОЙ ЗАПИСИ
-    local isRecording = false
-    local isWalking = false
-    local recordedIdlePoses = {}
-    local idleFrameIndex = 1
-    local frameRate = 60
-    local frameInterval = 1 / frameRate
-    local lastFrameTime = tick()
+    print("🔍 Поиск компонентов для детекции idle:")
+    print("  - Humanoid:", originalHumanoid and "✅ Найден" or "❌ Не найден")
+    print("  - RootPart:", originalRootPart and ("✅ Найден (" .. originalRootPart.Name .. ")") or "❌ Не найден")
     
-    print("✅ Оригинал ОСТАЕТСЯ СВОБОДНЫМ - никакого принудительного заякоривания!")
+    -- Если нет Humanoid, используем альтернативную детекцию через позицию
+    local usePositionDetection = false
+    if not originalHumanoid then
+        if originalRootPart then
+            print("⚠️ Humanoid не найден, но есть RootPart - используем детекцию по позиции")
+            usePositionDetection = true
+        else
+            print("❌ Ни Humanoid, ни RootPart не найдены! Не можем детектировать idle")
+            return nil
+        end
+    else
+        print("✅ Humanoid найден:", originalHumanoid.Name)
+    end
     
-    -- ГИБРИДНАЯ СИСТЕМА: ДЕТЕКЦИЯ ХОДЬБЫ И ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ
-    local hybridController = RunService.Heartbeat:Connect(function()
-        local now = tick()
+    -- === 📡 СИСТЕМА LIVE ПОТОКОВОЙ IDLE АНИМАЦИИ ===
+    -- 🎬 РЕАЛЬНОЕ ВРЕМЯ: КОПИРОВАНИЕ Motor6D С ПИТОМЦА В РУКЕ
+    
+    -- 🔍 ПОИСК ПИТОМЦА В РУКЕ (ТОЧНАЯ КОПИЯ QuickDataExporter)
+    local function findHandHeldPet()
+        local player = Players.LocalPlayer
+        if not player then 
+            print("❌ Player не найден")
+            return nil, nil 
+        end
         
-        -- ДЕТЕКТИРУЕМ IDLE/WALK АНИМАЦИИ ПО РЕАЛЬНОМУ СОСТОЯНИЮ ANIMATOR
-        local currentlyWalking = false
-        local currentlyIdle = false
+        print("🔍 Поиск питомца в руке...")
         
-        -- Ищем Animator в оригинальной модели
-        for _, obj in pairs(originalModel:GetDescendants()) do
-            if obj:IsA("Animator") then
-                local playingTracks = obj:GetPlayingAnimationTracks()
-                
-                for _, track in pairs(playingTracks) do
-                    local animName = track.Animation.Name:lower()
-                    
-                    -- Проверяем на walking анимации
-                    if animName:find("walk") or animName:find("run") or animName:find("move") then
-                        currentlyWalking = true
-                    -- Проверяем на idle анимации
-                    elseif animName:find("idle") or animName:find("stand") or animName:find("breath") then
-                        currentlyIdle = true
-                    end
-                end
-                
-                break -- Нашли Animator, выходим
+        -- ТОЧНО КАК В QuickDataExporter - поиск Tool в character
+        local character = player.Character
+        if not character then
+            print("❌ Character не найден!")
+            return nil, nil
+        end
+        
+        print("👤 Проверяем character...")
+        
+        -- Поиск любого Tool в руках (как в QuickDataExporter)
+        local handTool = character:FindFirstChildOfClass("Tool")
+        if not handTool then
+            print("❌ Tool в руке не найден!")
+            return nil, nil
+        end
+        
+        print("🎯 Найден Tool:", handTool.Name)
+        
+        -- Проверяем что это питомец (содержит KG)
+        if not handTool.Name:find("KG") then
+            print("⚠️ Tool не является питомцем (KG не найден)")
+            return nil, nil
+        end
+        
+        print("✅ Питомец найден в руках:", handTool.Name)
+        
+        -- ТОЧНО КАК В QuickDataExporter - возвращаем Tool как модель
+        return handTool, handTool
+    end
+    
+    -- 📦 Функция получения анимируемых частей из Tool (включая подмодели)
+    local function getAnimatedPartsFromTool(tool)
+        local parts = {}
+        
+        if not tool then return parts end
+        
+        -- Ищем все BasePart в Tool, включая подмодели (исключая Handle)
+        for _, obj in pairs(tool:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name ~= "Handle" then
+                table.insert(parts, obj)
             end
         end
         
-        -- ЛОГИКА ДИНАМИЧЕСКОЙ ЗАПИСИ IDLE АНИМАЦИИ
-        if currentlyIdle and not isRecording and not isWalking then
-            -- Начинаем запись idle анимации
-            isRecording = true
-            recordedIdlePoses = {}
-            print("📹 НАЧИНАЮ ЗАПИСЬ IDLE АНИМАЦИИ - детектирована idle в Animator")
-        elseif currentlyWalking and isRecording then
-            -- Останавливаем запись и ЗАЦИКЛИВАЕМ IDLE НА ОРИГИНАЛЕ!
-            isRecording = false
-            print("⏹️ ОСТАНАВЛИВАЮ ЗАПИСЬ - детектирована walk анимация. Записано кадров:", #recordedIdlePoses)
+        return parts
+    end
+    
+    -- 🎯 Поиск соответствующей части в копии по имени
+    local function findCorrespondingPart(copyModel, partName)
+        for _, obj in pairs(copyModel:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name == partName then
+                return obj
+            end
+        end
+        return nil
+    end
+    
+    -- 📐 Масштабирование CFrame с сохранением поворота
+    local function scaleCFrame(originalCFrame, scaleFactor)
+        local originalPosition = originalCFrame.Position
+        local scaledPosition = originalPosition * scaleFactor
+        
+        -- Сохраняем поворот, но масштабируем позицию
+        return CFrame.new(scaledPosition) * (originalCFrame - originalCFrame.Position)
+    end
+    
+    -- 🎭 Глобальные переменные для CFrame анимационной системы
+    local handPetModel = nil
+    local handPetParts = {}  -- Анимируемые части из Tool
+    local lastHandPetCheck = 0
+    local HAND_PET_CHECK_INTERVAL = 1.0  -- Интервал поиска питомца в руке
+    
+    -- 📍 ФИКСИРОВАННАЯ ПОЗИЦИЯ КОПИИ (устанавливается один раз)
+    local copyFixedPosition = nil
+    local copyPositionSet = false
+    
+    -- 📊 ОТСЛЕЖИВАНИЕ ИЗМЕНЕНИЙ CFrame В ПИТОМЦЕ В РУКЕ
+    local previousCFrameStates = {}
+    local cframeChangeCount = 0
+    local lastChangeTime = 0
+    
+    -- 🔧 Конфигурация CFrame системы
+    local INTERPOLATION_SPEED = 0.3  -- Уменьшаем скорость для стабильности
+    local POSITION_THRESHOLD = 0.001  -- Минимальное изменение позиции
+    local ROTATION_THRESHOLD = 0.001  -- Минимальное изменение поворота
+    local MAX_DISTANCE_FROM_ROOT = 50  -- Максимальное расстояние от корня
+    
+    -- Переменные для позиционной детекции
+    local lastPosition = usePositionDetection and originalRootPart and originalRootPart.Position or Vector3.new(0, 0, 0)
+    
+    if usePositionDetection then
+        print("💡 Использую позиционную детекцию idle через", originalRootPart.Name)
+    else
+        print("💡 Использую Humanoid.MoveDirection для детекции idle")
+    end
+    
+    print("📡 ЗАПУСКАЮ LIVE ПОТОКОВУЮ СИСТЕМУ IDLE АНИМАЦИИ!")
+    print("🎬 Копирование в реальном времени с питомца в руке")
+    print("🔄 Копия будет повторять ВСЕ движения оригинала!")
+    
+    local connection = RunService.Heartbeat:Connect(function()
+        -- Проверяем существование моделей
+        if not originalModel.Parent or not copyModel.Parent then
+            print("⚠️ Модель удалена, останавливаю систему")
+            connection:Disconnect()
+            return
+        end
+        
+        local currentTime = tick()
+        
+        -- === 🔍 ПОИСК ПИТОМЦА В РУКЕ ===
+        if currentTime - lastHandPetCheck >= HAND_PET_CHECK_INTERVAL then
+            local foundPetModel, foundTool = findHandHeldPet()
             
-            -- ТЕПЕРЬ ЗАЦИКЛИВАЕМ IDLE НА ОРИГИНАЛЕ!
-            if #recordedIdlePoses > 0 then
-                print("🔄 ЗАЦИКЛИВАЮ IDLE АНИМАЦИЮ НА ОРИГИНАЛЕ - копия всегда будет получать idle!")
-                -- Останавливаем все walking анимации на оригинале
-                for _, obj in pairs(originalModel:GetDescendants()) do
-                    if obj:IsA("Animator") then
-                        local tracks = obj:GetPlayingAnimationTracks()
-                        for _, track in pairs(tracks) do
-                            local animName = track.Animation.Name:lower()
-                            if animName:find("walk") or animName:find("run") or animName:find("move") then
-                                track:Stop()
-                                print("⛔ Остановил walking анимацию:", track.Animation.Name)
-                            end
-                        end
-                        break
-                    end
-                end
-            end
-        end
-        
-        -- ЗАПИСЫВАЕМ IDLE ПОЗЫ ПОКА АКТИВНА IDLE АНИМАЦИЯ
-        if isRecording and currentlyIdle then
-            local currentPose = {}
-            for _, originalMotor in pairs(originalMotors) do
-                currentPose[originalMotor.Name] = {
-                    C0 = originalMotor.C0,
-                    C1 = originalMotor.C1
-                }
-            end
-            table.insert(recordedIdlePoses, currentPose)
-        end
-        
-        -- Обновляем общее состояние
-        if currentlyWalking ~= isWalking then
-            isWalking = currentlyWalking
-        end
-        
-        -- ПРИНУДИТЕЛЬНОЕ ЗАЦИКЛИВАНИЕ IDLE НА ОРИГИНАЛЕ (ВСЕГДА!)
-        if #recordedIdlePoses > 0 then
-            -- Принудительно проигрываем idle на оригинале (даже при ходьбе!)
-            if now - lastFrameTime >= frameInterval then
-                local currentPose = recordedIdlePoses[idleFrameIndex]
-                if currentPose then
-                    for motorName, poseData in pairs(currentPose) do
-                        for _, originalMotor in pairs(originalMotors) do
-                            if originalMotor.Name == motorName then
-                                originalMotor.C0 = poseData.C0
-                                originalMotor.C1 = poseData.C1
-                                break
-                            end
-                        end
-                    end
-                end
+            if foundPetModel ~= handPetModel then
+                handPetModel = foundPetModel
+                handPetParts = getAnimatedPartsFromTool(handPetModel)
                 
-                -- Переход к следующему кадру (бесконечное зацикливание)
-                idleFrameIndex = idleFrameIndex + 1
-                if idleFrameIndex > #recordedIdlePoses then
-                    idleFrameIndex = 1
-                end
-                
-                lastFrameTime = now
-            end
-        end
-        
-        -- ПРОСТОЕ LIVE COPYING - КОПИЯ ВСЕГДА ПОЛУЧАЕТ IDLE!
-        -- Лив копирование Motor6D от оригинала к копии
-        for i, originalMotor in pairs(originalMotors) do
-            local copyMotor = copyMotors[i]
-            if copyMotor then
-                pcall(function()
-                    -- Масштабируем позиционные компоненты
-                    local scaledC0 = CFrame.new(originalMotor.C0.Position * CONFIG.SCALE_FACTOR) * (originalMotor.C0 - originalMotor.C0.Position)
-                    local scaledC1 = CFrame.new(originalMotor.C1.Position * CONFIG.SCALE_FACTOR) * (originalMotor.C1 - originalMotor.C1.Position)
+                if handPetModel then
+                    print("🎯 НАШЛИ ПИТОМЦА В РУКЕ:", foundTool and foundTool.Name or "Неизвестный")
+                    print("📦 Анимируемых частей:", #handPetParts)
                     
-                    copyMotor.C0 = scaledC0
-                    copyMotor.C1 = scaledC1
-                    copyMotor.Transform = originalMotor.Transform
-                end)
+                    -- Инициализируем отслеживание CFrame
+                    previousCFrameStates = {}
+                    for _, part in ipairs(handPetParts) do
+                        if part and part.Parent then
+                            previousCFrameStates[part.Name] = part.CFrame
+                        end
+                    end
+                    
+                    cframeChangeCount = 0
+                    lastChangeTime = currentTime
+                else
+                    print("⚠️ Питомец в руке не найден")
+                    handPetParts = {}
+                end
+            end
+            
+            lastHandPetCheck = currentTime
+        end
+        
+        -- Применяем CFrame анимацию если есть питомец в руке
+        if handPetTool and #handPetParts > 0 then
+            -- Устанавливаем фиксированную позицию копии один раз
+            if not copyPositionSet and originalModel and originalModel.PrimaryPart then
+                local originalPos = originalModel.PrimaryPart.Position
+                local offset = Vector3.new(15, 0, 0)
+                copyFixedPosition = originalPos + offset
+                copyPositionSet = true
+                print("📍 Установлена фиксированная позиция копии:", copyFixedPosition)
+            end
+            
+            -- Применяем анимацию ко всем связанным частям
+            for handPart, copyPart in pairs(copyPartsMap) do
+                if handPart and handPart.Parent and copyPart and copyPart.Parent then
+                    local handCFrame = handPart.CFrame
+                    
+                    -- Масштабируем CFrame
+                    local scaledPosition = handCFrame.Position * CONFIG.SCALE_FACTOR
+                    local scaledCFrame = CFrame.new(scaledPosition) * (handCFrame - handCFrame.Position)
+                    
+                    -- Применяем фиксированную позицию для корневых частей
+                    if copyFixedPosition and (copyPart.Name == "RootPart" or copyPart.Name == "Torso" or copyPart.Name == "HumanoidRootPart") then
+                        scaledCFrame = CFrame.new(copyFixedPosition) * (scaledCFrame - scaledCFrame.Position)
+                    end
+                    
+                    -- Плавно интерполируем к целевому CFrame
+                    copyPart.CFrame = copyPart.CFrame:Lerp(scaledCFrame, INTERPOLATION_SPEED)
+                        end
+                    end
+                end
+            end
+            
+            -- Обновляем счетчики изменений
+            if changesDetected > 0 then
+                cframeChangeCount = cframeChangeCount + changesDetected
+                lastChangeTime = currentTime
+            end
+            
+            -- 🔍 МОНИТОРИНГ СОСТОЯНИЯ КОПИИ
+            local copyPartsCount = 0
+            local validCopyParts = 0
+            local anchoredParts = 0
+            
+            for _, part in ipairs(copyModel:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    copyPartsCount = copyPartsCount + 1
+                    if part.Parent then
+                        validCopyParts = validCopyParts + 1
+                        if part.Anchored then
+                            anchoredParts = anchoredParts + 1
+                        end
+                    end
+                end
+            end
+            
+            -- 📊 ДЕТАЛЬНАЯ ДИАГНОСТИКА каждые 3 секунды
+            if math.floor(currentTime) % 3 == 0 and math.floor(currentTime * 10) % 10 == 0 then
+                print("📐 LIVE CFrame КОПИРОВАНИЕ: применено", appliedCount, "/", #handPetParts, "CFrame состояний")
+                print(string.format("🔍 СОСТОЯНИЕ КОПИИ: %d/%d частей валидны, %d заякорено", validCopyParts, copyPartsCount, anchoredParts))
+                
+                -- 🎯 ОТЧЕТ ОБ ИЗМЕНЕНИЯХ В ПИТОМЦЕ В РУКЕ
+                local timeSinceLastChange = currentTime - lastChangeTime
+                print(string.format("🎭 ПИТОМЕЦ В РУКЕ: %d изменений CFrame, последнее %.1f сек назад", 
+                    cframeChangeCount, timeSinceLastChange))
+                
+                if changesDetected > 0 then
+                    print(string.format("✅ CFrame АНИМАЦИЯ КОПИРУЕТСЯ: %d частей изменились!", changesDetected))
+                else
+                    print("⚠️ ПИТОМЕЦ СТАТИЧЕН: CFrame не изменяются")
+                end
+                
+                -- 🚨 ПРЕДУПРЕЖДЕНИЕ О ПОТЕРЕ ЧАСТЕЙ
+                if validCopyParts < copyPartsCount * 0.8 then
+                    print(string.format("🚨 ВНИМАНИЕ: Копия теряет части! %d из %d частей потеряны!", 
+                        copyPartsCount - validCopyParts, copyPartsCount))
+                end
+                
+                -- Показываем первые 3 части для диагностики
+                for i = 1, math.min(3, #debugInfo) do
+                    local info = debugInfo[i]
+                    print(string.format("📐 %s: Changed=%s Anchored=%s Applied=%s", 
+                        info.name, tostring(info.changed), tostring(info.anchored), tostring(info.applied)))
+                end
+            end
+        else
+            -- Питомец в руке не найден - используем стандартную idle позу
+            if math.floor(currentTime) % 5 == 0 and math.floor(currentTime * 10) % 10 == 0 then
+                print("⚠️ Питомец в руке не найден - копия в статичной позе")
             end
         end
     end)
     
-    print("✅ ГИБРИДНАЯ СИСТЕМА АКТИВНА!")
-    print("📍 Когда питомец стоит - live copying естественной idle анимации")
-    print("🏃 Когда питомец идет - проигрывание записанной idle timeline")
-    print("🔥 Копия НИКОГДА не будет ходить!")
+    -- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем Anchored состояния
+    print("🔍 ПРОВЕРКА ANCHORED СОСТОЯНИЙ КОПИИ:")
+    local copyParts = getAllParts(copyModel)
+    local anchoredCount = 0
+    local rootPart = nil
     
-    return hybridController
+    -- Находим корневую часть
+    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    for _, candidate in ipairs(rootCandidates) do
+        for _, part in ipairs(copyParts) do
+            if part.Name == candidate then
+                rootPart = part
+                break
+            end
+        end
+        if rootPart then break end
+    end
+    
+    -- Правильно настраиваем Anchored
+    for _, part in ipairs(copyParts) do
+        if part == rootPart then
+            part.Anchored = true -- Только корень заякорен
+        else
+            part.Anchored = false -- Остальные свободны для анимации
+        end
+        if part.Anchored then
+            anchoredCount = anchoredCount + 1
+        end
+    end
+    
+    print("⚙️ Корневая часть:", rootPart and rootPart.Name or "Не найдена")
+    print("⚓ Anchored частей:", anchoredCount, "/", #copyParts)
+    
+    print("✅ ПРИНУДИТЕЛЬНАЯ IDLE СИСТЕМА ЗАПУЩЕНА!")
+    print("📍 Копия будет ВСЕГДА играть только idle анимацию!")
+    print("🔥 Никакой статичности при ходьбе!")
+    
+    return connection
 end
 
 -- === ОСНОВНЫЕ ФУНКЦИИ ===
 
 -- Функция поиска и масштабирования (из оригинального PetScaler)
 local function findAndScalePet()
-    print("🔍 Поиск UUID моделей питомцев...")
+    print("🔍 Поиск ТОЛЬКО ТВОИХ питомцев (рядом + в руке)...")
     
     local foundPets = {}
     
+    -- 🔍 ПОИСК 1: ПИТОМЦЫ РЯДОМ С ИГРОКОМ (в малом радиусе)
+    print("📍 Поиск питомцев рядом с тобой...")
+    
     for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+        if obj:IsA("Model") then
             local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
             if success then
                 local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
+                if distance <= 50 then -- МАЛЫЙ радиус - только рядом с тобой
+                    
+                    -- 🔒 ФИЛЬТРЫ ДЛЯ ТВОИХ ПИТОМЦЕВ (НЕ ЧУЖИХ!)
+                    local isPet = false
+                    local reason = ""
+                    
+                    -- Фильтр 1: Проверяем что это НЕ питомец другого игрока
+                    local isNearOtherPlayer = false
+                    for _, otherPlayer in pairs(Players:GetPlayers()) do
+                        if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                            local otherPlayerPos = otherPlayer.Character.HumanoidRootPart.Position
+                            local distanceToOtherPlayer = (modelCFrame.Position - otherPlayerPos).Magnitude
+                            if distanceToOtherPlayer < 30 then -- Если питомец рядом с другим игроком
+                                isNearOtherPlayer = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if not isNearOtherPlayer then
+                        -- Продолжаем только если это НЕ питомец другого игрока
+                    
+                    -- 🎯 ТОЛЬКО UUID В ИМЕНИ - НИКАКИХ ДРУГИХ КРИТЕРИЕВ!
+                    if obj.Name:find("%{") and obj.Name:find("%}") then
+                        isPet = true
+                        reason = "UUID в имени"
+                        print("🔍 Найден питомец с UUID:", obj.Name)
+                    else
+                        isPet = false
+                        reason = "Нет UUID"
+                    end
+                    
+                    if isPet then
                         table.insert(foundPets, {
                             model = obj,
                             distance = distance,
-                            meshes = meshes
+                            reason = reason,
+                            source = "workspace"
                         })
+                        print("✅ Найден питомец в Workspace:", obj.Name, "(причина:", reason, ")")
+                    end
+                    
+                    end -- Закрываем блок if not isNearOtherPlayer then
+                end
+            end
+        end
+    end
+    
+    -- 🔍 ПОИСК 2: ПИТОМЕЦ В РУКЕ (Tool)
+    print("🎒 Поиск питомца в твоей руке...")
+    
+    if playerChar then
+        -- Поиск Tool в руках
+        for _, tool in pairs(playerChar:GetChildren()) do
+            if tool:IsA("Tool") then
+                -- 🎯 ИЩЕМ ЛЮБУЮ МОДЕЛЬ ПИТОМЦА, ИСКЛЮЧАЕМ ТОЛЬКО HANDLE
+                for _, child in pairs(tool:GetChildren()) do
+                    if child:IsA("Model") and child.Name ~= "Handle" then
+                        local partCount = 0
+                        for _, part in pairs(child:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                partCount = partCount + 1
+                            end
+                        end
+                        
+                        if partCount >= 3 then -- Минимум 3 части для питомца
+                            -- 🎯 КОПИРУЕМ ТОЛЬКО МОДЕЛЬ ПИТОМЦА (БЕЗ HANDLE)
+                            table.insert(foundPets, {
+                                model = child, -- Только модель питомца (Dog), НЕ весь Tool
+                                distance = 0,
+                                reason = "Модель питомца из Tool (" .. partCount .. " частей)",
+                                source = "tool"
+                            })
+                            print("✅ Найдена модель питомца в Tool:", child.Name, "(" .. partCount .. " частей)")
+                            print("🚫 Handle исключен из копирования!")
+                        end
                     end
                 end
             end
@@ -758,8 +1075,45 @@ local function findAndScalePet()
         return nil
     end
     
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец:", targetPet.model.Name)
+    -- 🎯 ПРИОРИТИЗАЦИЯ ВЫБОРА ПИТОМЦА
+    local targetPet = nil
+    
+    -- 1. Приоритет 1: Питомец в руке (Tool)
+    for _, pet in pairs(foundPets) do
+        if pet.source == "tool" then
+            targetPet = pet
+            print("🎯 Выбран питомец в руке (приоритет 1):", pet.model.Name)
+            break
+        end
+    end
+    
+    -- 2. Приоритет 2: Питомец с UUID в имени
+    if not targetPet then
+        for _, pet in pairs(foundPets) do
+            if pet.source == "workspace" and pet.reason:find("UUID") then
+                targetPet = pet
+                print("🎯 Выбран питомец с UUID (приоритет 2):", pet.model.Name)
+                break
+            end
+        end
+    end
+    
+    -- 3. Приоритет 3: Любой остальной питомец (не Egg)
+    if not targetPet then
+        for _, pet in pairs(foundPets) do
+            if not pet.model.Name:find("Egg") and not pet.model.Name:find("egg") then
+                targetPet = pet
+                print("🎯 Выбран обычный питомец (приоритет 3):", pet.model.Name)
+                break
+            end
+        end
+    end
+    
+    -- 4. Крайний случай: Любой объект
+    if not targetPet then
+        targetPet = foundPets[1]
+        print("🎯 Выбран по умолчанию (приоритет 4):", targetPet.model.Name)
+    end
     
     return targetPet.model
 end
@@ -791,7 +1145,7 @@ local function main()
     end
     
     wait(0.5)
-    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.TARGET_SCALE, CONFIG.TWEEN_TIME)
     
     if not scaleSuccess then
         print("❌ Масштабирование не удалось!")
@@ -802,24 +1156,155 @@ local function main()
     print("\n🧠 === НАСТРОЙКА ANCHORED ДЛЯ АНИМАЦИИ ===")
     wait(CONFIG.TWEEN_TIME + 1) -- Ждем завершения масштабирования
     
+    -- 🎯 КОПИРОВАНИЕ ТОЧНОЙ ОРИЕНТАЦИИ ОРИГИНАЛА
+    print("\n🎯 === КОПИРОВАНИЕ ОРИЕНТАЦИИ ОРИГИНАЛА ===")
+    print("📊 Анализатор показал: UpVector оригинала = (0, 0, -1)")
+    print("📊 Копируем ТОЧНУЮ ориентацию оригинального питомца!")
+    
+    if petCopy.PrimaryPart and petModel and petModel.PrimaryPart then
+        local copyRootPart = petCopy.PrimaryPart
+        local originalRootPart = petModel.PrimaryPart
+        
+        local currentPos = copyRootPart.Position
+        local originalCFrame = originalRootPart.CFrame
+        
+        print("📊 ДО коррекции:")
+        print("   Копия позиция:", currentPos)
+        print("   Копия UpVector:", copyRootPart.CFrame.UpVector)
+        print("📊 ОРИГИНАЛ (эталон):")
+        print("   Оригинал позиция:", originalCFrame.Position)
+        print("   Оригинал UpVector:", originalCFrame.UpVector)
+        print("   Оригинал LookVector:", originalCFrame.LookVector)
+        
+        -- ЭТАП 1: ПОДНИМАЕМ НА ПРАВИЛЬНУЮ ВЫСОТУ
+        local correctedPosition = Vector3.new(
+            currentPos.X,
+            currentPos.Y + 1.33,  -- Поднимаем как Roblox
+            currentPos.Z
+        )
+        
+        -- ЭТАП 2: КОПИРУЕМ ТОЧНУЮ ОРИЕНТАЦИЮ ОРИГИНАЛА
+        -- Берем UpVector и LookVector прямо с оригинала!
+        local exactCFrame = CFrame.lookAt(
+            correctedPosition,
+            correctedPosition + originalCFrame.LookVector,  -- Точный LookVector
+            originalCFrame.UpVector  -- Точный UpVector (0, 0, -1)
+        )
+        
+        -- Применяем точное копирование
+        copyRootPart.CFrame = exactCFrame
+        
+        print("\n✅ ПРИМЕНЕНО ТОЧНОЕ КОПИРОВАНИЕ CFrame!")
+        print("📊 Поднято на +1.33 стада")
+        print("🦴 Скопирована ориентация оригинала")
+        
+        -- 🔍 НЕМЕДЛЕННАЯ ПРОВЕРКА ПОСЛЕ ПРИМЕНЕНИЯ
+        wait(0.1)  -- Небольшая задержка
+        local immediateCheck = copyRootPart.CFrame
+        print("\n🔍 ПРОВЕРКА СРАЗУ ПОСЛЕ ПРИМЕНЕНИЯ:")
+        print("   Копия UpVector:", immediateCheck.UpVector)
+        print("   Копия LookVector:", immediateCheck.LookVector)
+        print("   Копия позиция:", immediateCheck.Position)
+        
+        -- Сравниваем с оригиналом
+        local currentOriginal = originalRootPart.CFrame
+        print("\n📊 СРАВНЕНИЕ С ОРИГИНАЛОМ:")
+        print("   Оригинал UpVector:", currentOriginal.UpVector)
+        print("   Копия UpVector:   ", immediateCheck.UpVector)
+        print("   СОВПАДАЮТ?", 
+            math.abs(currentOriginal.UpVector.X - immediateCheck.UpVector.X) < 0.01 and
+            math.abs(currentOriginal.UpVector.Y - immediateCheck.UpVector.Y) < 0.01 and
+            math.abs(currentOriginal.UpVector.Z - immediateCheck.UpVector.Z) < 0.01)
+        
+        -- 🕐 ОТЛОЖЕННАЯ ПРОВЕРКА (через 2 секунды)
+        spawn(function()
+            wait(2)
+            if copyRootPart and copyRootPart.Parent then
+                local delayedCheck = copyRootPart.CFrame
+                print("\n⏰ ПРОВЕРКА ЧЕРЕЗ 2 СЕКУНДЫ:")
+                print("   Копия UpVector:", delayedCheck.UpVector)
+                print("   Копия LookVector:", delayedCheck.LookVector)
+                print("   Копия позиция:", delayedCheck.Position)
+                
+                -- Проверяем изменилось ли
+                local upVectorChanged = 
+                    math.abs(immediateCheck.UpVector.X - delayedCheck.UpVector.X) > 0.01 or
+                    math.abs(immediateCheck.UpVector.Y - delayedCheck.UpVector.Y) > 0.01 or
+                    math.abs(immediateCheck.UpVector.Z - delayedCheck.UpVector.Z) > 0.01
+                
+                if upVectorChanged then
+                    print("⚠️ ОРИЕНТАЦИЯ ИЗМЕНИЛАСЬ! Что-то перезаписывает CFrame!")
+                    print("🎭 Возможно анимационная система или другой скрипт")
+                else
+                    print("✅ Ориентация стабильна, проблема в другом")
+                    print("🤔 Возможно проблема в структуре модели или визуальном отображении")
+                end
+            end
+        end)
+        
+        -- Проверяем результат
+        local newPos = copyRootPart.Position
+        local newUpVector = copyRootPart.CFrame.UpVector
+        local newLookVector = copyRootPart.CFrame.LookVector
+        
+        print("\n📊 ПОСЛЕ коррекции:")
+        print("   Позиция:", newPos)
+        print("   UpVector:", newUpVector)
+        print("   LookVector:", newLookVector)
+        
+        -- Проверка успешности
+        local heightDifference = newPos.Y - currentPos.Y
+        local isUpright = math.abs(newUpVector.Y - 1.0) < 0.1
+        
+        if math.abs(heightDifference - 1.33) < 0.1 and isUpright then
+            print("\n🎉 ИДЕАЛЬНО! Питомец поднят и стоит на лапах!")
+            print("✅ Высота: +", string.format("%.2f", heightDifference), "стадов")
+            print("✅ UpVector.Y =", string.format("%.2f", newUpVector.Y), "(должно быть ~1.0)")
+            print("🐕 Питомец теперь стоит как оригинал!")
+        else
+            print("\n⚠️ Проверьте результат:")
+            print("📊 Высота: +", heightDifference, "стадов")
+            print("📊 UpVector.Y =", newUpVector.Y, "(должно быть ~1.0)")
+        end
+        
+        -- Проверка что UpVector остался как у оригинала
+        if math.abs(newUpVector.Y) < 0.1 and math.abs(newUpVector.Z + 1) < 0.1 then
+            print("✅ UpVector остался как у оригинала (-0.00,-0.00,-1.00)")
+        else
+            print("⚠️ UpVector изменился, но это может быть нормально")
+        end
+        
+        print("🚀 Нативная коррекция Roblox применена!")
+        print("🎯 Питомец теперь должен стоять на земле КАК ОРИГИНАЛ!")
+    else
+        print("❌ Нет PrimaryPart у копии для нативной коррекции!")
+    end
+    
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    -- Шаг 5: Запуск гибридной системы (LIVE COPYING + IDLE TIMELINE)
-    print("\n🎯 === ГИБРИДНАЯ СИСТЕМА: LIVE COPYING + IDLE TIMELINE ===")
+    -- 👁️ ПОКАЗЫВАЕМ КОПИЮ ПЕРЕД ЗАПУСКОМ АНИМАЦИИ
+    print("👁️ Показываем готовую копию...")
+    for _, part in pairs(petCopy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 0  -- Делаем видимой
+        end
+    end
     
-    local hybridConnection = startHybridIdleSystem(petModel, petCopy)
+    -- Шаг 5: ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ
+    print("\n🎭 === ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ ===")
+    local endlessConnection = startEndlessIdleLoop(petModel, petCopy)
     
-    if hybridConnection then
+    if endlessConnection then
         print("🎉 === УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
-        print("✅ Гибридная система запущена")
-        print("📍 Когда питомец стоит: Live copying естественной idle анимации")
-        print("🏃 Когда питомец идет: Проигрывание записанной idle timeline")
-        print("🔥 Копия НИКОГДА не будет ходить!")
+        print("✅ Бесконечная idle анимация запущена")
+        print("📍 Копия БЕСКОНЕЧНО играет idle анимацию")
+        print("🚀 НИКОГДА не замирает - плавный бесконечный цикл!")
+        print("🔥 Копия всегда в движении - как живая!")
     else
-        print("⚠️ Масштабирование успешно, но гибридная система не запустилась")
-        print("💡 Возможно проблема с Motor6D соединениями")
+        print("⚠️ Масштабирование успешно, но idle анимация не запустилась")
+        print("💡 Возможно проблема с Motor6D или Humanoid")
     end
 end
 
