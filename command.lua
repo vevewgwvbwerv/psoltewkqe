@@ -123,14 +123,6 @@ local function deepCopyModel(originalModel)
     copy.Name = originalModel.Name .. "_SCALED_COPY"
     copy.Parent = Workspace
     
-    -- 🙈 СКРЫВАЕМ КОПИЮ ВО ВРЕМЯ СОЗДАНИЯ И МАСШТАБИРОВАНИЯ
-    for _, part in pairs(copy:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 1  -- Делаем невидимой
-        end
-    end
-    print("🙈 Копия скрыта во время создания")
-    
     -- ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ СРАЗУ ПОСЛЕ КЛОНИРОВАНИЯ
     fixAttachmentParenting(copy)
     
@@ -718,9 +710,42 @@ local function startEndlessIdleLoop(originalModel, copyModel)
         
         print("🎯 Найден Tool:", handTool.Name)
         
-        -- Проверяем что это питомец (содержит KG)
-        if not handTool.Name:find("KG") then
-            print("⚠️ Tool не является питомцем (KG не найден)")
+        -- 🔥 ОБОБЩЕННАЯ ПРОВЕРКА ПИТОМЦА (ДЛЯ DOG + DRAGONFLY)
+        -- Проверяем по нескольким критериям:
+        local isPet = false
+        local petType = "Unknown"
+        
+        -- Критерий 1: Содержит "KG" (классические питомцы как Dog)
+        if handTool.Name:find("KG") then
+            isPet = true
+            petType = "Dog/KG Pet"
+        end
+        
+        -- Критерий 2: Содержит "Dragonfly" (специально для Dragonfly)
+        if handTool.Name:find("Dragonfly") then
+            isPet = true
+            petType = "Dragonfly"
+        end
+        
+        -- Критерий 3: Содержит "Age" (общий признак питомцев)
+        if handTool.Name:find("Age") then
+            isPet = true
+            if petType == "Unknown" then
+                petType = "Age Pet"
+            end
+        end
+        
+        -- Критерий 4: Содержит квадратные скобки (общий формат питомцев)
+        if handTool.Name:find("%[") and handTool.Name:find("%]") then
+            isPet = true
+            if petType == "Unknown" then
+                petType = "Bracket Pet"
+            end
+        end
+        
+        if not isPet then
+            print("⚠️ Tool не является питомцем (не найдено KG, Dragonfly, Age или [])")
+            print("🔍 Проверяемый Tool:", handTool.Name)
             return nil, nil
         end
         
@@ -770,10 +795,6 @@ local function startEndlessIdleLoop(originalModel, copyModel)
     local handPetParts = {}  -- Анимируемые части из Tool
     local lastHandPetCheck = 0
     local HAND_PET_CHECK_INTERVAL = 1.0  -- Интервал поиска питомца в руке
-    
-    -- 📍 ФИКСИРОВАННАЯ ПОЗИЦИЯ КОПИИ (устанавливается один раз)
-    local copyFixedPosition = nil
-    local copyPositionSet = false
     
     -- 📊 ОТСЛЕЖИВАНИЕ ИЗМЕНЕНИЙ CFrame В ПИТОМЦЕ В РУКЕ
     local previousCFrameStates = {}
@@ -889,26 +910,6 @@ local function startEndlessIdleLoop(originalModel, copyModel)
                         local success, errorMsg = pcall(function()
                             -- 📐 МАСШТАБИРОВАНИЕ И ПРИМЕНЕНИЕ CFrame
                             local scaledCFrame = scaleCFrame(currentCFrame, CONFIG.SCALE_FACTOR)
-                            
-                            -- 📍 УСТАНАВЛИВАЕМ ФИКСИРОВАННУЮ ПОЗИЦИЮ КОПИИ (ТОЛЬКО ОДИН РАЗ!)
-                            if not copyPositionSet and originalModel and originalModel.PrimaryPart then
-                                local originalPos = originalModel.PrimaryPart.Position
-                                local offset = Vector3.new(15, 0, 0)  -- Смещение от оригинала
-                                copyFixedPosition = originalPos + offset
-                                copyPositionSet = true
-                                print("📍 ФИКСИРОВАННАЯ ПОЗИЦИЯ КОПИИ УСТАНОВЛЕНА:", copyFixedPosition)
-                            end
-                            
-                            -- 🎭 ПРИМЕНЯЕМ ТОЛЬКО АНИМАЦИЮ ЧАСТЕЙ, НЕ ОБЩУЮ ПОЗИЦИЮ
-                            if copyFixedPosition and copyPart.Name ~= "RootPart" and copyPart.Name ~= "Torso" and copyPart.Name ~= "HumanoidRootPart" then
-                                -- Для НЕ-корневых частей: применяем анимацию относительно фиксированной позиции
-                                local relativePos = scaledCFrame.Position - currentCFrame.Position  -- Относительное смещение
-                                local newPos = copyFixedPosition + relativePos
-                                scaledCFrame = CFrame.new(newPos) * (scaledCFrame - scaledCFrame.Position)
-                            elseif copyFixedPosition then
-                                -- Для корневых частей: фиксируем на месте, применяем только поворот
-                                scaledCFrame = CFrame.new(copyFixedPosition) * (scaledCFrame - scaledCFrame.Position)
-                            end
                             
                             -- 🔒 ПРОВЕРКА БЕЗОПАСНОСТИ CFrame
                             local copyRootPart = copyModel.PrimaryPart or copyModel:FindFirstChild("RootPart") or copyModel:FindFirstChild("Torso")
@@ -1056,94 +1057,109 @@ end
 -- === ОСНОВНЫЕ ФУНКЦИИ ===
 
 -- Функция поиска и масштабирования (из оригинального PetScaler)
+-- 🐉 ПОИСК ТОЛЬКО DRAGONFLY (НЕ ВСЕ ПИТОМЦЫ!)
 local function findAndScalePet()
-    print("🔍 Поиск ВСЕХ моделей питомцев (универсальный поиск)...")
+    print("🐉 Поиск только DRAGONFLY питомцев рядом с игроком...")
     
-    local foundPets = {}
+    local foundDragonflies = {}
+    local scannedModels = 0
+    local dragonflyCount = 0
+    
+    -- 🔍 ПОИСК В МАЛОМ РАДИУСЕ (20 стадов вместо 100)
+    local DRAGONFLY_SEARCH_RADIUS = 20  -- Малый радиус для точности
     
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS * 2 then -- Увеличиваем радиус поиска
+            scannedModels = scannedModels + 1
+            
+            -- 🐉 ПРОВЕРКА НА DRAGONFLY (ПО ПРАВИЛЬНОМУ UUID ФОРМАТУ!)
+            local isDragonfly = false
+            local modelName = obj.Name
+            
+            -- 🔥 КРИТЕРИЙ 1: UUID ФОРМАТ С ФИГУРНЫМИ СКОБКАМИ {a1b2c3d4-e5f6-7890-abcd-ef1234567890}
+            if modelName:find("%{") and modelName:find("%}") then
+                -- Проверяем что внутри скобок есть UUID-подобная строка
+                local uuidPattern = modelName:match("%{([^%}]+)%}")
+                if uuidPattern and #uuidPattern > 10 then -- UUID должен быть длинным
+                    print(string.format("🐉 🔍 Найден UUID формат: %s", modelName))
                     
-                    -- 🔍 РАСШИРЕННЫЕ КРИТЕРИИ ПОИСКА ПИТОМЦЕВ
-                    local isPet = false
-                    local reason = ""
-                    
-                    -- Критерий 1: UUID в имени (оригинальный)
-                    if obj.Name:find("%{") and obj.Name:find("%}") then
-                        isPet = true
-                        reason = "UUID в имени"
-                    end
-                    
-                    -- Критерий 2: Наличие Humanoid + BasePart (для анимированных моделей)
-                    if not isPet and obj:FindFirstChild("Humanoid") then
-                        local partCount = 0
-                        for _, child in pairs(obj:GetDescendants()) do
-                            if child:IsA("BasePart") then
-                                partCount = partCount + 1
+                    -- Проверяем визуальные признаки что это питомец
+                    local hasVisuals, meshes = hasPetVisuals(obj)
+                    if hasVisuals then
+                        print(string.format("🐉 ✅ UUID модель с визуалами: %s", modelName))
+                        
+                        -- Дополнительная проверка на Dragonfly по частям модели
+                        local hasDragonflyParts = false
+                        for _, part in pairs(obj:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                local partName = part.Name:lower()
+                                if partName:find("wing") or partName:find("tail") or partName:find("dragon") or partName:find("fly") then
+                                    hasDragonflyParts = true
+                                    print(string.format("🐉 🔍 Найдена Dragonfly часть: %s", part.Name))
+                                    break
+                                end
                             end
                         end
-                        if partCount >= 3 then -- Минимум 3 части
-                            isPet = true
-                            reason = "Humanoid + " .. partCount .. " частей"
+                        
+                        -- Считаем UUID модель с визуалами потенциальным Dragonfly
+                        isDragonfly = true
+                        if hasDragonflyParts then
+                            print(string.format("🐉 🎯 ПОДТВЕРЖДЕН Dragonfly по частям: %s", modelName))
+                        else
+                            print(string.format("🐉 🤔 Возможный Dragonfly (UUID + визуалы): %s", modelName))
                         end
                     end
-                    
-                    -- Критерий 3: Много частей + меши (для сложных моделей)
-                    if not isPet then
-                        local partCount = 0
-                        local meshCount = 0
-                        for _, child in pairs(obj:GetDescendants()) do
-                            if child:IsA("BasePart") then
-                                partCount = partCount + 1
-                            elseif child:IsA("SpecialMesh") or child:IsA("MeshPart") then
-                                meshCount = meshCount + 1
-                            end
+                end
+            end
+            
+            -- 🔥 КРИТЕРИЙ 2: Прямое упоминание "Dragonfly" (резервный)
+            if modelName:find("Dragonfly") then
+                isDragonfly = true
+                print(string.format("🐉 ✅ Прямое упоминание Dragonfly: %s", modelName))
+            end
+            
+            if isDragonfly then
+                dragonflyCount = dragonflyCount + 1
+                
+                local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+                if success then
+                    local distance = (modelCFrame.Position - playerPos).Magnitude
+                    if distance <= DRAGONFLY_SEARCH_RADIUS then
+                        local hasVisuals, meshes = hasPetVisuals(obj)
+                        if hasVisuals then
+                            print(string.format("🐉 ✅ Найден DRAGONFLY: %s (расстояние: %.1f)", modelName, distance))
+                            table.insert(foundDragonflies, {
+                                model = obj,
+                                distance = distance,
+                                meshes = meshes,
+                                petType = "Dragonfly"
+                            })
                         end
-                        if partCount >= 5 and meshCount >= 2 then -- 5+ частей + 2+ меша
-                            isPet = true
-                            reason = partCount .. " частей + " .. meshCount .. " мешей"
-                        end
-                    end
-                    
-                    -- Критерий 4: Название содержит ключевые слова
-                    if not isPet then
-                        local name = obj.Name:lower()
-                        local petKeywords = {"pet", "dog", "cat", "dragon", "питомец", "собак", "кот", "дракон"}
-                        for _, keyword in ipairs(petKeywords) do
-                            if name:find(keyword) then
-                                isPet = true
-                                reason = "Ключевое слово: " .. keyword
-                                break
-                            end
-                        end
-                    end
-                    
-                    if isPet then
-                        table.insert(foundPets, {
-                            model = obj,
-                            distance = distance,
-                            reason = reason
-                        })
-                        print("✅ Найден питомец:", obj.Name, "(причина:", reason, ")")
+                    else
+                        print(string.format("🐉 ⚠️ DRAGONFLY слишком далеко: %s (%.1f > %d)", modelName, distance, DRAGONFLY_SEARCH_RADIUS))
                     end
                 end
             end
         end
     end
     
-    if #foundPets == 0 then
-        print("❌ Питомцы не найдены!")
+    print(string.format("📊 Просканировано: %d моделей, %d Dragonfly обнаружено, %d в радиусе", scannedModels, dragonflyCount, #foundDragonflies))
+    
+    if #foundDragonflies == 0 then
+        print("🐉 ❌ DRAGONFLY не найден в радиусе", DRAGONFLY_SEARCH_RADIUS, "стадов!")
+        print("📍 Позиция игрока:", playerPos)
+        print("💡 Подойдите ближе к DRAGONFLY и попробуйте снова!")
         return nil
     end
     
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец:", targetPet.model.Name)
+    -- Сортируем по расстоянию (ближайший первый)
+    table.sort(foundDragonflies, function(a, b) return a.distance < b.distance end)
     
-    return targetPet.model
+    local targetDragonfly = foundDragonflies[1]
+    print(string.format("🐉 🎯 Выбран ближайший DRAGONFLY: %s (расстояние: %.1f)", 
+        targetDragonfly.model.Name, targetDragonfly.distance))
+    
+    return targetDragonfly.model
 end
 
 -- Главная функция v2.0
@@ -1311,16 +1327,9 @@ local function main()
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    -- 👁️ ПОКАЗЫВАЕМ КОПИЮ ПЕРЕД ЗАПУСКОМ АНИМАЦИИ
-    print("👁️ Показываем готовую копию...")
-    for _, part in pairs(petCopy:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 0  -- Делаем видимой
-        end
-    end
+    -- Шаг 5: Запуск бесконечной idle анимации
+    print("\n🔄 === БЕСКОНЕЧНАЯ IDLE АНИМАЦИЯ ===")
     
-    -- Шаг 5: ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ
-    print("\n🎭 === ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ ===")
     local endlessConnection = startEndlessIdleLoop(petModel, petCopy)
     
     if endlessConnection then
