@@ -123,6 +123,14 @@ local function deepCopyModel(originalModel)
     copy.Name = originalModel.Name .. "_SCALED_COPY"
     copy.Parent = Workspace
     
+    -- 🙈 СКРЫВАЕМ КОПИЮ ВО ВРЕМЯ СОЗДАНИЯ И МАСШТАБИРОВАНИЯ
+    for _, part in pairs(copy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 1  -- Делаем невидимой
+        end
+    end
+    print("🙈 Копия скрыта во время создания")
+    
     -- ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ СРАЗУ ПОСЛЕ КЛОНИРОВАНИЯ
     fixAttachmentParenting(copy)
     
@@ -376,9 +384,10 @@ local function scaleModelSmoothly(model, scaleFactor, tweenTime)
         local targetCFrame = originalData[part].cframe  -- Оригинальная позиция
         
         -- Создаем твин для плавного увеличения до оригинального размера
+        -- 🚨 УБИРАЕМ CFrame ИЗ ТВИНА - ПУСТЬ АНИМАЦИЯ УПРАВЛЯЕТ ПОЗИЦИЕЙ!
         local tween = TweenService:Create(part, tweenInfo, {
-            Size = targetSize,
-            CFrame = targetCFrame
+            Size = targetSize
+            -- CFrame = targetCFrame  -- ОТКЛЮЧЕНО! Конфликтует с анимацией
         })
         
         -- Обработчик завершения твина
@@ -762,6 +771,10 @@ local function startEndlessIdleLoop(originalModel, copyModel)
     local lastHandPetCheck = 0
     local HAND_PET_CHECK_INTERVAL = 1.0  -- Интервал поиска питомца в руке
     
+    -- 📍 ФИКСИРОВАННАЯ ПОЗИЦИЯ КОПИИ (устанавливается один раз)
+    local copyFixedPosition = nil
+    local copyPositionSet = false
+    
     -- 📊 ОТСЛЕЖИВАНИЕ ИЗМЕНЕНИЙ CFrame В ПИТОМЦЕ В РУКЕ
     local previousCFrameStates = {}
     local cframeChangeCount = 0
@@ -876,6 +889,26 @@ local function startEndlessIdleLoop(originalModel, copyModel)
                         local success, errorMsg = pcall(function()
                             -- 📐 МАСШТАБИРОВАНИЕ И ПРИМЕНЕНИЕ CFrame
                             local scaledCFrame = scaleCFrame(currentCFrame, CONFIG.SCALE_FACTOR)
+                            
+                            -- 📍 УСТАНАВЛИВАЕМ ФИКСИРОВАННУЮ ПОЗИЦИЮ КОПИИ (ТОЛЬКО ОДИН РАЗ!)
+                            if not copyPositionSet and originalModel and originalModel.PrimaryPart then
+                                local originalPos = originalModel.PrimaryPart.Position
+                                local offset = Vector3.new(15, 0, 0)  -- Смещение от оригинала
+                                copyFixedPosition = originalPos + offset
+                                copyPositionSet = true
+                                print("📍 ФИКСИРОВАННАЯ ПОЗИЦИЯ КОПИИ УСТАНОВЛЕНА:", copyFixedPosition)
+                            end
+                            
+                            -- 🎭 ПРИМЕНЯЕМ ТОЛЬКО АНИМАЦИЮ ЧАСТЕЙ, НЕ ОБЩУЮ ПОЗИЦИЮ
+                            if copyFixedPosition and copyPart.Name ~= "RootPart" and copyPart.Name ~= "Torso" and copyPart.Name ~= "HumanoidRootPart" then
+                                -- Для НЕ-корневых частей: применяем анимацию относительно фиксированной позиции
+                                local relativePos = scaledCFrame.Position - currentCFrame.Position  -- Относительное смещение
+                                local newPos = copyFixedPosition + relativePos
+                                scaledCFrame = CFrame.new(newPos) * (scaledCFrame - scaledCFrame.Position)
+                            elseif copyFixedPosition then
+                                -- Для корневых частей: фиксируем на месте, применяем только поворот
+                                scaledCFrame = CFrame.new(copyFixedPosition) * (scaledCFrame - scaledCFrame.Position)
+                            end
                             
                             -- 🔒 ПРОВЕРКА БЕЗОПАСНОСТИ CFrame
                             local copyRootPart = copyModel.PrimaryPart or copyModel:FindFirstChild("RootPart") or copyModel:FindFirstChild("Torso")
@@ -1024,23 +1057,148 @@ end
 
 -- Функция поиска и масштабирования (из оригинального PetScaler)
 local function findAndScalePet()
-    print("🔍 Поиск UUID моделей питомцев...")
+    print("🔍 Поиск ТОЛЬКО ТВОИХ питомцев (рядом + в руке)...")
     
     local foundPets = {}
     
+    -- 🔍 ПОИСК 1: ПИТОМЦЫ РЯДОМ С ИГРОКОМ (в малом радиусе)
+    print("📍 Поиск питомцев рядом с тобой...")
+    
     for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+        if obj:IsA("Model") then
             local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
             if success then
                 local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
+                if distance <= 50 then -- МАЛЫЙ радиус - только рядом с тобой
+                    
+                    -- 🔒 ФИЛЬТРЫ ДЛЯ ТВОИХ ПИТОМЦЕВ (НЕ ЧУЖИХ!)
+                    local isYourPet = false
+                    local reason = ""
+                    
+                    -- Фильтр 1: Проверяем что это НЕ питомец другого игрока
+                    local isNearOtherPlayer = false
+                    for _, otherPlayer in pairs(Players:GetPlayers()) do
+                        if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                            local otherPlayerPos = otherPlayer.Character.HumanoidRootPart.Position
+                            local distanceToOtherPlayer = (modelCFrame.Position - otherPlayerPos).Magnitude
+                            if distanceToOtherPlayer < 30 then -- Если питомец рядом с другим игроком
+                                isNearOtherPlayer = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if isNearOtherPlayer then
+                        -- Пропускаем питомцев других игроков
+                        goto continue
+                    end
+                    
+                    -- 🔍 КРИТЕРИИ ПОИСКА ТВОИХ ПИТОМЦЕВ
+                    local isPet = false
+                    local reason = ""
+                    
+                    -- Критерий 1: UUID в имени (оригинальный)
+                    if obj.Name:find("%{") and obj.Name:find("%}") then
+                        isPet = true
+                        reason = "UUID в имени"
+                    end
+                    
+                    -- Критерий 2: Наличие Humanoid + BasePart (для анимированных моделей)
+                    if not isPet and obj:FindFirstChild("Humanoid") then
+                        local partCount = 0
+                        for _, child in pairs(obj:GetDescendants()) do
+                            if child:IsA("BasePart") then
+                                partCount = partCount + 1
+                            end
+                        end
+                        if partCount >= 3 then -- Минимум 3 части
+                            isPet = true
+                            reason = "Humanoid + " .. partCount .. " частей"
+                        end
+                    end
+                    
+                    -- Критерий 3: Много частей + меши (для сложных моделей)
+                    if not isPet then
+                        local partCount = 0
+                        local meshCount = 0
+                        for _, child in pairs(obj:GetDescendants()) do
+                            if child:IsA("BasePart") then
+                                partCount = partCount + 1
+                            elseif child:IsA("SpecialMesh") or child:IsA("MeshPart") then
+                                meshCount = meshCount + 1
+                            end
+                        end
+                        if partCount >= 5 and meshCount >= 2 then -- 5+ частей + 2+ меша
+                            isPet = true
+                            reason = partCount .. " частей + " .. meshCount .. " мешей"
+                        end
+                    end
+                    
+                    -- Критерий 4: Название содержит ключевые слова
+                    if not isPet then
+                        local name = obj.Name:lower()
+                        local petKeywords = {"pet", "dog", "cat", "dragon", "питомец", "собак", "кот", "дракон"}
+                        for _, keyword in ipairs(petKeywords) do
+                            if name:find(keyword) then
+                                isPet = true
+                                reason = "Ключевое слово: " .. keyword
+                                break
+                            end
+                        end
+                    end
+                    
+                    if isPet then
                         table.insert(foundPets, {
                             model = obj,
                             distance = distance,
-                            meshes = meshes
+                            reason = reason,
+                            source = "workspace"
                         })
+                        print("✅ Найден питомец в Workspace:", obj.Name, "(причина:", reason, ")")
+                    end
+                    
+                    ::continue::
+                end
+            end
+        end
+    end
+    
+    -- 🔍 ПОИСК 2: ПИТОМЕЦ В РУКЕ (Tool)
+    print("🎒 Поиск питомца в твоей руке...")
+    
+    if playerChar then
+        -- Поиск Tool в руках
+        for _, tool in pairs(playerChar:GetChildren()) do
+            if tool:IsA("Tool") then
+                -- Проверяем что в Tool есть модель питомца
+                for _, child in pairs(tool:GetChildren()) do
+                    if child:IsA("Model") then
+                        local partCount = 0
+                        for _, part in pairs(child:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                partCount = partCount + 1
+                            end
+                        end
+                        
+                        if partCount >= 3 then -- Минимум 3 части для питомца
+                            -- Создаем временную копию в Workspace для обработки
+                            local tempCopy = child:Clone()
+                            tempCopy.Name = child.Name .. "_FROM_TOOL"
+                            tempCopy.Parent = Workspace
+                            
+                            -- Позиционируем рядом с игроком
+                            if tempCopy.PrimaryPart then
+                                tempCopy:SetPrimaryPartCFrame(CFrame.new(playerPos + Vector3.new(10, 0, 0)))
+                            end
+                            
+                            table.insert(foundPets, {
+                                model = tempCopy,
+                                distance = 0,
+                                reason = "Tool в руке (" .. partCount .. " частей)",
+                                source = "tool"
+                            })
+                            print("✅ Найден питомец в Tool:", child.Name, "(" .. partCount .. " частей)")
+                        end
                     end
                 end
             end
@@ -1223,9 +1381,16 @@ local function main()
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    -- Шаг 5: Запуск бесконечной idle анимации
-    print("\n🔄 === БЕСКОНЕЧНАЯ IDLE АНИМАЦИЯ ===")
+    -- 👁️ ПОКАЗЫВАЕМ КОПИЮ ПЕРЕД ЗАПУСКОМ АНИМАЦИИ
+    print("👁️ Показываем готовую копию...")
+    for _, part in pairs(petCopy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 0  -- Делаем видимой
+        end
+    end
     
+    -- Шаг 5: ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ
+    print("\n🎭 === ЗАПУСК БЕСКОНЕЧНОЙ IDLE АНИМАЦИИ ===")
     local endlessConnection = startEndlessIdleLoop(petModel, petCopy)
     
     if endlessConnection then
