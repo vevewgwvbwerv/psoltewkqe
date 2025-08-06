@@ -128,15 +128,23 @@ local function deepCopyModel(originalModel)
         local originalPos = originalModel.PrimaryPart.Position
         local offset = Vector3.new(10, 5, 0)  -- Рядом с оригиналом, выше земли
         
-        -- 🚨 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРОСТОЕ ПОЗИЦИОНИРОВАНИЕ БЕЗ RAYCAST!
-        -- Raycast может давать неправильные результаты. Просто размещаем копию рядом с оригиналом!
+        -- 🚨 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: КОПИЯ НА ТОМ ЖЕ УРОВНЕ!
+        -- Копия должна быть на ТОМ ЖЕ уровне что и оригинал, а не выше!
         
-        -- Простое и надёжное позиционирование
-        local safeY = math.max(originalPos.Y + 2, 10)  -- Минимум Y=10, никогда не под землёй!
+        -- 🚨 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПОДНИМАЕМ ПИТОМЦА ВЫШЕ!
+        -- Пользователь прав: питомец под землёй, нужно поднять!
+        local groundY = originalPos.Y + 5  -- ПОДНИМАЕМ НА 5 ЕДИНИЦ ВЫШЕ оригинала!
+        
+        -- Дополнительная защита от подземелья
+        if groundY < 10 then
+            print("⚠️ Позиция слишком низкая! Поднимаем до безопасной высоты")
+            groundY = 15  -- Минимальная безопасная высота
+        end
+        
         local finalPosition = Vector3.new(
-            originalPos.X + offset.X,  -- Рядом по X
-            safeY,                     -- Безопасная высота
-            originalPos.Z + offset.Z   -- Рядом по Z
+            originalPos.X + offset.X,  -- Рядом по X (+10)
+            groundY,                   -- НА 5 ЕДИНИЦ ВЫШЕ оригинала!
+            originalPos.Z + offset.Z   -- Рядом по Z (+0)
         )
         
         print("🚨 Оригинальная позиция:", originalPos)
@@ -938,25 +946,22 @@ local function startEndlessIdleLoop(originalModel, copyModel)
                         -- 🚨 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НЕ ПЕРЕМЕЩАЕМ КОРНЕВЫЕ ЧАСТИ!
                         local isRootPart = (copyPart.Name == "RootPart" or copyPart.Name == "Torso" or copyPart.Name == "HumanoidRootPart")
                         
-                        if isRootPart then
-                            -- Корневые части ОСТАЮТСЯ НА МЕСТЕ! Только копируем поворот
-                            local currentPos = copyPart.Position  -- Сохраняем текущую позицию
-                            local rotationOnly = handCFrame - handCFrame.Position  -- Только поворот
-                            local newCFrame = CFrame.new(currentPos) * rotationOnly
-                            copyPart.CFrame = copyPart.CFrame:Lerp(newCFrame, INTERPOLATION_SPEED)
-                        else
-                            -- 🚨 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НЕ ПЕРЕМЕЩАЕМ ОБЫЧНЫЕ ЧАСТИ!
-                            -- Обычные части тоже ОСТАЮТСЯ НА МЕСТЕ! Только копируем поворот!
-                            local currentPos = copyPart.Position  -- Сохраняем текущую позицию
-                            local rotationOnly = handCFrame - handCFrame.Position  -- Только поворот
-                            local newCFrame = CFrame.new(currentPos) * rotationOnly
-                            copyPart.CFrame = copyPart.CFrame:Lerp(newCFrame, INTERPOLATION_SPEED)
-                            
-                            -- Логируем что позиция НЕ изменилась
-                            if math.abs(copyPart.Position.Y - currentPos.Y) > 0.1 then
-                                print("❌ ПРЕДУПРЕЖДЕНИЕ: Часть", copyPart.Name, "изменила Y позицию!")
-                                print("  Было:", currentPos.Y, "Стало:", copyPart.Position.Y)
-                            end
+                        -- 🚨 БЕЗОПАСНАЯ АНИМАЦИЯ: ТОЛЬКО ПОВОРОТ, ПОЗИЦИЯ НЕ МЕНЯЕТСЯ!
+                        local fixedPos = copyPart.Position  -- ЗАМОРАЖИВАЕМ позицию
+                        
+                        -- Копируем ТОЛЬКО поворот из питомца в руке
+                        local rotationOnly = handCFrame - handCFrame.Position  -- Только поворот, без позиции
+                        local newCFrame = CFrame.new(fixedPos) * rotationOnly  -- Позиция ОСТАЕТСЯ НА МЕСТЕ!
+                        
+                        -- Плавно применяем только поворот
+                        copyPart.CFrame = copyPart.CFrame:Lerp(newCFrame, INTERPOLATION_SPEED * 0.5)  -- Медленнее для безопасности
+                        
+                        -- КРИТИЧЕСКАЯ ПРОВЕРКА: позиция НЕ должна изменяться!
+                        if math.abs(copyPart.Position.Y - fixedPos.Y) > 0.1 then
+                            print("❌ КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ: Часть", copyPart.Name, "сдвинулась!")
+                            print("  Фиксированная Y:", fixedPos.Y, "Текущая Y:", copyPart.Position.Y)
+                            -- ПРИНУДИТЕЛЬНО возвращаем на место!
+                            copyPart.Position = fixedPos
                         end
                     end
                 end
@@ -1112,8 +1117,27 @@ local function findAndScalePet()
     
     if playerChar then
         -- Поиск Tool в руках
+        local toolCount = 0
         for _, tool in pairs(playerChar:GetChildren()) do
             if tool:IsA("Tool") then
+                toolCount = toolCount + 1
+                print("🔧 Найден Tool #" .. toolCount .. ":", tool.Name)
+                
+                -- 🚨 ДИАГНОСТИКА: ПОЛНАЯ СТРУКТУРА TOOL
+                print("🔍 Структура Tool '", tool.Name, "':")
+                for _, child in pairs(tool:GetChildren()) do
+                    print("  -", child.ClassName, "'", child.Name, "'")
+                    if child:IsA("Model") then
+                        local partCount = 0
+                        for _, part in pairs(child:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                partCount = partCount + 1
+                            end
+                        end
+                        print("    -> Модель с ", partCount, " BasePart")
+                    end
+                end
+                
                 -- 🎯 ИЩЕМ ЛЮБУЮ МОДЕЛЬ ПИТОМЦА, ИСКЛЮЧАЕМ ТОЛЬКО HANDLE
                 for _, child in pairs(tool:GetChildren()) do
                     if child:IsA("Model") and child.Name ~= "Handle" then
@@ -1124,7 +1148,10 @@ local function findAndScalePet()
                             end
                         end
                         
+                        print("🔍 Проверяем модель '", child.Name, "' - количество частей:", partCount)
+                        
                         if partCount >= 3 then -- Минимум 3 части для питомца
+                            print("✅ Модель '", child.Name, "' подходит! (", partCount, " частей)")
                             -- 🎯 КОПИРУЕМ ТОЛЬКО МОДЕЛЬ ПИТОМЦА (БЕЗ HANDLE)
                             table.insert(foundPets, {
                                 model = child, -- Только модель питомца (Dog), НЕ весь Tool
@@ -1134,6 +1161,8 @@ local function findAndScalePet()
                             })
                             print("✅ Найдена модель питомца в Tool:", child.Name, "(" .. partCount .. " частей)")
                             print("🚫 Handle исключен из копирования!")
+                        else
+                            print("❌ Модель '", child.Name, "' отклонена: недостаточно частей (", partCount, " < 3)")
                         end
                     end
                 end
