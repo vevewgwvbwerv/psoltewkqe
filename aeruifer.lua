@@ -128,19 +128,34 @@ local function deepCopyModel(originalModel)
         local originalPos = originalModel.PrimaryPart.Position
         local offset = Vector3.new(10, 5, 0)  -- Рядом с оригиналом, выше земли
         
-        -- Raycast для определения высоты земли
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {copy, originalModel, Players.LocalPlayer.Character}
+        -- 🚨 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: КОПИЯ НА ТОМ ЖЕ УРОВНЕ!
+        -- Копия должна быть на ТОМ ЖЕ уровне что и оригинал, а не выше!
         
-        local raycastResult = Workspace:Raycast(originalPos + offset + Vector3.new(0, 100, 0), Vector3.new(0, -200, 0), raycastParams)
-        local groundY = raycastResult and raycastResult.Position.Y or originalPos.Y
+        -- Правильное позиционирование на уровне оригинала
+        local groundY = originalPos.Y  -- Используем ТОЧНО ту же высоту что и оригинал
         
-        -- Устанавливаем финальную позицию
-        local finalPosition = Vector3.new(originalPos.X + offset.X, math.max(groundY + 2, originalPos.Y + offset.Y), originalPos.Z + offset.Z)
+        -- Только если оригинал ПОД землёй, тогда поднимаем
+        if groundY < 0 then
+            print("⚠️ Оригинал под землёй! Поднимаем копию")
+            groundY = 5  -- Минимальная безопасная высота
+        end
+        
+        local finalPosition = Vector3.new(
+            originalPos.X + offset.X,  -- Рядом по X (+10)
+            groundY,                   -- НА ТОМ ЖЕ УРОВНЕ что и оригинал!
+            originalPos.Z + offset.Z   -- Рядом по Z (+0)
+        )
+        
+        print("🚨 Оригинальная позиция:", originalPos)
+        print("📍 Безопасная позиция копии:", finalPosition)
+        
+        -- Проверяем что Y координата положительная
+        if finalPosition.Y < 0 then
+            print("❌ КРИТИЧЕСКАЯ ОШИБКА: Отрицательная Y координата!")
+            finalPosition = Vector3.new(finalPosition.X, 15, finalPosition.Z)  -- Принудительно выше земли
+        end
+        
         copy:SetPrimaryPartCFrame(CFrame.new(finalPosition))
-        
-        print("📍 Копия размещена в позиции:", finalPosition)
     end
     
     -- Настройка Anchored состояния
@@ -937,10 +952,18 @@ local function startEndlessIdleLoop(originalModel, copyModel)
                             local newCFrame = CFrame.new(currentPos) * rotationOnly
                             copyPart.CFrame = copyPart.CFrame:Lerp(newCFrame, INTERPOLATION_SPEED)
                         else
-                            -- Обычные части (не корневые) могут двигаться относительно корня
-                            local scaledPosition = handCFrame.Position * CONFIG.SCALE_FACTOR
-                            local scaledCFrame = CFrame.new(scaledPosition) * (handCFrame - handCFrame.Position)
-                            copyPart.CFrame = copyPart.CFrame:Lerp(scaledCFrame, INTERPOLATION_SPEED)
+                            -- 🚨 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НЕ ПЕРЕМЕЩАЕМ ОБЫЧНЫЕ ЧАСТИ!
+                            -- Обычные части тоже ОСТАЮТСЯ НА МЕСТЕ! Только копируем поворот!
+                            local currentPos = copyPart.Position  -- Сохраняем текущую позицию
+                            local rotationOnly = handCFrame - handCFrame.Position  -- Только поворот
+                            local newCFrame = CFrame.new(currentPos) * rotationOnly
+                            copyPart.CFrame = copyPart.CFrame:Lerp(newCFrame, INTERPOLATION_SPEED)
+                            
+                            -- Логируем что позиция НЕ изменилась
+                            if math.abs(copyPart.Position.Y - currentPos.Y) > 0.1 then
+                                print("❌ ПРЕДУПРЕЖДЕНИЕ: Часть", copyPart.Name, "изменила Y позицию!")
+                                print("  Было:", currentPos.Y, "Стало:", copyPart.Position.Y)
+                            end
                         end
                     end
                 end
@@ -1130,24 +1153,37 @@ local function findAndScalePet()
         return nil
     end
     
-    -- 🎯 ПРИОРИТИЗАЦИЯ ВЫБОРА ПИТОМЦА
+    -- 🚨 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРИОРИТЕТ WORKSPACE ПИТОМЦАМ!
+    -- Копия должна появляться рядом с оригинальным питомцем в Workspace!
     local targetPet = nil
     
-    -- 1. Приоритет 1: Питомец в руке (Tool)
+    -- 1. ПРИОРИТЕТ 1: Питомец в Workspace (НЕ в руке!)
     for _, pet in pairs(foundPets) do
-        if pet.source == "tool" then
+        if pet.source == "workspace" and pet.reason:find("UUID") then
             targetPet = pet
-            print("🎯 Выбран питомец в руке (приоритет 1):", pet.model.Name)
+            print("🎯 Выбран питомец с UUID в Workspace (приоритет 1):", pet.model.Name)
             break
         end
     end
     
-    -- 2. Приоритет 2: Питомец с UUID в имени
+    -- 2. ПРИОРИТЕТ 2: Любой питомец в Workspace (не Egg)
     if not targetPet then
         for _, pet in pairs(foundPets) do
-            if pet.source == "workspace" and pet.reason:find("UUID") then
+            if pet.source == "workspace" and not pet.model.Name:find("Egg") and not pet.model.Name:find("egg") then
                 targetPet = pet
-                print("🎯 Выбран питомец с UUID (приоритет 2):", pet.model.Name)
+                print("🎯 Выбран обычный питомец в Workspace (приоритет 2):", pet.model.Name)
+                break
+            end
+        end
+    end
+    
+    -- 3. ПРИОРИТЕТ 3: Питомец в руке (ТОЛЬКО ЕСЛИ НЕТ В Workspace!)
+    if not targetPet then
+        for _, pet in pairs(foundPets) do
+            if pet.source == "tool" then
+                targetPet = pet
+                print("⚠️ Выбран питомец в руке (приоритет 3 - крайний случай):", pet.model.Name)
+                print("🚨 ПРЕДУПРЕЖДЕНИЕ: Копия может появиться в руке!")
                 break
             end
         end
