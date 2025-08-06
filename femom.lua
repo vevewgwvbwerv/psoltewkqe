@@ -1091,54 +1091,14 @@ local function findAndScalePet()
                     if not isNearOtherPlayer then
                         -- Продолжаем только если это НЕ питомец другого игрока
                     
-                    -- Критерий 1: UUID в имени (оригинальный)
+                    -- 🎯 ТОЛЬКО UUID В ИМЕНИ - НИКАКИХ ДРУГИХ КРИТЕРИЕВ!
                     if obj.Name:find("%{") and obj.Name:find("%}") then
                         isPet = true
                         reason = "UUID в имени"
-                    end
-                    
-                    -- Критерий 2: Наличие Humanoid + BasePart (для анимированных моделей)
-                    if not isPet and obj:FindFirstChild("Humanoid") then
-                        local partCount = 0
-                        for _, child in pairs(obj:GetDescendants()) do
-                            if child:IsA("BasePart") then
-                                partCount = partCount + 1
-                            end
-                        end
-                        if partCount >= 3 then -- Минимум 3 части
-                            isPet = true
-                            reason = "Humanoid + " .. partCount .. " частей"
-                        end
-                    end
-                    
-                    -- Критерий 3: Много частей + меши (для сложных моделей)
-                    if not isPet then
-                        local partCount = 0
-                        local meshCount = 0
-                        for _, child in pairs(obj:GetDescendants()) do
-                            if child:IsA("BasePart") then
-                                partCount = partCount + 1
-                            elseif child:IsA("SpecialMesh") or child:IsA("MeshPart") then
-                                meshCount = meshCount + 1
-                            end
-                        end
-                        if partCount >= 5 and meshCount >= 2 then -- 5+ частей + 2+ меша
-                            isPet = true
-                            reason = partCount .. " частей + " .. meshCount .. " мешей"
-                        end
-                    end
-                    
-                    -- Критерий 4: Название содержит ключевые слова
-                    if not isPet then
-                        local name = obj.Name:lower()
-                        local petKeywords = {"pet", "dog", "cat", "dragon", "питомец", "собак", "кот", "дракон"}
-                        for _, keyword in ipairs(petKeywords) do
-                            if name:find(keyword) then
-                                isPet = true
-                                reason = "Ключевое слово: " .. keyword
-                                break
-                            end
-                        end
+                        print("🔍 Найден питомец с UUID:", obj.Name)
+                    else
+                        isPet = false
+                        reason = "Нет UUID"
                     end
                     
                     if isPet then
@@ -1164,9 +1124,9 @@ local function findAndScalePet()
         -- Поиск Tool в руках
         for _, tool in pairs(playerChar:GetChildren()) do
             if tool:IsA("Tool") then
-                -- Проверяем что в Tool есть модель питомца
+                -- 🎯 ИЩЕМ ТОЛЬКО МОДЕЛЬ ПИТОМЦА (Dog), ИСКЛЮЧАЕМ HANDLE
                 for _, child in pairs(tool:GetChildren()) do
-                    if child:IsA("Model") then
+                    if child:IsA("Model") and child.Name ~= "Handle" then
                         local partCount = 0
                         for _, part in pairs(child:GetDescendants()) do
                             if part:IsA("BasePart") then
@@ -1175,23 +1135,15 @@ local function findAndScalePet()
                         end
                         
                         if partCount >= 3 then -- Минимум 3 части для питомца
-                            -- Создаем временную копию в Workspace для обработки
-                            local tempCopy = child:Clone()
-                            tempCopy.Name = child.Name .. "_FROM_TOOL"
-                            tempCopy.Parent = Workspace
-                            
-                            -- Позиционируем рядом с игроком
-                            if tempCopy.PrimaryPart then
-                                tempCopy:SetPrimaryPartCFrame(CFrame.new(playerPos + Vector3.new(10, 0, 0)))
-                            end
-                            
+                            -- 🎯 КОПИРУЕМ ТОЛЬКО МОДЕЛЬ ПИТОМЦА (БЕЗ HANDLE)
                             table.insert(foundPets, {
-                                model = tempCopy,
+                                model = child, -- Только модель питомца (Dog), НЕ весь Tool
                                 distance = 0,
-                                reason = "Tool в руке (" .. partCount .. " частей)",
+                                reason = "Модель питомца из Tool (" .. partCount .. " частей)",
                                 source = "tool"
                             })
-                            print("✅ Найден питомец в Tool:", child.Name, "(" .. partCount .. " частей)")
+                            print("✅ Найдена модель питомца в Tool:", child.Name, "(" .. partCount .. " частей)")
+                            print("🚫 Handle исключен из копирования!")
                         end
                     end
                 end
@@ -1204,8 +1156,45 @@ local function findAndScalePet()
         return nil
     end
     
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец:", targetPet.model.Name)
+    -- 🎯 ПРИОРИТИЗАЦИЯ ВЫБОРА ПИТОМЦА
+    local targetPet = nil
+    
+    -- 1. Приоритет 1: Питомец в руке (Tool)
+    for _, pet in pairs(foundPets) do
+        if pet.source == "tool" then
+            targetPet = pet
+            print("🎯 Выбран питомец в руке (приоритет 1):", pet.model.Name)
+            break
+        end
+    end
+    
+    -- 2. Приоритет 2: Питомец с UUID в имени
+    if not targetPet then
+        for _, pet in pairs(foundPets) do
+            if pet.source == "workspace" and pet.reason:find("UUID") then
+                targetPet = pet
+                print("🎯 Выбран питомец с UUID (приоритет 2):", pet.model.Name)
+                break
+            end
+        end
+    end
+    
+    -- 3. Приоритет 3: Любой остальной питомец (не Egg)
+    if not targetPet then
+        for _, pet in pairs(foundPets) do
+            if not pet.model.Name:find("Egg") and not pet.model.Name:find("egg") then
+                targetPet = pet
+                print("🎯 Выбран обычный питомец (приоритет 3):", pet.model.Name)
+                break
+            end
+        end
+    end
+    
+    -- 4. Крайний случай: Любой объект
+    if not targetPet then
+        targetPet = foundPets[1]
+        print("🎯 Выбран по умолчанию (приоритет 4):", targetPet.model.Name)
+    end
     
     return targetPet.model
 end
