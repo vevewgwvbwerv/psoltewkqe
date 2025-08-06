@@ -1,295 +1,267 @@
--- Pet Spawn & Movement Analyzer
--- Анализирует поведение питомца при спавне и движении
+-- 🔍 ПОЛНАЯ ДИАГНОСТИКА DRAGONFLY В РУКЕ
+-- Анализирует ВСЕ возможные анимации, Motor6D, CFrame, скрипты, треки
+
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
+local player = Players.LocalPlayer
 
-local player = Players.LocalPlayer or Players:GetPlayers()[1]
+print("🔍 === ПОЛНАЯ ДИАГНОСТИКА DRAGONFLY ===")
+print("=" .. string.rep("=", 60))
 
--- Очистка предыдущего GUI
-if CoreGui:FindFirstChild("PetAnalyzer_GUI") then 
-    CoreGui.PetAnalyzer_GUI:Destroy() 
-end
+-- Глобальные переменные для мониторинга
+local monitoringConnection = nil
+local previousStates = {}
 
--- Хранилище данных
-local analyzedPet = nil
-local isAnalyzing = false
-local positionHistory = {}
-local movementDetected = false
-local spawnTime = 0
-
--- GUI Setup
-local gui = Instance.new("ScreenGui")
-gui.Name = "PetAnalyzer_GUI"
-gui.Parent = CoreGui
-gui.ResetOnSpawn = false
-
-local mainFrame = Instance.new("Frame", gui)
-mainFrame.Size = UDim2.new(0, 300, 0, 200)
-mainFrame.Position = UDim2.new(0.7, 0, 0.1, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 0)
-mainFrame.BorderSizePixel = 2
-mainFrame.Active = true
-mainFrame.Draggable = true
-
-local titleLabel = Instance.new("TextLabel", mainFrame)
-titleLabel.Size = UDim2.new(1, 0, 0.2, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "🔬 Pet Spawn Analyzer"
-titleLabel.TextColor3 = Color3.fromRGB(255, 150, 0)
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextScaled = true
-
-local startBtn = Instance.new("TextButton", mainFrame)
-startBtn.Size = UDim2.new(1, -10, 0, 30)
-startBtn.Position = UDim2.new(0, 5, 0.25, 0)
-startBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
-startBtn.TextColor3 = Color3.new(1, 1, 1)
-startBtn.Font = Enum.Font.GothamBold
-startBtn.TextSize = 14
-startBtn.Text = "🎯 Start Analysis"
-
-local statusLabel = Instance.new("TextLabel", mainFrame)
-statusLabel.Size = UDim2.new(1, -10, 0, 25)
-statusLabel.Position = UDim2.new(0, 5, 0.45, 0)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: Ready"
-statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 12
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local logLabel = Instance.new("TextLabel", mainFrame)
-logLabel.Size = UDim2.new(1, -10, 0.4, 0)
-logLabel.Position = UDim2.new(0, 5, 0.6, 0)
-logLabel.BackgroundTransparency = 1
-logLabel.Text = "Logs will appear here..."
-logLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
-logLabel.Font = Enum.Font.Code
-logLabel.TextSize = 10
-logLabel.TextXAlignment = Enum.TextXAlignment.Left
-logLabel.TextYAlignment = Enum.TextYAlignment.Top
-logLabel.TextWrapped = true
-
--- ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ PetScaler_v3.221.lua
-
--- Конфигурация из PetScaler
-local CONFIG = {
-    SEARCH_RADIUS = 100
-}
-
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
-end
-
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
-
-local playerPos = hrp.Position
-
--- Функция проверки визуальных элементов питомца (ТОЧНАЯ КОПИЯ)
-local function hasPetVisuals(model)
-    local meshCount = 0
-    local petMeshes = {}
+-- Функция глубокого анализа модели
+local function deepAnalyzeModel(model, indent, path)
+    indent = indent or ""
+    path = path or model.Name
     
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or ""
-            }
-            if meshData.meshId ~= "" then
-                table.insert(petMeshes, meshData)
+    print(indent .. "📁 " .. model.Name .. " (" .. model.ClassName .. ") - Path: " .. path)
+    
+    -- Анализ PrimaryPart
+    if model.PrimaryPart then
+        print(indent .. "  ✅ PrimaryPart: " .. model.PrimaryPart.Name)
+    else
+        print(indent .. "  ❌ PrimaryPart НЕ УСТАНОВЛЕН!")
+    end
+    
+    -- Анализ всех дочерних объектов
+    for _, child in pairs(model:GetChildren()) do
+        local childPath = path .. "." .. child.Name
+        
+        if child:IsA("Model") then
+            print(indent .. "  📁 SUB-MODEL: " .. child.Name)
+            deepAnalyzeModel(child, indent .. "    ", childPath)
+            
+        elseif child:IsA("BasePart") then
+            -- Анализ части
+            local meshInfo = ""
+            local mesh = child:FindFirstChildOfClass("SpecialMesh") or child:FindFirstChildOfClass("MeshPart")
+            if mesh then
+                if mesh:IsA("SpecialMesh") then
+                    meshInfo = " [Mesh: " .. mesh.MeshType.Name .. ", Scale: " .. tostring(mesh.Scale) .. "]"
+                else
+                    meshInfo = " [MeshPart: " .. tostring(mesh.MeshId) .. "]"
+                end
             end
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or ""
+            
+            print(indent .. "  🧱 PART: " .. child.Name .. " (" .. child.Material.Name .. ", " .. child.BrickColor.Name .. ")" .. meshInfo)
+            print(indent .. "    📍 Position: " .. tostring(child.Position))
+            print(indent .. "    🔄 CFrame: " .. tostring(child.CFrame))
+            print(indent .. "    ⚖️ Size: " .. tostring(child.Size))
+            print(indent .. "    🔒 Anchored: " .. tostring(child.Anchored))
+            print(indent .. "    👁️ Transparency: " .. child.Transparency)
+            
+            -- Сохраняем начальное состояние для мониторинга
+            previousStates[childPath] = {
+                CFrame = child.CFrame,
+                Position = child.Position,
+                Rotation = child.Rotation
             }
-            if meshData.meshId ~= "" or meshData.textureId ~= "" then
-                table.insert(petMeshes, meshData)
+            
+        elseif child:IsA("Motor6D") then
+            print(indent .. "  ⚙️ MOTOR6D: " .. child.Name)
+            print(indent .. "    🔗 Part0: " .. (child.Part0 and child.Part0.Name or "NIL"))
+            print(indent .. "    🔗 Part1: " .. (child.Part1 and child.Part1.Name or "NIL"))
+            print(indent .. "    📍 C0: " .. tostring(child.C0))
+            print(indent .. "    📍 C1: " .. tostring(child.C1))
+            
+            -- Сохраняем состояние Motor6D
+            previousStates[childPath] = {
+                C0 = child.C0,
+                C1 = child.C1
+            }
+            
+        elseif child:IsA("Attachment") then
+            print(indent .. "  📎 ATTACHMENT: " .. child.Name)
+            print(indent .. "    📍 Position: " .. tostring(child.Position))
+            print(indent .. "    🔄 CFrame: " .. tostring(child.CFrame))
+            
+        elseif child:IsA("Humanoid") then
+            print(indent .. "  👤 HUMANOID: " .. child.Name)
+            print(indent .. "    ❤️ Health: " .. child.Health .. "/" .. child.MaxHealth)
+            print(indent .. "    🚶 WalkSpeed: " .. child.WalkSpeed)
+            print(indent .. "    🦘 JumpPower: " .. child.JumpPower)
+            
+            -- Анализ Animator
+            local animator = child:FindFirstChild("Animator")
+            if animator then
+                print(indent .. "    🎭 ANIMATOR НАЙДЕН!")
+                
+                -- Получаем все активные треки анимации
+                local tracks = animator:GetPlayingAnimationTracks()
+                print(indent .. "    📊 Активных треков: " .. #tracks)
+                
+                for i, track in pairs(tracks) do
+                    print(indent .. "      🎬 Трек " .. i .. ": " .. (track.Animation and track.Animation.AnimationId or "Неизвестно"))
+                    print(indent .. "        ⏯️ Играет: " .. tostring(track.IsPlaying))
+                    print(indent .. "        🔊 Громкость: " .. track.WeightCurrent)
+                    print(indent .. "        ⏱️ Время: " .. track.TimePosition)
+                    print(indent .. "        🔄 Зацикленность: " .. tostring(track.Looped))
+                end
+            else
+                print(indent .. "    ❌ ANIMATOR НЕ НАЙДЕН!")
             end
+            
+        elseif child:IsA("LocalScript") or child:IsA("Script") then
+            print(indent .. "  📜 SCRIPT: " .. child.Name .. " (" .. child.ClassName .. ")")
+            print(indent .. "    🔧 Enabled: " .. tostring(child.Enabled))
+            
+        elseif child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+            print(indent .. "  📡 REMOTE: " .. child.Name .. " (" .. child.ClassName .. ")")
+            
+        else
+            print(indent .. "  ❓ OTHER: " .. child.Name .. " (" .. child.ClassName .. ")")
+        end
+    end
+end
+
+-- Функция мониторинга изменений в реальном времени (ИСПРАВЛЕННАЯ)
+local function startRealTimeMonitoring(tool)
+    print("\n🔄 === ЗАПУСК МОНИТОРИНГА В РЕАЛЬНОМ ВРЕМЕНИ ===")
+    
+    -- Получаем ВСЕ анимируемые части из Tool (как в CFrameAnimationTester)
+    local animatedParts = {}
+    local previousCFrames = {}
+    
+    for _, obj in pairs(tool:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name ~= "Handle" then
+            table.insert(animatedParts, obj)
+            previousCFrames[obj] = obj.CFrame
+            print("📦 Отслеживаю часть: " .. obj.Name .. " (родитель: " .. obj.Parent.Name .. ")")
         end
     end
     
-    return meshCount > 0, petMeshes
-end
-
--- Функция поиска питомца (ТОЧНАЯ КОПИЯ ИЗ PetScaler_v3.221.lua)
-local function findAndAnalyzePet()
-    print("🔍 Поиск UUID моделей питомцев...")
+    print("📊 Всего отслеживается частей: " .. #animatedParts)
     
-    local foundPets = {}
+    local frameCount = 0
+    local changeCount = 0
     
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
-                        table.insert(foundPets, {
-                            model = obj,
-                            distance = distance,
-                            meshes = meshes
-                        })
+    monitoringConnection = RunService.Heartbeat:Connect(function()
+        frameCount = frameCount + 1
+        
+        -- Проверяем каждые 5 кадров (более частая проверка)
+        if frameCount % 5 == 0 then
+            local changesDetected = 0
+            
+            -- Проверяем каждую часть на изменения CFrame
+            for _, part in pairs(animatedParts) do
+                if part and part.Parent then
+                    local currentCFrame = part.CFrame
+                    local previousCFrame = previousCFrames[part]
+                    
+                    if previousCFrame then
+                        -- Проверяем изменения позиции
+                        local positionDiff = (currentCFrame.Position - previousCFrame.Position).Magnitude
+                        if positionDiff > 0.001 then
+                            print("🔄 [" .. frameCount .. "] ДВИЖЕНИЕ " .. part.Name .. ": " .. tostring(currentCFrame.Position))
+                            changesDetected = changesDetected + 1
+                        end
+                        
+                        -- Проверяем изменения поворота
+                        local rotationDiff = math.abs((currentCFrame - currentCFrame.Position):ToEulerAnglesXYZ() - (previousCFrame - previousCFrame.Position):ToEulerAnglesXYZ())
+                        if rotationDiff > 0.01 then
+                            local angles = {currentCFrame:ToEulerAnglesXYZ()}
+                            print("🔄 [" .. frameCount .. "] ПОВОРОТ " .. part.Name .. ": X=" .. math.deg(angles[1]) .. ", Y=" .. math.deg(angles[2]) .. ", Z=" .. math.deg(angles[3]))
+                            changesDetected = changesDetected + 1
+                        end
+                        
+                        -- Особая проверка для крыльев
+                        if part.Name:find("Wing") or part.Name:find("wing") then
+                            if rotationDiff > 0.001 then
+                                print("🦅 [" .. frameCount .. "] КРЫЛО МАХАЕТ " .. part.Name .. ": " .. math.deg(rotationDiff) .. " градусов")
+                            end
+                        end
+                        
+                        previousCFrames[part] = currentCFrame
                     end
                 end
             end
+            
+            changeCount = changeCount + changesDetected
+            
+            -- Показываем статистику каждые 300 кадров (5 секунд)
+            if frameCount % 300 == 0 then
+                print("📊 [СТАТИСТИКА " .. frameCount .. "] Изменений обнаружено: " .. changeCount)
+            end
         end
-    end
+    end)
     
-    if #foundPets == 0 then
-        print("❌ Питомцы не найдены!")
-        return nil
-    end
-    
-    -- Сортируем по расстоянию
-    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
-    
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец для анализа:", targetPet.model.Name)
-    print("📊 Расстояние:", targetPet.distance)
-    print("📊 Meshes:", #targetPet.meshes)
-    
-    return targetPet.model
+    print("✅ Мониторинг запущен! Наблюдаю за изменениями...")
+    print("⏹️ Для остановки мониторинга запустите скрипт еще раз")
 end
 
--- Анализ позиции и состояния питомца
-local function analyzePetState(pet, phase)
-    if not pet or not pet.PrimaryPart then return end
-    
-    local rootPart = pet.PrimaryPart
-    local position = rootPart.Position
-    local cframe = rootPart.CFrame
-    local upVector = cframe.UpVector
-    local lookVector = cframe.LookVector
-    
-    local logText = string.format(
-        "[%s] Pos: %.2f,%.2f,%.2f | Up: %.2f,%.2f,%.2f | Look: %.2f,%.2f,%.2f",
-        phase,
-        position.X, position.Y, position.Z,
-        upVector.X, upVector.Y, upVector.Z,
-        lookVector.X, lookVector.Y, lookVector.Z
-    )
-    
-    print("📊", logText)
-    
-    -- Обновляем GUI
-    local currentLog = logLabel.Text
-    if currentLog == "Logs will appear here..." then
-        logLabel.Text = logText
-    else
-        logLabel.Text = currentLog .. "\n" .. logText
-    end
-    
-    -- Сохраняем в историю
-    table.insert(positionHistory, {
-        phase = phase,
-        position = position,
-        upVector = upVector,
-        lookVector = lookVector,
-        time = tick()
-    })
-    
-    return {
-        position = position,
-        upVector = upVector,
-        lookVector = lookVector
-    }
-end
-
--- Основная функция анализа
-local function startAnalysis()
-    if isAnalyzing then return end
-    
-    isAnalyzing = true
-    statusLabel.Text = "Status: Searching for pet..."
-    logLabel.Text = "Logs will appear here..."
-    positionHistory = {}
-    movementDetected = false
-    
-    -- Находим питомца
-    analyzedPet = findAndAnalyzePet()
-    if not analyzedPet then
-        statusLabel.Text = "Status: No pet found!"
-        isAnalyzing = false
+-- Основная функция
+local function main()
+    local playerChar = player.Character
+    if not playerChar then
+        print("❌ Персонаж не найден!")
         return
     end
     
-    statusLabel.Text = "Status: Analyzing " .. analyzedPet.Name
-    spawnTime = tick()
+    print("🎒 Поиск Dragonfly в руках...")
     
-    -- Анализ при спавне
-    analyzePetState(analyzedPet, "SPAWN")
-    
-    -- Мониторинг движения
-    local lastPosition = analyzedPet.PrimaryPart.Position
-    local connection
-    
-    connection = RunService.Heartbeat:Connect(function()
-        if not analyzedPet or not analyzedPet.Parent or not analyzedPet.PrimaryPart then
-            connection:Disconnect()
-            statusLabel.Text = "Status: Pet disappeared"
-            isAnalyzing = false
-            return
-        end
-        
-        local currentPosition = analyzedPet.PrimaryPart.Position
-        local distanceMoved = (currentPosition - lastPosition).Magnitude
-        
-        -- Детектируем движение
-        if distanceMoved > 0.1 and not movementDetected then
-            movementDetected = true
-            analyzePetState(analyzedPet, "FIRST_MOVE")
-            print("🚶 Первое движение обнаружено!")
+    for _, tool in pairs(playerChar:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            print("✅ Найден Tool:", tool.Name)
             
-            -- Анализируем через небольшие интервалы после движения
-            task.wait(0.5)
-            analyzePetState(analyzedPet, "AFTER_MOVE_0.5s")
+            print("\n📋 ПОЛНОЕ СОДЕРЖИМОЕ TOOL:")
+            print("🔍 Прямые дети Tool:")
             
-            task.wait(1)
-            analyzePetState(analyzedPet, "AFTER_MOVE_1.5s")
-            
-            task.wait(2)
-            analyzePetState(analyzedPet, "FINAL_STATE")
-            
-            statusLabel.Text = "Status: Analysis complete!"
-            print("✅ Анализ завершен!")
-            
-            -- Выводим сводку
-            print("\n📋 === СВОДКА АНАЛИЗА ===")
-            for i, record in ipairs(positionHistory) do
-                print(string.format("%d. %s - Y: %.2f, UpY: %.2f", 
-                    i, record.phase, record.position.Y, record.upVector.Y))
+            -- Показываем прямых детей Tool
+            for _, child in pairs(tool:GetChildren()) do
+                print("📁 ОБЪЕКТ:", child.Name, "(", child.ClassName, ")")
+                
+                if child:IsA("Model") then
+                    print("  🎯 НАЙДЕНА МОДЕЛЬ:", child.Name)
+                    deepAnalyzeModel(child, "    ")
+                elseif child:IsA("BasePart") then
+                    print("  🧱 ЧАСТЬ:", child.Name, "- Материал:", child.Material.Name)
+                    -- Проверяем есть ли меши
+                    for _, mesh in pairs(child:GetChildren()) do
+                        if mesh:IsA("SpecialMesh") or mesh:IsA("MeshPart") then
+                            print("    🔳 МЕШ:", mesh.Name, "(", mesh.ClassName, ")")
+                        end
+                    end
+                elseif child:IsA("LocalScript") or child:IsA("Script") then
+                    print("  📜 СКРИПТ:", child.Name, "- Активен:", child.Enabled)
+                else
+                    print("  ❓ ДРУГОЕ:", child.Name, "(", child.ClassName, ")")
+                end
             end
             
-            connection:Disconnect()
-            isAnalyzing = false
+            print("\n🔍 ВСЕ ПОТОМКИ Tool (рекурсивно):")
+            
+            -- Показываем ВСЕХ потомков рекурсивно
+            for _, descendant in pairs(tool:GetDescendants()) do
+                local depth = 0
+                local parent = descendant.Parent
+                while parent and parent ~= tool do
+                    depth = depth + 1
+                    parent = parent.Parent
+                end
+                
+                local indent = string.rep("  ", depth)
+                print(indent .. "📄 " .. descendant.Name .. " (" .. descendant.ClassName .. ")")
+                
+                if descendant:IsA("Model") and not descendant.Name:find("Handle") then
+                    print(indent .. "  🎯 МОДЕЛЬ ПИТОМЦА НАЙДЕНА!")
+                    startRealTimeMonitoring(descendant)
+                end
+            end
+            
+            return
         end
-        
-        lastPosition = currentPosition
-    end)
+    end
+    
+    print("❌ Dragonfly в руках не найден!")
 end
 
--- Кнопка запуска
-startBtn.MouseButton1Click:Connect(function()
-    startAnalysis()
-end)
+-- Остановка предыдущего мониторинга если есть
+if monitoringConnection then
+    monitoringConnection:Disconnect()
+    print("⏹️ Предыдущий мониторинг остановлен")
+end
 
-print("🔬 Pet Spawn Analyzer готов к работе!")
-print("📋 Нажмите 'Start Analysis' чтобы начать анализ питомца")
+main()
