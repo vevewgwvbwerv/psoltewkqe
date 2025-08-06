@@ -710,33 +710,11 @@ local function startEndlessIdleLoop(originalModel, copyModel)
         
         print("🎯 Найден Tool:", handTool.Name)
         
-        -- 🔥 ПРОВЕРЯЕМ ЧТО ЭТО ПИТОМЕЦ (DOG ИЛИ DRAGONFLY)
-        local isPet = false
-        local petType = "Unknown"
-        
-        -- Проверка на Dog (содержит KG)
-        if handTool.Name:find("KG") then
-            isPet = true
-            petType = "Dog"
-        end
-        
-        -- 🐉 ПРОВЕРКА НА DRAGONFLY (содержит Dragonfly или UUID формат с Age)
-        if handTool.Name:find("Dragonfly") then
-            isPet = true
-            petType = "Dragonfly"
-        elseif handTool.Name:find("%[") and handTool.Name:find("%]") and handTool.Name:find("Age") then
-            -- UUID формат с квадратными скобками и Age - возможный Dragonfly
-            isPet = true
-            petType = "Dragonfly (UUID)"
-        end
-        
-        if not isPet then
-            print("⚠️ Tool не является питомцем (ни Dog, ни Dragonfly не найден)")
-            print("🔍 Имя Tool:", handTool.Name)
+        -- Проверяем что это питомец (содержит KG)
+        if not handTool.Name:find("KG") then
+            print("⚠️ Tool не является питомцем (KG не найден)")
             return nil, nil
         end
-        
-        print(string.format("✅ %s питомец найден в руках: %s", petType, handTool.Name))
         
         print("✅ Питомец найден в руках:", handTool.Name)
         
@@ -1045,7 +1023,7 @@ end
 
 -- === ОСНОВНЫЕ ФУНКЦИИ ===
 
--- 🔥 Функция поиска питомцев в Workspace (DOG И DRAGONFLY)
+-- 🔥 ФУНКЦИЯ ПОИСКА ПИТОМЦЕВ С ПОДРОБНОЙ ДИАГНОСТИКОЙ (ДЛЯ DOG И DRAGONFLY)
 local function findAndScalePet()
     print("🔍 Поиск UUID моделей питомцев (Dog и Dragonfly)...")
     print("📍 Позиция игрока:", playerPos)
@@ -1054,70 +1032,96 @@ local function findAndScalePet()
     local foundPets = {}
     local totalModels = 0
     local uuidModels = 0
+    local modelsInRange = 0
+    local modelsWithVisuals = 0
     
+    -- 🔍 ПОДРОБНОЕ СКАНИРОВАНИЕ ВСЕХ МОДЕЛЕЙ
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") then
             totalModels = totalModels + 1
             
-            -- 🔍 ПРОВЕРКА UUID ФОРМАТА (ПОДДЕРЖИВАЕТ И DOG И DRAGONFLY)
+            -- 🔍 ПРОВЕРКА UUID ФОРМАТА
             if obj.Name:find("%{") and obj.Name:find("%}") then
                 uuidModels = uuidModels + 1
                 
-                -- 🐉 ОПРЕДЕЛЯЕМ ТИП ПИТОМЦА ПО ИМЕНИ
+                -- 🐉 ОПРЕДЕЛЯЕМ ТИП ПИТОМЦА ПО ИМЕНИ (ДЛЯ ДИАГНОСТИКИ)
                 local petType = "Unknown"
                 if obj.Name:find("Dog") or obj.Name:find("KG") then
                     petType = "Dog"
                 elseif obj.Name:find("Dragonfly") then
                     petType = "Dragonfly"
                 elseif obj.Name:find("Age") then
-                    petType = "Possible Dragonfly (Age)"
+                    petType = "Possible Pet (Age)"
                 end
                 
-                print(string.format("🔍 UUID модель: %s [%s]", obj.Name, petType))
+                print(string.format("🔍 UUID модель найдена: %s [%s]", obj.Name, petType))
                 
                 local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
                 if success then
                     local distance = (modelCFrame.Position - playerPos).Magnitude
-                    print(string.format("  📍 Расстояние: %.1f стадов", distance))
+                    print(string.format("  📏 Расстояние: %.1f стадов (лимит: %d)", distance, CONFIG.SEARCH_RADIUS))
                     
                     if distance <= CONFIG.SEARCH_RADIUS then
+                        modelsInRange = modelsInRange + 1
+                        print("  ✅ В радиусе поиска!")
+                        
                         local hasVisuals, meshes = hasPetVisuals(obj)
-                        print(string.format("  👀 Визуалы: %s (%d meshов)", hasVisuals and "✅ Есть" or "❌ Нет", meshes and #meshes or 0))
+                        print(string.format("  👀 Визуальные элементы: %s (%d meshes)", hasVisuals and "✅ Есть" or "❌ Нет", meshes and #meshes or 0))
                         
                         if hasVisuals then
-                            print(string.format("🎉 ✅ НАЙДЕН %s: %s (расстояние: %.1f)", petType, obj.Name, distance))
+                            modelsWithVisuals = modelsWithVisuals + 1
+                            print(string.format("  🎉 ✅ ПИТОМЕЦ НАЙДЕН: %s [%s] (расстояние: %.1f)", obj.Name, petType, distance))
                             table.insert(foundPets, {
                                 model = obj,
                                 distance = distance,
                                 meshes = meshes,
                                 petType = petType
                             })
+                        else
+                            print("  ❌ Нет визуальных элементов - не питомец")
                         end
                     else
-                        print(string.format("  ❌ Слишком далеко (%.1f > %d)", distance, CONFIG.SEARCH_RADIUS))
+                        print(string.format("  ❌ Слишком далеко (%.1f > %d стадов)", distance, CONFIG.SEARCH_RADIUS))
                     end
+                else
+                    print("  ❌ Ошибка получения позиции модели")
                 end
+                print() -- Пустая строка для разделения
             end
         end
     end
     
-    print(string.format("📊 Просканировано: %d моделей, %d UUID моделей, %d питомцев найдено", totalModels, uuidModels, #foundPets))
+    -- 📊 ИТОГОВАЯ СТАТИСТИКА
+    print("📊 === СТАТИСТИКА ПОИСКА ===")
+    print(string.format("📦 Всего моделей просканировано: %d", totalModels))
+    print(string.format("🔑 UUID моделей найдено: %d", uuidModels))
+    print(string.format("📏 Моделей в радиусе поиска: %d", modelsInRange))
+    print(string.format("👀 Моделей с визуалами: %d", modelsWithVisuals))
+    print(string.format("🎯 ПИТОМЦЕВ НАЙДЕНО: %d", #foundPets))
+    print()
     
     if #foundPets == 0 then
-        print("❌ Питомцы не найдены!")
+        print("❌ ПИТОМЦЫ НЕ НАЙДЕНЫ!")
         if uuidModels == 0 then
-            print("🚨 Ни одной UUID модели не найдено! Проверьте что питомец рядом.")
-        else
-            print("🚨 UUID модели найдены, но не прошли проверки расстояния или визуалов.")
+            print("💡 Совет: Убедитесь что питомец рядом с вами (в радиусе 100 стадов)")
+            print("💡 Имя питомца должно содержать UUID в фигурных скобках {....}")
+        elseif modelsInRange == 0 then
+            print("💡 UUID модели найдены, но все слишком далеко!")
+            print("💡 Подойдите ближе к питомцу (в радиус 100 стадов)")
+        elseif modelsWithVisuals == 0 then
+            print("💡 Модели в радиусе найдены, но у них нет визуальных элементов")
+            print("💡 Возможно это не питомцы или у них нет MeshPart/SpecialMesh")
         end
         return nil
     end
     
-    -- Сортируем по расстоянию
+    -- Сортируем по расстоянию (ближайший первый)
     table.sort(foundPets, function(a, b) return a.distance < b.distance end)
     
     local targetPet = foundPets[1]
-    print(string.format("🎯 ✅ ВЫБРАН %s: %s (расстояние: %.1f)", targetPet.petType or "питомец", targetPet.model.Name, targetPet.distance))
+    print(string.format("🎯 ✅ ВЫБРАН ПИТОМЕЦ: %s [%s] (расстояние: %.1f стадов)", 
+        targetPet.model.Name, targetPet.petType or "Unknown", targetPet.distance))
+    print()
     
     return targetPet.model
 end
