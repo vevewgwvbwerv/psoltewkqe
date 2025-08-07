@@ -710,42 +710,18 @@ local function startEndlessIdleLoop(originalModel, copyModel)
         
         print("🎯 Найден Tool:", handTool.Name)
         
-        -- 🔥 ОБОБЩЕННАЯ ПРОВЕРКА ПИТОМЦА (ДЛЯ DOG + DRAGONFLY)
-        -- Проверяем по нескольким критериям:
-        local isPet = false
-        local petType = "Unknown"
-        
-        -- Критерий 1: Содержит "KG" (классические питомцы как Dog)
-        if handTool.Name:find("KG") then
-            isPet = true
-            petType = "Dog/KG Pet"
-        end
-        
-        -- Критерий 2: Содержит "Dragonfly" (специально для Dragonfly)
-        if handTool.Name:find("Dragonfly") then
-            isPet = true
-            petType = "Dragonfly"
-        end
-        
-        -- Критерий 3: Содержит "Age" (общий признак питомцев)
-        if handTool.Name:find("Age") then
-            isPet = true
-            if petType == "Unknown" then
-                petType = "Age Pet"
+        -- 🔥 НОВАЯ ЛОГИКА: ЛЮБОЙ TOOL С АНИМИРУЕМЫМИ ЧАСТЯМИ - ЭТО ПИТОМЕЦ!
+        -- Проверяем что Tool содержит анимируемые части (не только Handle)
+        local hasAnimatableParts = false
+        for _, obj in pairs(handTool:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name ~= "Handle" then
+                hasAnimatableParts = true
+                break
             end
         end
         
-        -- Критерий 4: Содержит квадратные скобки (общий формат питомцев)
-        if handTool.Name:find("%[") and handTool.Name:find("%]") then
-            isPet = true
-            if petType == "Unknown" then
-                petType = "Bracket Pet"
-            end
-        end
-        
-        if not isPet then
-            print("⚠️ Tool не является питомцем (не найдено KG, Dragonfly, Age или [])")
-            print("🔍 Проверяемый Tool:", handTool.Name)
+        if not hasAnimatableParts then
+            print("⚠️ Tool не содержит анимируемых частей (только Handle)")
             return nil, nil
         end
         
@@ -931,8 +907,10 @@ local function startEndlessIdleLoop(originalModel, copyModel)
                                 return -- Пропускаем некорректные значения
                             end
                             
-                            -- Применяем с интерполяцией для плавности (только к незаякоренным частям)
-                            if not copyPart.Anchored and copyPart.Parent then
+                            -- 🔥 ПРИМЕНЯЕМ CFrame К ВСЕМ ЧАСТЯМ (И ЗАЯКОРЕННЫМ ТОЖЕ!)
+                            -- Проблема была в том что CFrame применялся только к незаякоренным!
+                            if copyPart.Parent then
+                                -- Применяем к ЛЮБЫМ частям - заякоренным и незаякоренным
                                 copyPart.CFrame = copyPart.CFrame:Lerp(scaledCFrame, INTERPOLATION_SPEED)
                             end
                             
@@ -941,7 +919,7 @@ local function startEndlessIdleLoop(originalModel, copyModel)
                                 name = partName,
                                 changed = hasChanged,
                                 anchored = copyPart.Anchored,
-                                applied = not copyPart.Anchored
+                                applied = true  -- 🔥 Теперь применяем ко всем частям!
                             })
                         end)
                         
@@ -1056,110 +1034,259 @@ end
 
 -- === ОСНОВНЫЕ ФУНКЦИИ ===
 
--- Функция поиска и масштабирования (из оригинального PetScaler)
--- 🐉 ПОИСК ТОЛЬКО DRAGONFLY (НЕ ВСЕ ПИТОМЦЫ!)
+-- 🔥 ФУНКЦИЯ ПОИСКА ПИТОМЦЕВ С ПОДРОБНОЙ ДИАГНОСТИКОЙ (ДЛЯ DOG И DRAGONFLY)
 local function findAndScalePet()
-    print("🐉 Поиск только DRAGONFLY питомцев рядом с игроком...")
+    print("🔍 Поиск UUID моделей питомцев (Dog и Dragonfly)...")
+    print("📍 Позиция игрока:", playerPos)
+    print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS, "стадов")
     
-    local foundDragonflies = {}
-    local scannedModels = 0
-    local dragonflyCount = 0
+    local foundPets = {}
+    local totalModels = 0
+    local uuidModels = 0
+    local modelsInRange = 0
+    local modelsWithVisuals = 0
     
-    -- 🔍 ПОИСК В МАЛОМ РАДИУСЕ (20 стадов вместо 100)
-    local DRAGONFLY_SEARCH_RADIUS = 20  -- Малый радиус для точности
-    
+    -- 🔍 ПОДРОБНОЕ СКАНИРОВАНИЕ ВСЕХ МОДЕЛЕЙ
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") then
-            scannedModels = scannedModels + 1
+            totalModels = totalModels + 1
             
-            -- 🐉 ПРОВЕРКА НА DRAGONFLY (ПО ПРАВИЛЬНОМУ UUID ФОРМАТУ!)
-            local isDragonfly = false
-            local modelName = obj.Name
-            
-            -- 🔥 КРИТЕРИЙ 1: UUID ФОРМАТ С ФИГУРНЫМИ СКОБКАМИ {a1b2c3d4-e5f6-7890-abcd-ef1234567890}
-            if modelName:find("%{") and modelName:find("%}") then
-                -- Проверяем что внутри скобок есть UUID-подобная строка
-                local uuidPattern = modelName:match("%{([^%}]+)%}")
-                if uuidPattern and #uuidPattern > 10 then -- UUID должен быть длинным
-                    print(string.format("🐉 🔍 Найден UUID формат: %s", modelName))
-                    
-                    -- Проверяем визуальные признаки что это питомец
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
-                        print(string.format("🐉 ✅ UUID модель с визуалами: %s", modelName))
-                        
-                        -- Дополнительная проверка на Dragonfly по частям модели
-                        local hasDragonflyParts = false
-                        for _, part in pairs(obj:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                local partName = part.Name:lower()
-                                if partName:find("wing") or partName:find("tail") or partName:find("dragon") or partName:find("fly") then
-                                    hasDragonflyParts = true
-                                    print(string.format("🐉 🔍 Найдена Dragonfly часть: %s", part.Name))
-                                    break
-                                end
-                            end
-                        end
-                        
-                        -- Считаем UUID модель с визуалами потенциальным Dragonfly
-                        isDragonfly = true
-                        if hasDragonflyParts then
-                            print(string.format("🐉 🎯 ПОДТВЕРЖДЕН Dragonfly по частям: %s", modelName))
-                        else
-                            print(string.format("🐉 🤔 Возможный Dragonfly (UUID + визуалы): %s", modelName))
-                        end
-                    end
+            -- 🔍 ПРОВЕРКА UUID ФОРМАТА
+            if obj.Name:find("%{") and obj.Name:find("%}") then
+                uuidModels = uuidModels + 1
+                
+                -- 🐉 ОПРЕДЕЛЯЕМ ТИП ПИТОМЦА ПО ИМЕНИ (ДЛЯ ДИАГНОСТИКИ)
+                local petType = "Unknown"
+                if obj.Name:find("Dog") or obj.Name:find("KG") then
+                    petType = "Dog"
+                elseif obj.Name:find("Dragonfly") then
+                    petType = "Dragonfly"
+                elseif obj.Name:find("Age") then
+                    petType = "Possible Pet (Age)"
                 end
-            end
-            
-            -- 🔥 КРИТЕРИЙ 2: Прямое упоминание "Dragonfly" (резервный)
-            if modelName:find("Dragonfly") then
-                isDragonfly = true
-                print(string.format("🐉 ✅ Прямое упоминание Dragonfly: %s", modelName))
-            end
-            
-            if isDragonfly then
-                dragonflyCount = dragonflyCount + 1
+                
+                print(string.format("🔍 UUID модель найдена: %s [%s]", obj.Name, petType))
                 
                 local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
                 if success then
                     local distance = (modelCFrame.Position - playerPos).Magnitude
-                    if distance <= DRAGONFLY_SEARCH_RADIUS then
+                    print(string.format("  📏 Расстояние: %.1f стадов (лимит: %d)", distance, CONFIG.SEARCH_RADIUS))
+                    
+                    if distance <= CONFIG.SEARCH_RADIUS then
+                        modelsInRange = modelsInRange + 1
+                        print("  ✅ В радиусе поиска!")
+                        
                         local hasVisuals, meshes = hasPetVisuals(obj)
-                        if hasVisuals then
-                            print(string.format("🐉 ✅ Найден DRAGONFLY: %s (расстояние: %.1f)", modelName, distance))
-                            table.insert(foundDragonflies, {
+                        print(string.format("  👀 Визуальные элементы: %s (%d meshes)", hasVisuals and "✅ Есть" or "❌ Нет", meshes and #meshes or 0))
+                        
+                        -- 🔥 НОВАЯ ЛОГИКА: UUID МОДЕЛИ - ЭТО ПИТОМЦЫ ДАЖЕ БЕЗ MESHES!
+                        local isValidPet = hasVisuals or true  -- UUID модели всегда питомцы!
+                        
+                        if isValidPet then
+                            modelsWithVisuals = modelsWithVisuals + 1
+                            if hasVisuals then
+                                print(string.format("  🎉 ✅ ПИТОМЕЦ НАЙДЕН: %s [%s] (расстояние: %.1f) - с визуалами", obj.Name, petType, distance))
+                            else
+                                print(string.format("  🎉 ✅ ПИТОМЕЦ НАЙДЕН: %s [%s] (расстояние: %.1f) - UUID без визуалов", obj.Name, petType, distance))
+                            end
+                            table.insert(foundPets, {
                                 model = obj,
                                 distance = distance,
                                 meshes = meshes,
-                                petType = "Dragonfly"
+                                petType = petType
                             })
+                        else
+                            print("  ❌ Нет визуальных элементов - не питомец")
                         end
                     else
-                        print(string.format("🐉 ⚠️ DRAGONFLY слишком далеко: %s (%.1f > %d)", modelName, distance, DRAGONFLY_SEARCH_RADIUS))
+                        print(string.format("  ❌ Слишком далеко (%.1f > %d стадов)", distance, CONFIG.SEARCH_RADIUS))
                     end
+                else
+                    print("  ❌ Ошибка получения позиции модели")
                 end
+                print() -- Пустая строка для разделения
             end
         end
     end
     
-    print(string.format("📊 Просканировано: %d моделей, %d Dragonfly обнаружено, %d в радиусе", scannedModels, dragonflyCount, #foundDragonflies))
+    -- 📊 ИТОГОВАЯ СТАТИСТИКА
+    print("📊 === СТАТИСТИКА ПОИСКА ===")
+    print(string.format("📦 Всего моделей просканировано: %d", totalModels))
+    print(string.format("🔑 UUID моделей найдено: %d", uuidModels))
+    print(string.format("📏 Моделей в радиусе поиска: %d", modelsInRange))
+    print(string.format("👀 Моделей с визуалами: %d", modelsWithVisuals))
+    print(string.format("🎯 ПИТОМЦЕВ НАЙДЕНО: %d", #foundPets))
+    print()
     
-    if #foundDragonflies == 0 then
-        print("🐉 ❌ DRAGONFLY не найден в радиусе", DRAGONFLY_SEARCH_RADIUS, "стадов!")
-        print("📍 Позиция игрока:", playerPos)
-        print("💡 Подойдите ближе к DRAGONFLY и попробуйте снова!")
+    if #foundPets == 0 then
+        print("❌ ПИТОМЦЫ НЕ НАЙДЕНЫ!")
+        if uuidModels == 0 then
+            print("💡 Совет: Убедитесь что питомец рядом с вами (в радиусе 100 стадов)")
+            print("💡 Имя питомца должно содержать UUID в фигурных скобках {....}")
+        elseif modelsInRange == 0 then
+            print("💡 UUID модели найдены, но все слишком далеко!")
+            print("💡 Подойдите ближе к питомцу (в радиус 100 стадов)")
+        elseif modelsWithVisuals == 0 then
+            print("💡 Модели в радиусе найдены, но у них нет визуальных элементов")
+            print("💡 Возможно это не питомцы или у них нет MeshPart/SpecialMesh")
+        end
         return nil
     end
     
     -- Сортируем по расстоянию (ближайший первый)
-    table.sort(foundDragonflies, function(a, b) return a.distance < b.distance end)
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
     
-    local targetDragonfly = foundDragonflies[1]
-    print(string.format("🐉 🎯 Выбран ближайший DRAGONFLY: %s (расстояние: %.1f)", 
-        targetDragonfly.model.Name, targetDragonfly.distance))
+    local targetPet = foundPets[1]
+    print(string.format("🎯 ✅ ВЫБРАН ПИТОМЕЦ: %s [%s] (расстояние: %.1f стадов)", 
+        targetPet.model.Name, targetPet.petType or "Unknown", targetPet.distance))
+    print()
     
-    return targetDragonfly.model
+    return targetPet.model
+end
+
+-- 🔥 ФУНКЦИЯ CFrame АНИМАЦИИ ДЛЯ HAND-PET КОПИИ
+local function startCFrameAnimation(originalModel, copyModel)
+    print("🎨 Запускаю CFrame анимацию для hand-pet копии...")
+    
+    -- Настройки анимации
+    local INTERPOLATION_SPEED = 0.3
+    local UPDATE_RATE = 60 -- FPS
+    
+    -- 🔍 УЛУЧШЕННАЯ ЛОГИКА ПОИСКА АНИМИРУЕМЫХ ЧАСТЕЙ
+    local function getAnimatableParts(model)
+        local parts = {}
+        local partCount = 0
+        
+        print("🔍 Анализирую структуру модели:", model.Name)
+        
+        for _, obj in pairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name ~= "Handle" then
+                partCount = partCount + 1
+                
+                -- 🐉 ОСОБОЕ ВНИМАНИЕ К DRAGONFLY ЧАСТЯМ
+                local isDragonflyPart = obj.Name:find("Wing") or obj.Name:find("Tail") or 
+                                       obj.Name:find("Leg") or obj.Name:find("Body") or
+                                       obj.Name:find("Head") or obj.Name:find("Bug")
+                
+                if isDragonflyPart then
+                    print(string.format("  ✅ Найдена важная часть: %s (тип: %s)", obj.Name, obj.ClassName))
+                end
+                
+                -- Сохраняем ВСЕ BasePart для анимации
+                parts[obj.Name] = obj
+                
+                -- Логируем первые 10 частей для диагностики
+                if partCount <= 10 then
+                    print(string.format("  🔹 Часть #%d: %s (тип: %s)", partCount, obj.Name, obj.ClassName))
+                elseif partCount == 11 then
+                    print("  ... (и еще части)")
+                end
+            end
+        end
+        
+        print(string.format("📊 Итого найдено частей: %d", partCount))
+        return parts
+    end
+    
+    local originalParts = getAnimatableParts(originalModel)
+    local copyParts = getAnimatableParts(copyModel)
+    
+    print(string.format("🎨 Найдено частей: оригинал=%d, копия=%d", 
+        table.getn(originalParts), table.getn(copyParts)))
+    
+    -- Запускаем анимационный цикл
+    local connection = RunService.Heartbeat:Connect(function()
+        local appliedCount = 0
+        local changesDetected = 0
+        
+        for partName, originalPart in pairs(originalParts) do
+            local copyPart = copyParts[partName]
+            
+            if copyPart and originalPart.Parent and copyPart.Parent then
+                local success, errorMsg = pcall(function()
+                    local originalCFrame = originalPart.CFrame
+                    local hasChanged = copyPart.CFrame ~= originalCFrame
+                    
+                    if hasChanged then
+                        changesDetected = changesDetected + 1
+                    end
+                    
+                    -- Проверяем что CFrame не является NaN или бесконечностью
+                    if originalCFrame.Position.X ~= originalCFrame.Position.X or 
+                       math.abs(originalCFrame.Position.X) == math.huge or
+                       math.abs(originalCFrame.Position.Y) == math.huge or
+                       math.abs(originalCFrame.Position.Z) == math.huge then
+                        return -- Пропускаем некорректные значения
+                    end
+                    
+                    -- 🔥 ПРИМЕНЯЕМ CFrame К ВСЕМ ЧАСТЯМ (И ЗАЯКОРЕННЫМ ТОЖЕ!)
+                    if copyPart.Parent then
+                        -- Применяем к ЛЮБЫМ частям - заякоренным и незаякоренным
+                        copyPart.CFrame = copyPart.CFrame:Lerp(originalCFrame, INTERPOLATION_SPEED)
+                        appliedCount = appliedCount + 1
+                    end
+                end)
+                
+                if not success then
+                    print("❌ Ошибка при применении CFrame", partName, ":", errorMsg)
+                end
+            end
+        end
+        
+        -- Логирование каждые 60 кадров (каждую секунду)
+        if tick() % 1 < 0.02 then -- Примерно каждую секунду
+            print(string.format("🎨 CFrame анимация: применено=%d, изменений=%d", 
+                appliedCount, changesDetected))
+        end
+    end)
+    
+    print("✅ CFrame анимация запущена для hand-pet копии!")
+    return connection
+end
+
+-- 🔥 ФУНКЦИЯ СОЗДАНИЯ HAND-PET КОПИИ В РУКЕ
+local function createHandPetCopy(originalModel)
+    print("🔥 Создаю hand-pet копию в руке...")
+    
+    -- Создаем копию модели
+    local petCopy = originalModel:Clone()
+    petCopy.Name = originalModel.Name .. "_HAND_COPY"
+    
+    -- Создаем Tool для руки
+    local tool = Instance.new("Tool")
+    tool.Name = "PetCopy_" .. originalModel.Name
+    tool.RequiresHandle = true
+    
+    -- Создаем Handle для Tool
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(0.1, 0.1, 0.1)
+    handle.Transparency = 1
+    handle.Anchored = false
+    handle.CanCollide = false
+    handle.Parent = tool
+    
+    -- Помещаем копию питомца в Tool
+    petCopy.Parent = tool
+    
+    -- Заякориваем все части копии для стабильности
+    for _, part in pairs(petCopy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = true
+        end
+    end
+    
+    -- Помещаем Tool в руку игрока
+    tool.Parent = player.Character
+    
+    print("✅ Hand-pet копия создана как Tool в руке!")
+    
+    -- Запускаем CFrame анимацию для hand-pet копии
+    spawn(function()
+        startCFrameAnimation(originalModel, petCopy)
+    end)
+    
+    return tool
 end
 
 -- Главная функция v2.0
@@ -1196,133 +1323,33 @@ local function main()
         return
     end
     
-    -- Шаг 4: ПОСЛЕ масштабирования настраиваем Anchored для анимации
-    print("\n🧠 === НАСТРОЙКА ANCHORED ДЛЯ АНИМАЦИИ ===")
-    wait(CONFIG.TWEEN_TIME + 1) -- Ждем завершения масштабирования
+    -- 🔥 Шаг 2: СОЗДАНИЕ HAND-PET КОПИИ С CFrame АНИМАЦИЕЙ
+    print("\n🔥 === СОЗДАНИЕ HAND-PET КОПИИ ===")
+    print("🎯 Начинаю создание копии в руке с CFrame анимацией!")
     
-    -- 🎯 КОПИРОВАНИЕ ТОЧНОЙ ОРИЕНТАЦИИ ОРИГИНАЛА
-    print("\n🎯 === КОПИРОВАНИЕ ОРИЕНТАЦИИ ОРИГИНАЛА ===")
-    print("📊 Анализатор показал: UpVector оригинала = (0, 0, -1)")
-    print("📊 Копируем ТОЧНУЮ ориентацию оригинального питомца!")
+    -- 🔥 УБРАЛ ВСЮ ЛОГИКУ "ОГРЫЗКА" (масштабирование, позиционирование)
+    -- ОСТАЛАСЬ ТОЛЬКО HAND-PET КОПИЯ!
     
-    if petCopy.PrimaryPart and petModel and petModel.PrimaryPart then
-        local copyRootPart = petCopy.PrimaryPart
-        local originalRootPart = petModel.PrimaryPart
+    -- 🔥 СОЗДАНИЕ HAND-PET КОПИИ В РУКЕ
+    print("🔥 Начинаю создание hand-pet копии...")
+    
+    -- 🔥 УБРАЛ ВСЮ ЛОГИКУ ПОЗИЦИОНИРОВАНИЯ И ОРИЕНТАЦИИ!
+    -- КОПИЯ СОЗДАЕТСЯ СРАЗУ В РУКЕ КАК Tool!
         
-        local currentPos = copyRootPart.Position
-        local originalCFrame = originalRootPart.CFrame
-        
-        print("📊 ДО коррекции:")
-        print("   Копия позиция:", currentPos)
-        print("   Копия UpVector:", copyRootPart.CFrame.UpVector)
-        print("📊 ОРИГИНАЛ (эталон):")
-        print("   Оригинал позиция:", originalCFrame.Position)
-        print("   Оригинал UpVector:", originalCFrame.UpVector)
-        print("   Оригинал LookVector:", originalCFrame.LookVector)
-        
-        -- ЭТАП 1: ПОДНИМАЕМ НА ПРАВИЛЬНУЮ ВЫСОТУ
-        local correctedPosition = Vector3.new(
-            currentPos.X,
-            currentPos.Y + 1.33,  -- Поднимаем как Roblox
-            currentPos.Z
-        )
-        
-        -- ЭТАП 2: КОПИРУЕМ ТОЧНУЮ ОРИЕНТАЦИЮ ОРИГИНАЛА
-        -- Берем UpVector и LookVector прямо с оригинала!
-        local exactCFrame = CFrame.lookAt(
-            correctedPosition,
-            correctedPosition + originalCFrame.LookVector,  -- Точный LookVector
-            originalCFrame.UpVector  -- Точный UpVector (0, 0, -1)
-        )
-        
-        -- Применяем точное копирование
-        copyRootPart.CFrame = exactCFrame
-        
-        print("\n✅ ПРИМЕНЕНО ТОЧНОЕ КОПИРОВАНИЕ CFrame!")
-        print("📊 Поднято на +1.33 стада")
-        print("🦴 Скопирована ориентация оригинала")
-        
-        -- 🔍 НЕМЕДЛЕННАЯ ПРОВЕРКА ПОСЛЕ ПРИМЕНЕНИЯ
-        wait(0.1)  -- Небольшая задержка
-        local immediateCheck = copyRootPart.CFrame
-        print("\n🔍 ПРОВЕРКА СРАЗУ ПОСЛЕ ПРИМЕНЕНИЯ:")
-        print("   Копия UpVector:", immediateCheck.UpVector)
-        print("   Копия LookVector:", immediateCheck.LookVector)
-        print("   Копия позиция:", immediateCheck.Position)
-        
-        -- Сравниваем с оригиналом
-        local currentOriginal = originalRootPart.CFrame
-        print("\n📊 СРАВНЕНИЕ С ОРИГИНАЛОМ:")
-        print("   Оригинал UpVector:", currentOriginal.UpVector)
-        print("   Копия UpVector:   ", immediateCheck.UpVector)
-        print("   СОВПАДАЮТ?", 
-            math.abs(currentOriginal.UpVector.X - immediateCheck.UpVector.X) < 0.01 and
-            math.abs(currentOriginal.UpVector.Y - immediateCheck.UpVector.Y) < 0.01 and
-            math.abs(currentOriginal.UpVector.Z - immediateCheck.UpVector.Z) < 0.01)
-        
-        -- 🕐 ОТЛОЖЕННАЯ ПРОВЕРКА (через 2 секунды)
-        spawn(function()
-            wait(2)
-            if copyRootPart and copyRootPart.Parent then
-                local delayedCheck = copyRootPart.CFrame
-                print("\n⏰ ПРОВЕРКА ЧЕРЕЗ 2 СЕКУНДЫ:")
-                print("   Копия UpVector:", delayedCheck.UpVector)
-                print("   Копия LookVector:", delayedCheck.LookVector)
-                print("   Копия позиция:", delayedCheck.Position)
-                
-                -- Проверяем изменилось ли
-                local upVectorChanged = 
-                    math.abs(immediateCheck.UpVector.X - delayedCheck.UpVector.X) > 0.01 or
-                    math.abs(immediateCheck.UpVector.Y - delayedCheck.UpVector.Y) > 0.01 or
-                    math.abs(immediateCheck.UpVector.Z - delayedCheck.UpVector.Z) > 0.01
-                
-                if upVectorChanged then
-                    print("⚠️ ОРИЕНТАЦИЯ ИЗМЕНИЛАСЬ! Что-то перезаписывает CFrame!")
-                    print("🎭 Возможно анимационная система или другой скрипт")
-                else
-                    print("✅ Ориентация стабильна, проблема в другом")
-                    print("🤔 Возможно проблема в структуре модели или визуальном отображении")
-                end
-            end
-        end)
-        
-        -- Проверяем результат
-        local newPos = copyRootPart.Position
-        local newUpVector = copyRootPart.CFrame.UpVector
-        local newLookVector = copyRootPart.CFrame.LookVector
-        
-        print("\n📊 ПОСЛЕ коррекции:")
-        print("   Позиция:", newPos)
-        print("   UpVector:", newUpVector)
-        print("   LookVector:", newLookVector)
-        
-        -- Проверка успешности
-        local heightDifference = newPos.Y - currentPos.Y
-        local isUpright = math.abs(newUpVector.Y - 1.0) < 0.1
-        
-        if math.abs(heightDifference - 1.33) < 0.1 and isUpright then
-            print("\n🎉 ИДЕАЛЬНО! Питомец поднят и стоит на лапах!")
-            print("✅ Высота: +", string.format("%.2f", heightDifference), "стадов")
-            print("✅ UpVector.Y =", string.format("%.2f", newUpVector.Y), "(должно быть ~1.0)")
-            print("🐕 Питомец теперь стоит как оригинал!")
-        else
-            print("\n⚠️ Проверьте результат:")
-            print("📊 Высота: +", heightDifference, "стадов")
-            print("📊 UpVector.Y =", newUpVector.Y, "(должно быть ~1.0)")
-        end
-        
-        -- Проверка что UpVector остался как у оригинала
-        if math.abs(newUpVector.Y) < 0.1 and math.abs(newUpVector.Z + 1) < 0.1 then
-            print("✅ UpVector остался как у оригинала (-0.00,-0.00,-1.00)")
-        else
-            print("⚠️ UpVector изменился, но это может быть нормально")
-        end
-        
-        print("🚀 Нативная коррекция Roblox применена!")
-        print("🎯 Питомец теперь должен стоять на земле КАК ОРИГИНАЛ!")
-    else
-        print("❌ Нет PrimaryPart у копии для нативной коррекции!")
+    -- 🔥 СОЗДАНИЕ HAND-PET КОПИИ КАК TOOL В РУКЕ
+    local handPetCopy = createHandPetCopy(petModel)
+    
+    if not handPetCopy then
+        print("❌ Не удалось создать hand-pet копию!")
+        return
     end
+    
+    print("✅ Hand-pet копия создана в руке!")
+    
+    -- 🔥 УБРАЛ ВСЮ ДИАГНОСТИЧЕСКУЮ ЛОГИКУ С НЕОПРЕДЕЛЕННЫМИ ПЕРЕМЕННЫМИ
+    -- ТЕПЕРЬ ТОЛЬКО ОСНОВНАЯ ФУНКЦИОНАЛЬНОСТЬ
+    
+    print("🚀 Hand-pet копия готова с CFrame анимацией!")
     
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
