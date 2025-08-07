@@ -1,276 +1,387 @@
--- 🎭 PetScaler CFrame Animation System v1.0
--- Система копирования анимации питомца через CFrame состояния частей
--- Основано на открытии что анимация питомца в руке работает через прямое изменение CFrame, а не Motor6D
+-- 🔍 UNIVERSAL PET DETECTOR
+-- Мониторит ВСЕ новые модели в Workspace для поиска питомцев
+-- Показывает подробную информацию о каждой новой модели
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
+local playerGui = player:WaitForChild("PlayerGui")
 
-print("🎭 === PetScaler CFrame Animation System v1.0 ===")
-print("🔍 Система копирования анимации через CFrame состояния частей")
+print("🔍 === UNIVERSAL PET DETECTOR ===")
+print("Мониторит ВСЕ новые модели в Workspace")
 
--- 📊 Конфигурация
-local CONFIG = {
-    SCALE_FACTOR = 0.3,  -- Масштаб копии относительно оригинала
-    HAND_PET_CHECK_INTERVAL = 1.0,  -- Интервал поиска питомца в руке (сек)
-    INTERPOLATION_SPEED = 0.7,  -- Скорость интерполяции CFrame (0.1-1.0)
-    DEBUG_INTERVAL = 3.0  -- Интервал отладочных сообщений (сек)
-}
+-- === ПЕРЕМЕННЫЕ ===
+local gui = nil
+local consoleText = nil
+local scrollingFrame = nil
+local logLines = {}
+local maxLogLines = 100
+local isMonitoring = false
+local trackedModels = {}
+local connections = {}
 
--- 🔍 Функция поиска питомца в руке
-local function findHandHeldPet()
-    if not character then return nil end
+-- === ФУНКЦИИ ЛОГИРОВАНИЯ ===
+
+local function addLogLine(message)
+    local timestamp = os.date("%H:%M:%S")
+    local logMessage = "[" .. timestamp .. "] " .. message
     
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
-            return tool
+    table.insert(logLines, logMessage)
+    print(logMessage)
+    
+    if #logLines > maxLogLines then
+        table.remove(logLines, 1)
+    end
+    
+    if consoleText then
+        consoleText.Text = table.concat(logLines, "\n")
+        if scrollingFrame then
+            scrollingFrame.CanvasPosition = Vector2.new(0, scrollingFrame.AbsoluteCanvasSize.Y)
         end
     end
-    return nil
 end
 
--- 📦 Получение всех анимируемых частей из модели питомца
-local function getAnimatedParts(model)
-    local parts = {}
+local function analyzeModel(model)
+    local info = {
+        name = model.Name,
+        fullName = model:GetFullName(),
+        className = model.ClassName,
+        parts = {},
+        totalParts = 0,
+        hasMotor6D = false,
+        hasHumanoid = false,
+        hasPrimaryPart = model.PrimaryPart ~= nil,
+        hasAnimations = false,
+        specialObjects = {}
+    }
     
-    if not model then return parts end
+    -- Получаем позицию если возможно
+    local success, position = pcall(function()
+        return model:GetModelCFrame().Position
+    end)
+    info.position = success and position or "Неизвестно"
     
+    -- Анализируем содержимое
     for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name ~= "Handle" then  -- Исключаем Handle
-            table.insert(parts, obj)
+        if obj:IsA("BasePart") then
+            info.totalParts = info.totalParts + 1
+            if info.totalParts <= 5 then -- Записываем только первые 5 частей
+                table.insert(info.parts, {
+                    name = obj.Name,
+                    size = obj.Size,
+                    anchored = obj.Anchored,
+                    material = obj.Material.Name
+                })
+            end
+        elseif obj:IsA("Motor6D") then
+            info.hasMotor6D = true
+        elseif obj:IsA("Humanoid") then
+            info.hasHumanoid = true
+        elseif obj:IsA("Animation") or obj:IsA("AnimationTrack") then
+            info.hasAnimations = true
+        elseif obj:IsA("SpecialMesh") or obj:IsA("MeshPart") then
+            table.insert(info.specialObjects, obj.ClassName .. ":" .. obj.Name)
         end
     end
     
-    return parts
+    return info
 end
 
--- 🎯 Поиск соответствующей части в копии по имени
-local function findCorrespondingPart(copyModel, partName)
-    for _, obj in pairs(copyModel:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name == partName then
-            return obj
+local function logModelInfo(model, action)
+    local info = analyzeModel(model)
+    
+    addLogLine("🆕 " .. action .. " МОДЕЛЬ: " .. info.name)
+    addLogLine("  📍 Полное имя: " .. info.fullName)
+    addLogLine("  📍 Позиция: " .. tostring(info.position))
+    addLogLine("  🧩 Частей: " .. info.totalParts)
+    addLogLine("  🔗 Motor6D: " .. (info.hasMotor6D and "✅" or "❌"))
+    addLogLine("  🚶 Humanoid: " .. (info.hasHumanoid and "✅" or "❌"))
+    addLogLine("  🎯 PrimaryPart: " .. (info.hasPrimaryPart and "✅" or "❌"))
+    addLogLine("  🎬 Анимации: " .. (info.hasAnimations and "✅" or "❌"))
+    
+    -- Показываем части
+    if #info.parts > 0 then
+        addLogLine("  📦 Части:")
+        for _, part in ipairs(info.parts) do
+            addLogLine("    • " .. part.name .. ": " .. tostring(part.size) .. 
+                      " (" .. part.material .. ", Anchored:" .. tostring(part.anchored) .. ")")
+        end
+        if info.totalParts > #info.parts then
+            addLogLine("    ... и еще " .. (info.totalParts - #info.parts) .. " частей")
         end
     end
-    return nil
+    
+    -- Показываем специальные объекты
+    if #info.specialObjects > 0 then
+        addLogLine("  ✨ Специальные объекты: " .. table.concat(info.specialObjects, ", "))
+    end
+    
+    addLogLine("") -- Пустая строка для разделения
+    
+    return info
 end
 
--- 🎭 Основная система CFrame анимации
-local function startCFrameAnimationSystem(originalModel, copyModel)
-    print("🎭 Запуск CFrame Animation System")
-    print("🔄 Копия будет повторять CFrame анимацию оригинала!")
+-- === МОНИТОРИНГ ФУНКЦИИ ===
+
+local function monitorContainer(container, containerName)
+    addLogLine("👀 Мониторю: " .. containerName)
     
-    -- Глобальные переменные для системы
-    local handPetModel = nil
-    local handPetParts = {}
-    local lastHandPetCheck = 0
-    local previousCFrameStates = {}
-    local cframeChangeCount = 0
-    local lastChangeTime = 0
+    local function onChildAdded(child)
+        if child:IsA("Model") then
+            -- Логируем ВСЕ новые модели
+            addLogLine("🎉 НОВАЯ МОДЕЛЬ В " .. containerName .. "!")
+            local info = logModelInfo(child, "ДОБАВЛЕНА В " .. containerName)
+            
+            -- Отслеживаем эту модель
+            trackedModels[child] = {
+                startTime = tick(),
+                container = containerName,
+                initialInfo = info,
+                sizeHistory = {}
+            }
+            
+            -- Мониторим изменения размера
+            spawn(function()
+                local model = child
+                local trackData = trackedModels[model]
+                
+                while model.Parent and trackData do
+                    wait(0.2) -- Проверяем каждые 0.2 секунды
+                    
+                    if not model.Parent then break end
+                    
+                    -- Записываем текущие размеры
+                    local currentSizes = {}
+                    for _, obj in pairs(model:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            currentSizes[obj.Name] = obj.Size
+                        end
+                    end
+                    
+                    table.insert(trackData.sizeHistory, {
+                        time = tick() - trackData.startTime,
+                        sizes = currentSizes
+                    })
+                end
+            end)
+        end
+    end
     
-    local connection = RunService.Heartbeat:Connect(function()
-        -- Проверяем существование моделей
-        if not originalModel.Parent or not copyModel.Parent then
-            print("⚠️ Модель удалена, останавливаю систему")
-            connection:Disconnect()
-            return
-        end
-        
-        local currentTime = tick()
-        
-        -- === 🔍 ПОИСК ПИТОМЦА В РУКЕ ===
-        if currentTime - lastHandPetCheck >= CONFIG.HAND_PET_CHECK_INTERVAL then
-            lastHandPetCheck = currentTime
+    local function onChildRemoved(child)
+        if trackedModels[child] then
+            local trackData = trackedModels[child]
+            local lifeTime = tick() - trackData.startTime
             
-            local foundTool = findHandHeldPet()
+            addLogLine("👋 МОДЕЛЬ УДАЛЕНА ИЗ " .. trackData.container .. "!")
+            addLogLine("  📛 Имя: " .. child.Name)
+            addLogLine("  ⏱️ Время жизни: " .. string.format("%.2f", lifeTime) .. " сек")
             
-            if foundTool ~= handPetModel then
-                handPetModel = foundTool
-                handPetParts = getAnimatedParts(handPetModel)
+            -- Анализируем изменения размера
+            if #trackData.sizeHistory > 1 then
+                local firstSizes = trackData.sizeHistory[1].sizes
+                local lastSizes = trackData.sizeHistory[#trackData.sizeHistory].sizes
                 
-                if handPetModel then
-                    print("🎯 НАШЛИ ПИТОМЦА В РУКЕ:", handPetModel.Name)
-                    print("🔧 Анимируемых частей:", #handPetParts)
-                    
-                    -- Инициализируем отслеживание CFrame
-                    previousCFrameStates = {}
-                    for _, part in ipairs(handPetParts) do
-                        if part and part.Parent then
-                            previousCFrameStates[part.Name] = part.CFrame
-                        end
-                    end
-                else
-                    print("⚠️ Питомец в руке не найден")
-                    handPetParts = {}
-                end
-            end
-        end
-        
-        -- === 📐 LIVE КОПИРОВАНИЕ CFrame СОСТОЯНИЙ ===
-        if handPetModel and #handPetParts > 0 then
-            local appliedCount = 0
-            local changesDetected = 0
-            local debugInfo = {}
-            
-            -- 🔍 ПРОВЕРКА ANCHORED СОСТОЯНИЙ КОПИИ (раз в 5 секунд)
-            if math.floor(currentTime) % 5 == 0 and math.floor(currentTime * 10) % 10 == 0 then
-                local anchoredParts = 0
-                local totalParts = 0
-                for _, part in pairs(copyModel:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        totalParts = totalParts + 1
-                        if part.Anchored then
-                            anchoredParts = anchoredParts + 1
-                        end
-                    end
-                end
-                print(string.format("⚓ ANCHORED ДИАГНОСТИКА: %d/%d частей заякорено", anchoredParts, totalParts))
-            end
-            
-            -- 📊 ОТСЛЕЖИВАНИЕ И КОПИРОВАНИЕ CFrame ИЗМЕНЕНИЙ
-            for _, handPart in ipairs(handPetParts) do
-                if handPart and handPart.Parent then
-                    local partName = handPart.Name
-                    local currentCFrame = handPart.CFrame
-                    
-                    -- Проверяем изменилось ли CFrame состояние
-                    local hasChanged = false
-                    if previousCFrameStates[partName] then
-                        local prevCFrame = previousCFrameStates[partName]
-                        local positionDiff = (currentCFrame.Position - prevCFrame.Position).Magnitude
-                        local rotationDiff = math.abs(currentCFrame.LookVector:Dot(prevCFrame.LookVector) - 1)
+                addLogLine("📊 АНАЛИЗ ИЗМЕНЕНИЙ РАЗМЕРА:")
+                local hasChanges = false
+                
+                for partName, finalSize in pairs(lastSizes) do
+                    local initialSize = firstSizes[partName]
+                    if initialSize then
+                        local scaleX = finalSize.X / initialSize.X
+                        local scaleY = finalSize.Y / initialSize.Y
+                        local scaleZ = finalSize.Z / initialSize.Z
                         
-                        if positionDiff > 0.001 or rotationDiff > 0.001 then
-                            hasChanged = true
-                            changesDetected = changesDetected + 1
-                        end
-                    end
-                    
-                    -- Обновляем предыдущее состояние
-                    previousCFrameStates[partName] = currentCFrame
-                    
-                    -- Находим соответствующую часть в копии и применяем CFrame
-                    local copyPart = findCorrespondingPart(copyModel, partName)
-                    if copyPart then
-                        local success, errorMsg = pcall(function()
-                            -- 📐 МАСШТАБИРОВАНИЕ И ПРИМЕНЕНИЕ CFrame
-                            local originalPosition = currentCFrame.Position
-                            local scaledPosition = originalPosition * CONFIG.SCALE_FACTOR
-                            
-                            -- Сохраняем поворот, но масштабируем позицию
-                            local scaledCFrame = CFrame.new(scaledPosition) * (currentCFrame - currentCFrame.Position)
-                            
-                            -- Применяем с интерполяцией для плавности
-                            if not copyPart.Anchored then  -- Применяем только к незаякоренным частям
-                                copyPart.CFrame = copyPart.CFrame:Lerp(scaledCFrame, CONFIG.INTERPOLATION_SPEED)
-                            end
-                            
-                            -- Диагностическая информация
-                            table.insert(debugInfo, {
-                                name = partName,
-                                changed = hasChanged,
-                                anchored = copyPart.Anchored,
-                                applied = not copyPart.Anchored
-                            })
-                        end)
-                        
-                        if success then
-                            appliedCount = appliedCount + 1
-                        else
-                            print("❌ Ошибка при применении CFrame", partName, ":", errorMsg)
+                        if math.abs(scaleX - 1) > 0.05 or math.abs(scaleY - 1) > 0.05 or math.abs(scaleZ - 1) > 0.05 then
+                            hasChanges = true
+                            addLogLine("  🔄 " .. partName .. ": " .. 
+                                string.format("%.3fx, %.3fx, %.3fx", scaleX, scaleY, scaleZ))
                         end
                     end
                 end
+                
+                if not hasChanges then
+                    addLogLine("  ➡️ Размеры не изменились")
+                end
+            else
+                addLogLine("  ⚠️ Недостаточно данных для анализа изменений")
             end
             
-            -- Обновляем счетчики изменений
-            if changesDetected > 0 then
-                cframeChangeCount = cframeChangeCount + changesDetected
-                lastChangeTime = currentTime
-            end
-            
-            -- 📊 ДЕТАЛЬНАЯ ДИАГНОСТИКА каждые 3 секунды
-            if math.floor(currentTime) % CONFIG.DEBUG_INTERVAL == 0 and math.floor(currentTime * 10) % 10 == 0 then
-                print("📐 LIVE CFrame АНИМАЦИЯ: применено", appliedCount, "/", #handPetParts, "CFrame состояний")
-                
-                -- 🎯 ОТЧЕТ ОБ ИЗМЕНЕНИЯХ В ПИТОМЦЕ В РУКЕ
-                local timeSinceLastChange = currentTime - lastChangeTime
-                print(string.format("🎭 ПИТОМЕЦ В РУКЕ: %d изменений CFrame, последнее %.1f сек назад", 
-                    cframeChangeCount, timeSinceLastChange))
-                
-                if changesDetected > 0 then
-                    print(string.format("✅ CFrame АНИМАЦИЯ АКТИВНА: %d частей изменились в этом кадре!", changesDetected))
-                else
-                    print("⚠️ ПИТОМЕЦ СТАТИЧЕН: CFrame не изменяются")
-                end
-                
-                -- Показываем первые 3 части для диагностики
-                for i = 1, math.min(3, #debugInfo) do
-                    local info = debugInfo[i]
-                    print(string.format("📐 %s: Changed=%s Anchored=%s Applied=%s", 
-                        info.name, tostring(info.changed), tostring(info.anchored), tostring(info.applied)))
-                end
-            end
-        else
-            -- Питомец в руке не найден - используем статичную позу
-            if math.floor(currentTime) % 10 == 0 and math.floor(currentTime * 10) % 10 == 0 then
-                print("⏸️ Питомец в руке не найден, копия в статичной позе")
-            end
+            addLogLine("") -- Пустая строка
+            trackedModels[child] = nil
         end
+    end
+    
+    -- Подключаем обработчики
+    table.insert(connections, container.ChildAdded:Connect(onChildAdded))
+    table.insert(connections, container.ChildRemoved:Connect(onChildRemoved))
+    
+    -- Проверяем уже существующие модели
+    for _, child in pairs(container:GetChildren()) do
+        if child:IsA("Model") then
+            addLogLine("📋 Существующая модель: " .. child.Name .. " в " .. containerName)
+        end
+    end
+end
+
+local function startMonitoring()
+    if isMonitoring then
+        addLogLine("⚠️ Мониторинг уже запущен!")
+        return
+    end
+    
+    isMonitoring = true
+    addLogLine("🚀 Запуск универсального мониторинга...")
+    
+    -- Мониторим основной Workspace
+    monitorContainer(Workspace, "Workspace")
+    
+    -- Мониторим workspace.visuals если есть
+    local visuals = Workspace:FindFirstChild("visuals")
+    if visuals then
+        monitorContainer(visuals, "workspace.visuals")
+    else
+        addLogLine("⚠️ workspace.visuals не найден")
+    end
+    
+    -- Мониторим другие потенциальные контейнеры
+    local commonContainers = {"Pets", "Models", "Effects", "Visuals", "Game"}
+    for _, containerName in ipairs(commonContainers) do
+        local container = Workspace:FindFirstChild(containerName)
+        if container then
+            monitorContainer(container, "workspace." .. containerName)
+        end
+    end
+    
+    addLogLine("👁️ Мониторинг активен. Открывайте яйца!")
+end
+
+local function stopMonitoring()
+    if not isMonitoring then
+        addLogLine("⚠️ Мониторинг не запущен!")
+        return
+    end
+    
+    isMonitoring = false
+    
+    -- Отключаем все соединения
+    for _, connection in ipairs(connections) do
+        connection:Disconnect()
+    end
+    connections = {}
+    
+    trackedModels = {}
+    addLogLine("🛑 Мониторинг остановлен")
+end
+
+-- === СОЗДАНИЕ GUI ===
+
+local function createGUI()
+    local existingGui = playerGui:FindFirstChild("UniversalPetDetector")
+    if existingGui then
+        existingGui:Destroy()
+    end
+    
+    gui = Instance.new("ScreenGui")
+    gui.Name = "UniversalPetDetector"
+    gui.Parent = playerGui
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 700, 0, 500)
+    mainFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    mainFrame.BorderSizePixel = 2
+    mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 0)
+    mainFrame.Parent = gui
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 40)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+    titleLabel.Text = "🔍 Universal Pet Detector"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.Parent = mainFrame
+    
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Size = UDim2.new(1, 0, 0, 50)
+    buttonFrame.Position = UDim2.new(0, 0, 0, 40)
+    buttonFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    buttonFrame.Parent = mainFrame
+    
+    local startButton = Instance.new("TextButton")
+    startButton.Size = UDim2.new(0, 120, 0, 30)
+    startButton.Position = UDim2.new(0, 10, 0, 10)
+    startButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    startButton.Text = "🚀 Старт"
+    startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    startButton.TextScaled = true
+    startButton.Font = Enum.Font.Gotham
+    startButton.Parent = buttonFrame
+    
+    local stopButton = Instance.new("TextButton")
+    stopButton.Size = UDim2.new(0, 120, 0, 30)
+    stopButton.Position = UDim2.new(0, 140, 0, 10)
+    stopButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    stopButton.Text = "🛑 Стоп"
+    stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    stopButton.TextScaled = true
+    stopButton.Font = Enum.Font.Gotham
+    stopButton.Parent = buttonFrame
+    
+    local clearButton = Instance.new("TextButton")
+    clearButton.Size = UDim2.new(0, 120, 0, 30)
+    clearButton.Position = UDim2.new(0, 270, 0, 10)
+    clearButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    clearButton.Text = "🗑️ Очистить"
+    clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    clearButton.TextScaled = true
+    clearButton.Font = Enum.Font.Gotham
+    clearButton.Parent = buttonFrame
+    
+    scrollingFrame = Instance.new("ScrollingFrame")
+    scrollingFrame.Size = UDim2.new(1, -20, 1, -110)
+    scrollingFrame.Position = UDim2.new(0, 10, 0, 100)
+    scrollingFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    scrollingFrame.BorderSizePixel = 1
+    scrollingFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+    scrollingFrame.ScrollBarThickness = 12
+    scrollingFrame.Parent = mainFrame
+    
+    consoleText = Instance.new("TextLabel")
+    consoleText.Size = UDim2.new(1, -10, 1, 0)
+    consoleText.Position = UDim2.new(0, 5, 0, 0)
+    consoleText.BackgroundTransparency = 1
+    consoleText.Text = ""
+    consoleText.TextColor3 = Color3.fromRGB(255, 200, 0)
+    consoleText.TextSize = 11
+    consoleText.Font = Enum.Font.Code
+    consoleText.TextXAlignment = Enum.TextXAlignment.Left
+    consoleText.TextYAlignment = Enum.TextYAlignment.Top
+    consoleText.TextWrapped = true
+    consoleText.Parent = scrollingFrame
+    
+    -- Обработчики кнопок
+    startButton.MouseButton1Click:Connect(startMonitoring)
+    stopButton.MouseButton1Click:Connect(stopMonitoring)
+    clearButton.MouseButton1Click:Connect(function()
+        logLines = {}
+        if consoleText then
+            consoleText.Text = ""
+        end
+        addLogLine("🗑️ Консоль очищена")
     end)
     
-    return connection
+    addLogLine("🔍 Universal Pet Detector готов!")
+    addLogLine("📋 Мониторит ВСЕ новые модели в Workspace")
+    addLogLine("🎯 Нажмите 'Старт' и откройте яйцо")
+    addLogLine("💡 Покажет ЛЮБУЮ новую модель, даже если это не питомец")
 end
 
--- 🚀 Функция для запуска системы на конкретной паре моделей
-local function initializeCFrameSystem(originalModel, copyModel)
-    if not originalModel or not copyModel then
-        print("❌ Ошибка: не указаны модели для анимации")
-        return nil
-    end
-    
-    print("🚀 Инициализация CFrame Animation System")
-    print("📦 Оригинал:", originalModel.Name)
-    print("📦 Копия:", copyModel.Name)
-    
-    -- Убеждаемся что только корневая часть копии заякорена
-    local copyRootPart = copyModel.PrimaryPart or copyModel:FindFirstChild("Torso") or copyModel:FindFirstChild("HumanoidRootPart")
-    if copyRootPart then
-        copyRootPart.Anchored = true
-        print("⚓ Корневая часть копии заякорена:", copyRootPart.Name)
-        
-        -- Все остальные части должны быть свободными
-        for _, part in pairs(copyModel:GetDescendants()) do
-            if part:IsA("BasePart") and part ~= copyRootPart then
-                part.Anchored = false
-            end
-        end
-        print("🔓 Остальные части копии разъякорены для анимации")
-    end
-    
-    return startCFrameAnimationSystem(originalModel, copyModel)
-end
+-- === ЗАПУСК ===
 
--- Экспорт функций для использования в других скриптах
-return {
-    initializeCFrameSystem = initializeCFrameSystem,
-    startCFrameAnimationSystem = startCFrameAnimationSystem,
-    CONFIG = CONFIG
-}
+createGUI()
 
--- 🧪 Пример использования (раскомментируй для тестирования):
---[[
--- Найди модели в Workspace
-local originalPet = Workspace:FindFirstChild("OriginalPetName")
-local copyPet = Workspace:FindFirstChild("CopyPetName")
-
-if originalPet and copyPet then
-    local animationSystem = initializeCFrameSystem(originalPet, copyPet)
-    print("✅ CFrame Animation System запущена!")
-    print("🛑 Для остановки: animationSystem:Disconnect()")
-else
-    print("❌ Модели не найдены в Workspace")
-end
---]]
+addLogLine("✅ Универсальный детектор готов!")
+addLogLine("🔥 Найдет ЛЮБУЮ новую модель в Workspace!")
