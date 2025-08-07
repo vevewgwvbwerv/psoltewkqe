@@ -46,6 +46,47 @@ local playerPos = hrp.Position
 print("📍 Позиция игрока:", playerPos)
 print("🎯 Радиус поиска Dragonfly:", CONFIG.SEARCH_RADIUS)
 
+-- 🐉 ФУНКЦИЯ ПРОВЕРКИ ЧТО МОДЕЛЬ - DRAGONFLY
+-- Основана на диагностике: 0 MeshPart, но есть BasePart с характерными именами
+local function checkIfDragonfly(model)
+    if not model or not model:IsA("Model") then
+        return false
+    end
+    
+    local meshPartCount = 0
+    local basePartCount = 0
+    local hasDragonflyParts = false
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") then
+            meshPartCount = meshPartCount + 1
+        elseif obj:IsA("BasePart") and obj.Name ~= "Handle" then
+            basePartCount = basePartCount + 1
+            
+            -- Проверяем характерные части Dragonfly
+            local partName = obj.Name:lower()
+            if partName:find("wing") or partName:find("tail") or 
+               partName:find("leg") or partName:find("body") or 
+               partName:find("head") or partName:find("bug") or
+               partName:find("dragon") then
+                hasDragonflyParts = true
+            end
+        end
+    end
+    
+    -- Dragonfly: 0 MeshPart, но есть BasePart с характерными именами
+    local isDragonfly = (meshPartCount == 0) and (basePartCount > 0) and hasDragonflyParts
+    
+    if CONFIG.DEBUG_MODE and isDragonfly then
+        print("🐉 Подтверждение Dragonfly:")
+        print("   MeshPart: " .. meshPartCount)
+        print("   BasePart: " .. basePartCount) 
+        print("   Характерные части: " .. tostring(hasDragonflyParts))
+    end
+    
+    return isDragonfly
+end
+
 -- 🔍 ФУНКЦИЯ ПОИСКА DRAGONFLY РЯДОМ С ИГРОКОМ
 -- Основана на PetScaler_v2.9.lua с учетом особенностей Dragonfly
 local function findNearbyDragonfly()
@@ -89,43 +130,6 @@ local function findNearbyDragonfly()
     
     print("🐉 Выбран Dragonfly:", targetDragonfly.Name)
     return targetDragonfly
-end
-
--- 🐉 ФУНКЦИЯ ПРОВЕРКИ ЧТО МОДЕЛЬ - DRAGONFLY
--- Основана на диагностике: 0 MeshPart, но есть BasePart с характерными именами
-local function checkIfDragonfly(model)
-    local meshPartCount = 0
-    local basePartCount = 0
-    local hasDragonflyParts = false
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
-            meshPartCount = meshPartCount + 1
-        elseif obj:IsA("BasePart") and obj.Name ~= "Handle" then
-            basePartCount = basePartCount + 1
-            
-            -- Проверяем характерные части Dragonfly
-            local partName = obj.Name:lower()
-            if partName:find("wing") or partName:find("tail") or 
-               partName:find("leg") or partName:find("body") or 
-               partName:find("head") or partName:find("bug") or
-               partName:find("dragon") then
-                hasDragonflyParts = true
-            end
-        end
-    end
-    
-    -- Dragonfly: 0 MeshPart, но есть BasePart с характерными именами
-    local isDragonfly = (meshPartCount == 0) and (basePartCount > 0) and hasDragonflyParts
-    
-    if CONFIG.DEBUG_MODE and isDragonfly then
-        print("🐉 Подтверждение Dragonfly:")
-        print("   MeshPart: " .. meshPartCount)
-        print("   BasePart: " .. basePartCount) 
-        print("   Характерные части: " .. tostring(hasDragonflyParts))
-    end
-    
-    return isDragonfly
 end
 
 -- 🔍 ФУНКЦИЯ ПОИСКА EGGEXPLODE
@@ -218,12 +222,70 @@ local function replaceTemporaryModel(originalPetModel, dragonflyReplacement)
     -- Удаляем оригинальную модель
     originalPetModel:Destroy()
     
-    -- Размещаем Dragonfly на том же месте
-    dragonflyReplacement:SetPrimaryPartCFrame(originalCFrame)
+    -- БЕЗОПАСНОЕ размещение Dragonfly на том же месте
     dragonflyReplacement.Parent = originalParent
     
+    -- Пробуем использовать PrimaryPart если есть
+    local placementSuccess = false
+    if dragonflyReplacement.PrimaryPart then
+        local success = pcall(function()
+            dragonflyReplacement:SetPrimaryPartCFrame(originalCFrame)
+        end)
+        if success then
+            placementSuccess = true
+            if CONFIG.DEBUG_MODE then
+                print("✅ Dragonfly размещен через PrimaryPart")
+            end
+        end
+    end
+    
+    -- Если PrimaryPart не сработал, размещаем вручную
+    if not placementSuccess then
+        if CONFIG.DEBUG_MODE then
+            print("🔧 PrimaryPart недоступен, размещаю вручную...")
+        end
+        
+        -- Находим первую BasePart в Dragonfly для размещения
+        local firstPart = nil
+        for _, obj in pairs(dragonflyReplacement:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                firstPart = obj
+                break
+            end
+        end
+        
+        if firstPart then
+            local success = pcall(function()
+                firstPart.CFrame = originalCFrame
+            end)
+            if success then
+                placementSuccess = true
+                if CONFIG.DEBUG_MODE then
+                    print("✅ Dragonfly размещен через первую BasePart:", firstPart.Name)
+                end
+            end
+        end
+    end
+    
+    -- Если и это не сработало, пробуем через MoveTo
+    if not placementSuccess then
+        local success = pcall(function()
+            dragonflyReplacement:MoveTo(originalCFrame.Position)
+        end)
+        if success then
+            placementSuccess = true
+            if CONFIG.DEBUG_MODE then
+                print("✅ Dragonfly размещен через MoveTo")
+            end
+        end
+    end
+    
     if CONFIG.DEBUG_MODE then
-        print("✅ Замена завершена! Dragonfly размещен в:", originalParent.Name)
+        if placementSuccess then
+            print("✅ Замена завершена! Dragonfly размещен в:", originalParent.Name)
+        else
+            print("⚠️ Замена завершена, но размещение может быть неточным")
+        end
     end
     
     return dragonflyReplacement
@@ -236,24 +298,59 @@ local function copyNonIdleEffects(fromModel, toModel)
         print("🎬 Копирование эффектов (исключая idle)...")
     end
     
-    -- Копируем Animator (для совместимости с эффектами)
+    -- БЕЗОПАСНОЕ копирование Animator
+    local animatorFound = false
     for _, obj in pairs(fromModel:GetDescendants()) do
         if obj:IsA("Animator") then
-            local animatorCopy = obj:Clone()
-            -- Ищем подходящее место для размещения в Dragonfly
-            local targetHumanoid = toModel:FindFirstChildOfClass("Humanoid")
-            if targetHumanoid then
-                animatorCopy.Parent = targetHumanoid
-                if CONFIG.DEBUG_MODE then
-                    print("✅ Animator скопирован в Humanoid")
+            local success, animatorCopy = pcall(function()
+                return obj:Clone()
+            end)
+            
+            if success and animatorCopy then
+                -- Ищем безопасное место для размещения
+                local targetHumanoid = toModel:FindFirstChildOfClass("Humanoid")
+                
+                if targetHumanoid then
+                    -- Проверяем что у Humanoid еще нет Animator
+                    local existingAnimator = targetHumanoid:FindFirstChildOfClass("Animator")
+                    if not existingAnimator then
+                        local placeSuccess = pcall(function()
+                            animatorCopy.Parent = targetHumanoid
+                        end)
+                        if placeSuccess then
+                            animatorFound = true
+                            if CONFIG.DEBUG_MODE then
+                                print("✅ Animator безопасно скопирован в Humanoid")
+                            end
+                        end
+                    end
                 end
-            else
-                animatorCopy.Parent = toModel
-                if CONFIG.DEBUG_MODE then
-                    print("✅ Animator скопирован в корень модели")
+                
+                -- Если не удалось поместить в Humanoid, пробуем корень модели
+                if not animatorFound then
+                    local existingAnimator = toModel:FindFirstChildOfClass("Animator")
+                    if not existingAnimator then
+                        local placeSuccess = pcall(function()
+                            animatorCopy.Parent = toModel
+                        end)
+                        if placeSuccess then
+                            animatorFound = true
+                            if CONFIG.DEBUG_MODE then
+                                print("✅ Animator безопасно скопирован в корень модели")
+                            end
+                        end
+                    end
+                end
+                
+                -- Если не удалось разместить, просто удаляем копию
+                if not animatorFound then
+                    animatorCopy:Destroy()
+                    if CONFIG.DEBUG_MODE then
+                        print("⚠️ Не удалось разместить Animator, пропускаем")
+                    end
                 end
             end
-            break
+            break -- Копируем только первый найденный Animator
         end
     end
     
@@ -262,6 +359,7 @@ local function copyNonIdleEffects(fromModel, toModel)
     
     if CONFIG.DEBUG_MODE then
         print("✅ Эффекты скопированы (idle анимация исключена)")
+        print("   Animator скопирован:", animatorFound)
     end
 end
 
@@ -312,13 +410,33 @@ local function startEggInterception()
                 InterceptorState.eggExplodeDetected = true
                 print("⚡ EggExplode обнаружен в", location)
                 
-                -- Ждем появления временной модели
+                -- ЦИКЛИЧЕСКИЙ ПОИСК временной модели в реальном времени
                 spawn(function()
-                    wait(0.5) -- Небольшая задержка для стабилизации
+                    print("🔍 Начинаю циклический поиск временной модели в Visuals...")
                     
-                    local temporaryPet = findTemporaryPetInVisuals()
+                    local searchAttempts = 0
+                    local maxAttempts = 200 -- 20 секунд поиска (200 * 0.1 сек)
+                    local temporaryPet = nil
+                    
+                    -- Циклический поиск каждые 0.1 секунды
+                    while searchAttempts < maxAttempts and not temporaryPet do
+                        temporaryPet = findTemporaryPetInVisuals()
+                        
+                        if temporaryPet then
+                            print("🎯 Временная модель НАЙДЕНА:", temporaryPet.Name, "(попытка", searchAttempts + 1, ")")
+                            break
+                        end
+                        
+                        searchAttempts = searchAttempts + 1
+                        if CONFIG.DEBUG_MODE and searchAttempts % 10 == 0 then
+                            print("🔍 Поиск продолжается... попытка", searchAttempts, "из", maxAttempts)
+                        end
+                        
+                        wait(0.1) -- Ждем 0.1 секунды перед следующей попыткой
+                    end
+                    
                     if temporaryPet then
-                        print("🎯 Временная модель найдена:", temporaryPet.Name)
+                        print("✅ Временная модель найдена, начинаю замену...")
                         
                         -- Копируем эффекты (НЕ idle)
                         copyNonIdleEffects(temporaryPet, dragonflyReplacement)
@@ -334,11 +452,12 @@ local function startEggInterception()
                         else
                             print("❌ Ошибка при замене модели")
                         end
-                        
-                        InterceptorState.isActive = false
                     else
-                        print("❌ Временная модель не найдена в Visuals")
+                        print("❌ Временная модель НЕ НАЙДЕНА после", maxAttempts, "попыток")
+                        print("💡 Попробуйте открыть яйцо сразу после нажатия кнопки")
                     end
+                    
+                    InterceptorState.isActive = false
                 end)
             end
         end
