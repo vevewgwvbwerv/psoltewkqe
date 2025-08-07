@@ -1144,6 +1144,278 @@ local function findAndScalePet()
     return targetPet.model
 end
 
+-- 🎯 ФУНКЦИЯ СТАЦИОНАРНОЙ CFrame АНИМАЦИИ (КОПИРУЕМ ИЗ РУКИ!)
+local function startStationaryCFrameAnimation(originalModel, copyModel)
+    print("🎯 Запускаю стационарную CFrame анимацию...")
+    print("🔍 КЛЮЧЕВОЕ ОТЛИЧИЕ: копирую анимацию ИЗ ПИТОМЦА В РУКЕ, а не из оригинала!")
+    
+    -- 🔍 ПОИСК ПИТОМЦА В РУКЕ ИГРОКА (УЛУЧШЕННАЯ ЛОГИКА!)
+    local function findHandHeldPet()
+        if not player.Character then
+            print("❌ Персонаж игрока не найден!")
+            return nil
+        end
+        
+        print("🔍 Ищу питомца в руке игрока...")
+        
+        for _, tool in pairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then
+                print(string.format("🔹 Найден Tool: %s", tool.Name))
+                
+                -- 🔥 УЛУЧШЕННАЯ ЛОГИКА: Ищем ЛЮБОЙ объект с BasePart!
+                for _, child in pairs(tool:GetChildren()) do
+                    if child:IsA("Model") then
+                        print(string.format("✅ Найдена модель питомца в руке: %s", child.Name))
+                        return child
+                    elseif child:IsA("BasePart") and child.Name ~= "Handle" then
+                        -- Если нашли BasePart (не Handle), возвращаем сам Tool
+                        print(string.format("✅ Найден BasePart в Tool: %s - возвращаю Tool!", child.Name))
+                        return tool
+                    end
+                end
+                
+                -- 🔥 Если ничего не нашли, проверяем вложенные объекты
+                local hasAnimatableParts = false
+                for _, descendant in pairs(tool:GetDescendants()) do
+                    if descendant:IsA("BasePart") and descendant.Name ~= "Handle" then
+                        hasAnimatableParts = true
+                        break
+                    end
+                end
+                
+                if hasAnimatableParts then
+                    print(string.format("✅ Tool содержит анимируемые части - возвращаю Tool: %s", tool.Name))
+                    return tool
+                end
+            end
+        end
+        
+        print("⚠️ Питомец в руке не найден!")
+        return nil
+    end
+    
+    -- 🔍 НАХОДИМ ПИТОМЦА В РУКЕ
+    local handPetModel = findHandHeldPet()
+    if not handPetModel then
+        print("❌ Не могу найти питомца в руке - использую оригинал")
+        handPetModel = originalModel
+    else
+        print("✅ Найден питомец в руке - буду копировать его анимацию!")
+    end
+    
+    -- Настройки анимации
+    local INTERPOLATION_SPEED = 0.3
+    
+    -- Получаем все части модели питомца В РУКЕ (источник анимации)
+    local sourceParts = {}
+    for _, part in pairs(handPetModel:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local partName = part.Name
+            
+            -- 🐉 ОСОБОЕ ВНИМАНИЕ К DRAGONFLY ЧАСТЯМ
+            local isDragonflyPart = string.find(partName:lower(), "wing") or 
+                                  string.find(partName:lower(), "tail") or 
+                                  string.find(partName:lower(), "leg") or 
+                                  string.find(partName:lower(), "body") or 
+                                  string.find(partName:lower(), "head") or 
+                                  string.find(partName:lower(), "bug")
+            
+            if isDragonflyPart then
+                print(string.format("  ✅ Найдена важная часть В РУКЕ: %s (тип: %s)", partName, part.ClassName))
+            end
+            
+            sourceParts[partName] = part
+        end
+    end
+    
+    -- Получаем все части копии
+    local copyParts = {}
+    for _, part in pairs(copyModel:GetDescendants()) do
+        if part:IsA("BasePart") then
+            copyParts[part.Name] = part
+        end
+    end
+    
+    -- 📍 СОХРАНЯЕМ НАЧАЛЬНЫЕ ПОЗИЦИИ КОПИИ (чтобы она НЕ двигалась)
+    local initialPositions = {}
+    for partName, copyPart in pairs(copyParts) do
+        if sourceParts[partName] then
+            initialPositions[partName] = copyPart.CFrame.Position
+        end
+    end
+    
+    print("📍 Сохранил начальные позиции копии - она НЕ будет двигаться!")
+    
+    -- 🎯 ОСНОВНОЙ ЦИКЛ АНИМАЦИИ (КОПИРУЕМ ИЗ ПИТОМЦА В РУКЕ!)
+    local animationConnection
+    animationConnection = RunService.Heartbeat:Connect(function()
+        for partName, copyPart in pairs(copyParts) do
+            local sourcePart = sourceParts[partName]  -- 🔥 ИСТОЧНИК - ПИТОМЕЦ В РУКЕ!
+            local initialPos = initialPositions[partName]
+            
+            if sourcePart and initialPos then
+                local sourceCFrame = sourcePart.CFrame
+                
+                -- 🎯 КЛЮЧЕВОЕ ОТЛИЧИЕ: КОПИРУЕМ ТОЛЬКО ВРАЩЕНИЕ ИЗ РУКИ, НО ОСТАВЛЯЕМ ПОЗИЦИЮ НА МЕСТЕ
+                local newCFrame = CFrame.new(initialPos, initialPos + sourceCFrame.LookVector) * 
+                                 (sourceCFrame - sourceCFrame.Position)
+                
+                -- Применяем с интерполяцией
+                copyPart.CFrame = copyPart.CFrame:Lerp(newCFrame, INTERPOLATION_SPEED)
+            end
+        end
+    end)
+    
+    print("✅ Стационарная CFrame анимация запущена!")
+    print("🎯 Копия будет анимироваться НА МЕСТЕ, не следуя за оригиналом!")
+    return animationConnection
+end
+
+-- 🔥 ФУНКЦИЯ CFrame АНИМАЦИИ ДЛЯ HAND-PET КОПИИ (УСТАРЕЛА)
+local function startCFrameAnimation(originalModel, copyModel)
+    print("🎨 Запускаю CFrame анимацию для hand-pet копии...")
+    
+    -- Настройки анимации
+    local INTERPOLATION_SPEED = 0.3
+    local UPDATE_RATE = 60 -- FPS
+    
+    -- 🔍 УЛУЧШЕННАЯ ЛОГИКА ПОИСКА АНИМИРУЕМЫХ ЧАСТЕЙ
+    local function getAnimatableParts(model)
+        local parts = {}
+        local partCount = 0
+        
+        print("🔍 Анализирую структуру модели:", model.Name)
+        
+        for _, obj in pairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name ~= "Handle" then
+                partCount = partCount + 1
+                
+                -- 🐉 ОСОБОЕ ВНИМАНИЕ К DRAGONFLY ЧАСТЯМ
+                local isDragonflyPart = obj.Name:find("Wing") or obj.Name:find("Tail") or 
+                                       obj.Name:find("Leg") or obj.Name:find("Body") or
+                                       obj.Name:find("Head") or obj.Name:find("Bug")
+                
+                if isDragonflyPart then
+                    print(string.format("  ✅ Найдена важная часть: %s (тип: %s)", obj.Name, obj.ClassName))
+                end
+                
+                -- Сохраняем ВСЕ BasePart для анимации
+                parts[obj.Name] = obj
+                
+                -- Логируем первые 10 частей для диагностики
+                if partCount <= 10 then
+                    print(string.format("  🔹 Часть #%d: %s (тип: %s)", partCount, obj.Name, obj.ClassName))
+                elseif partCount == 11 then
+                    print("  ... (и еще части)")
+                end
+            end
+        end
+        
+        print(string.format("📊 Итого найдено частей: %d", partCount))
+        return parts
+    end
+    
+    local originalParts = getAnimatableParts(originalModel)
+    local copyParts = getAnimatableParts(copyModel)
+    
+    print(string.format("🎨 Найдено частей: оригинал=%d, копия=%d", 
+        table.getn(originalParts), table.getn(copyParts)))
+    
+    -- Запускаем анимационный цикл
+    local connection = RunService.Heartbeat:Connect(function()
+        local appliedCount = 0
+        local changesDetected = 0
+        
+        for partName, originalPart in pairs(originalParts) do
+            local copyPart = copyParts[partName]
+            
+            if copyPart and originalPart.Parent and copyPart.Parent then
+                local success, errorMsg = pcall(function()
+                    local originalCFrame = originalPart.CFrame
+                    local hasChanged = copyPart.CFrame ~= originalCFrame
+                    
+                    if hasChanged then
+                        changesDetected = changesDetected + 1
+                    end
+                    
+                    -- Проверяем что CFrame не является NaN или бесконечностью
+                    if originalCFrame.Position.X ~= originalCFrame.Position.X or 
+                       math.abs(originalCFrame.Position.X) == math.huge or
+                       math.abs(originalCFrame.Position.Y) == math.huge or
+                       math.abs(originalCFrame.Position.Z) == math.huge then
+                        return -- Пропускаем некорректные значения
+                    end
+                    
+                    -- 🔥 ПРИМЕНЯЕМ CFrame К ВСЕМ ЧАСТЯМ (И ЗАЯКОРЕННЫМ ТОЖЕ!)
+                    if copyPart.Parent then
+                        -- Применяем к ЛЮБЫМ частям - заякоренным и незаякоренным
+                        copyPart.CFrame = copyPart.CFrame:Lerp(originalCFrame, INTERPOLATION_SPEED)
+                        appliedCount = appliedCount + 1
+                    end
+                end)
+                
+                if not success then
+                    print("❌ Ошибка при применении CFrame", partName, ":", errorMsg)
+                end
+            end
+        end
+        
+        -- Логирование каждые 60 кадров (каждую секунду)
+        if tick() % 1 < 0.02 then -- Примерно каждую секунду
+            print(string.format("🎨 CFrame анимация: применено=%d, изменений=%d", 
+                appliedCount, changesDetected))
+        end
+    end)
+    
+    print("✅ CFrame анимация запущена для hand-pet копии!")
+    return connection
+end
+
+-- 🔥 ФУНКЦИЯ СОЗДАНИЯ HAND-PET КОПИИ В РУКЕ
+local function createHandPetCopy(originalModel)
+    print("🔥 Создаю hand-pet копию в руке...")
+    
+    -- Создаем копию модели
+    local petCopy = originalModel:Clone()
+    petCopy.Name = originalModel.Name .. "_HAND_COPY"
+    
+    -- Создаем Tool для руки
+    local tool = Instance.new("Tool")
+    tool.Name = "PetCopy_" .. originalModel.Name
+    tool.RequiresHandle = true
+    
+    -- Создаем Handle для Tool
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(0.1, 0.1, 0.1)
+    handle.Transparency = 1
+    handle.Anchored = false
+    handle.CanCollide = false
+    handle.Parent = tool
+    
+    -- Помещаем копию питомца в Tool
+    petCopy.Parent = tool
+    
+    -- Заякориваем все части копии для стабильности
+    for _, part in pairs(petCopy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = true
+        end
+    end
+    
+    -- Помещаем Tool в руку игрока
+    tool.Parent = player.Character
+    
+    print("✅ Hand-pet копия создана как Tool в руке!")
+    
+    -- Запускаем CFrame анимацию для hand-pet копии
+    spawn(function()
+        startCFrameAnimation(originalModel, petCopy)
+    end)
+    
+    return tool
+end
+
 -- Главная функция v2.0
 local function main()
     print("🚀 PetScaler v2.0 запущен!")
@@ -1188,119 +1460,30 @@ local function main()
     -- 🔥 СОЗДАНИЕ HAND-PET КОПИИ В РУКЕ
     print("🔥 Начинаю создание hand-pet копии...")
     
-    -- 🔥 УБРАЛ ВСЮ ЛОГИКУ ПОЗИЦИОНИРОВАНИЯ И ОРИЕНТАЦИИ!
-    -- КОПИЯ СОЗДАЕТСЯ СРАЗУ В РУКЕ КАК Tool!
-        
-    -- 🔥 СОЗДАНИЕ HAND-PET КОПИИ КАК TOOL В РУКЕ
-    local handPetCopy = createHandPetCopy(petModel)
-    
-    if not handPetCopy then
-        print("❌ Не удалось создать hand-pet копию!")
-        return
-    end
-    
-    print("✅ Hand-pet копия создана в руке!")
-        
-        -- 🔍 НЕМЕДЛЕННАЯ ПРОВЕРКА ПОСЛЕ ПРИМЕНЕНИЯ
-        wait(0.1)  -- Небольшая задержка
-        local immediateCheck = copyRootPart.CFrame
-        print("\n🔍 ПРОВЕРКА СРАЗУ ПОСЛЕ ПРИМЕНЕНИЯ:")
-        print("   Копия UpVector:", immediateCheck.UpVector)
-        print("   Копия LookVector:", immediateCheck.LookVector)
-        print("   Копия позиция:", immediateCheck.Position)
-        
-        -- Сравниваем с оригиналом
-        local currentOriginal = originalRootPart.CFrame
-        print("\n📊 СРАВНЕНИЕ С ОРИГИНАЛОМ:")
-        print("   Оригинал UpVector:", currentOriginal.UpVector)
-        print("   Копия UpVector:   ", immediateCheck.UpVector)
-        print("   СОВПАДАЮТ?", 
-            math.abs(currentOriginal.UpVector.X - immediateCheck.UpVector.X) < 0.01 and
-            math.abs(currentOriginal.UpVector.Y - immediateCheck.UpVector.Y) < 0.01 and
-            math.abs(currentOriginal.UpVector.Z - immediateCheck.UpVector.Z) < 0.01)
-        
-        -- 🕐 ОТЛОЖЕННАЯ ПРОВЕРКА (через 2 секунды)
-        spawn(function()
-            wait(2)
-            if copyRootPart and copyRootPart.Parent then
-                local delayedCheck = copyRootPart.CFrame
-                print("\n⏰ ПРОВЕРКА ЧЕРЕЗ 2 СЕКУНДЫ:")
-                print("   Копия UpVector:", delayedCheck.UpVector)
-                print("   Копия LookVector:", delayedCheck.LookVector)
-                print("   Копия позиция:", delayedCheck.Position)
-                
-                -- Проверяем изменилось ли
-                local upVectorChanged = 
-                    math.abs(immediateCheck.UpVector.X - delayedCheck.UpVector.X) > 0.01 or
-                    math.abs(immediateCheck.UpVector.Y - delayedCheck.UpVector.Y) > 0.01 or
-                    math.abs(immediateCheck.UpVector.Z - delayedCheck.UpVector.Z) > 0.01
-                
-                if upVectorChanged then
-                    print("⚠️ ОРИЕНТАЦИЯ ИЗМЕНИЛАСЬ! Что-то перезаписывает CFrame!")
-                    print("🎭 Возможно анимационная система или другой скрипт")
-                else
-                    print("✅ Ориентация стабильна, проблема в другом")
-                    print("🤔 Возможно проблема в структуре модели или визуальном отображении")
-                end
-            end
-        end)
-        
-        -- Проверяем результат
-        local newPos = copyRootPart.Position
-        local newUpVector = copyRootPart.CFrame.UpVector
-        local newLookVector = copyRootPart.CFrame.LookVector
-        
-        print("\n📊 ПОСЛЕ коррекции:")
-        print("   Позиция:", newPos)
-        print("   UpVector:", newUpVector)
-        print("   LookVector:", newLookVector)
-        
-        -- Проверка успешности
-        local heightDifference = newPos.Y - currentPos.Y
-        local isUpright = math.abs(newUpVector.Y - 1.0) < 0.1
-        
-        if math.abs(heightDifference - 1.33) < 0.1 and isUpright then
-            print("\n🎉 ИДЕАЛЬНО! Питомец поднят и стоит на лапах!")
-            print("✅ Высота: +", string.format("%.2f", heightDifference), "стадов")
-            print("✅ UpVector.Y =", string.format("%.2f", newUpVector.Y), "(должно быть ~1.0)")
-            print("🐕 Питомец теперь стоит как оригинал!")
-        else
-            print("\n⚠️ Проверьте результат:")
-            print("📊 Высота: +", heightDifference, "стадов")
-            print("📊 UpVector.Y =", newUpVector.Y, "(должно быть ~1.0)")
-        end
-        
-        -- Проверка что UpVector остался как у оригинала
-        if math.abs(newUpVector.Y) < 0.1 and math.abs(newUpVector.Z + 1) < 0.1 then
-            print("✅ UpVector остался как у оригинала (-0.00,-0.00,-1.00)")
-        else
-            print("⚠️ UpVector изменился, но это может быть нормально")
-        end
-        
-        print("🚀 Нативная коррекция Roblox применена!")
-        print("🎯 Питомец теперь должен стоять на земле КАК ОРИГИНАЛ!")
-    else
-        print("❌ Нет PrimaryPart у копии для нативной коррекции!")
-    end
+    -- 🎯 СОЗДАНИЕ СТАЦИОНАРНОЙ КОПИИ С АНИМАЦИЕЙ РЯДОМ С ОРИГИНАЛОМ
+    print("🎯 Создаю стационарную копию с анимацией...")
     
     local copyParts = getAllParts(petCopy)
     local rootPart = smartAnchoredManagement(copyParts)
     
-    -- Шаг 5: Запуск бесконечной idle анимации
-    print("\n🔄 === БЕСКОНЕЧНАЯ IDLE АНИМАЦИЯ ===")
+    -- 🎯 Шаг 5: Запуск СТАЦИОНАРНОЙ CFrame анимации
+    print("\n🎯 === СТАЦИОНАРНАЯ CFrame АНИМАЦИЯ ===")
+    print("🔥 КЛЮЧЕВОЕ ОТЛИЧИЕ: Копия будет копировать анимацию ИЗ ПИТОМЦА В РУКЕ!")
+    print("🔄 Копия НЕ будет следовать за оригиналом - стоит на месте!")
     
-    local endlessConnection = startEndlessIdleLoop(petModel, petCopy)
+    -- 🔥 ЗАПУСКАЕМ СТАЦИОНАРНУЮ АНИМАЦИЮ (КОПИРУЕМ ИЗ РУКИ!)
+    local stationaryConnection = startStationaryCFrameAnimation(nil, petCopy)
     
-    if endlessConnection then
+    if stationaryConnection then
         print("🎉 === УСПЕХ! ===")
         print("✅ Масштабированная копия создана")
-        print("✅ Бесконечная idle анимация запущена")
-        print("📍 Копия БЕСКОНЕЧНО играет idle анимацию")
-        print("🚀 НИКОГДА не замирает - плавный бесконечный цикл!")
-        print("🔥 Копия всегда в движении - как живая!")
+        print("✅ Стационарная CFrame анимация запущена")
+        print("🎯 Копия играет анимацию оригинала НА МЕСТЕ")
+        print("🚀 Крылья, хвост, ноги анимируются как у оригинала!")
+        print("📍 Копия НЕ следует за оригиналом - стоит на своем месте!")
     else
-        print("⚠️ Масштабирование успешно, но idle анимация не запустилась")
-        print("💡 Возможно проблема с Motor6D или Humanoid")
+        print("⚠️ Масштабирование успешно, но CFrame анимация не запустилась")
+        print("💡 Возможно проблема с поиском частей или CFrame логикой")
     end
 end
 
