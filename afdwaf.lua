@@ -35,13 +35,22 @@ end
 
 -- === ФУНКЦИИ ИЗ PETSCALER_V2 (БЕЗ МАСШТАБИРОВАНИЯ) ===
 
--- Функция проверки визуальных элементов питомца (из PetScaler_v2)
-local function hasPetVisuals(model)
+-- Функция проверки что это питомец (адаптированная под dragonfly)
+local function isPetModel(model)
+    -- Проверяем что это модель с UUID именем (фигурные скобки)
+    if not (model.Name:find("%{") and model.Name:find("%}")) then
+        return false, {}
+    end
+    
     local meshCount = 0
     local petMeshes = {}
+    local hasMotor6D = false
     
+    -- Ищем Motor6D (есть у всех питомцев для анимации)
     for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
+        if obj:IsA("Motor6D") then
+            hasMotor6D = true
+        elseif obj:IsA("MeshPart") then
             meshCount = meshCount + 1
             local meshData = {
                 name = obj.Name,
@@ -65,7 +74,8 @@ local function hasPetVisuals(model)
         end
     end
     
-    return meshCount > 0, petMeshes
+    -- Питомец валидный если есть Motor6D (для анимации) ИЛИ есть визуальные элементы
+    return hasMotor6D or meshCount > 0, petMeshes
 end
 
 -- Функция получения всех BasePart из модели (из PetScaler_v2)
