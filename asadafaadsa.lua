@@ -1,10 +1,6 @@
--- 🔥 COMPREHENSIVE EGG PET ANIMATION ANALYZER
--- Основан на анализе 10 скриптов: EggAnimationDiagnostic, AdvancedEggDiagnostic, EggExplosionTracker,
--- CorrectEggDiagnostic, RealPetModelFinder, EggExplodeAnalyzer, PrecisePetModelFilter, 
--- AggressiveModelCatcher, UniversalTempModelAnalyzer, PreciseAnimationModelFinder
--- 
--- ЦЕЛЬ: Полный анализ анимации workspace.visuals и eggexplode
--- Находит модели: dog, bunny, golden lab и анализирует их анимацию
+-- 🥚 EGG INTERCEPTOR v1.0 - ЧАСТЬ 1
+-- Перехватывает временную модель из яйца и заменяет на Dragonfly
+-- Сохраняет ВСЕ эффекты взрыва и роста, НЕ копирует idle анимацию
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -13,47 +9,131 @@ local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
+print("🥚 === EGG INTERCEPTOR v1.0 - ЧАСТЬ 1 ===")
+print("=" .. string.rep("=", 60))
+
 -- 📊 КОНФИГУРАЦИЯ
 local CONFIG = {
-    SEARCH_RADIUS = 200,
-    MONITOR_DURATION = 30,
-    CHECK_INTERVAL = 0.05,
-    ANALYSIS_DEPTH = 8,
-    MIN_CHILD_COUNT = 10,
-    MIN_MESH_COUNT = 1
+    SEARCH_RADIUS = 100,  -- Радиус поиска Dragonfly рядом с игроком
+    MONITOR_DURATION = 30, -- Время мониторинга после EggExplode
+    DEBUG_MODE = true     -- Подробные логи
 }
 
--- 🎯 КЛЮЧЕВЫЕ СЛОВА ПИТОМЦЕВ (из всех скриптов)
-local PET_KEYWORDS = {
-    "dog", "bunny", "golden lab", "cat", "rabbit", "pet", "animal", "golden", "lab"
+-- 🎯 СОСТОЯНИЕ ПЕРЕХВАТЧИКА
+local InterceptorState = {
+    isActive = false,
+    eggExplodeDetected = false,
+    dragonflyFound = false,
+    dragonflyModel = nil,
+    originalPetModel = nil,
+    interceptComplete = false
 }
 
--- 🚫 ИСКЛЮЧЕНИЯ (из PrecisePetModelFilter и других)
-local EXCLUDED_NAMES = {
-    "EggExplode", "CraftingTables", "EventCraftingWorkBench", "Fruit", "Tree", 
-    "Bush", "Platform", "Stand", "Bench", "Table", "Chair", "Decoration"
-}
+-- Получаем позицию игрока
+local playerChar = player.Character
+if not playerChar then
+    print("❌ Персонаж игрока не найден!")
+    return
+end
 
--- 📋 СИСТЕМА ЛОГИРОВАНИЯ
-local Logger = {
-    log = function(self, level, message, data)
-        local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
-        local prefixes = {
-            EXPLOSION = "💥", PET = "🐾", ANIMATION = "🎬", STRUCTURE = "🏗️",
-            MESH = "🎨", LIFECYCLE = "⏱️", CRITICAL = "🔥", FOUND = "🎯"
-        }
-        
-        print(string.format("[%s] %s %s", timestamp, prefixes[level] or "ℹ️", message))
-        
-        if data and next(data) then
-            for key, value in pairs(data) do
-                print(string.format("    %s: %s", key, tostring(value)))
+local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+if not hrp then
+    print("❌ HumanoidRootPart не найден!")
+    return
+end
+
+local playerPos = hrp.Position
+print("📍 Позиция игрока:", playerPos)
+print("🎯 Радиус поиска Dragonfly:", CONFIG.SEARCH_RADIUS)
+
+-- 🐉 ФУНКЦИЯ ПРОВЕРКИ ЧТО МОДЕЛЬ - DRAGONFLY
+-- Основана на диагностике: 0 MeshPart, но есть BasePart с характерными именами
+local function checkIfDragonfly(model)
+    if not model or not model:IsA("Model") then
+        return false
+    end
+    
+    local meshPartCount = 0
+    local basePartCount = 0
+    local hasDragonflyParts = false
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") then
+            meshPartCount = meshPartCount + 1
+        elseif obj:IsA("BasePart") and obj.Name ~= "Handle" then
+            basePartCount = basePartCount + 1
+            
+            -- Проверяем характерные части Dragonfly
+            local partName = obj.Name:lower()
+            if partName:find("wing") or partName:find("tail") or 
+               partName:find("leg") or partName:find("body") or 
+               partName:find("head") or partName:find("bug") or
+               partName:find("dragon") then
+                hasDragonflyParts = true
             end
         end
     end
-}
+    
+    -- Dragonfly: 0 MeshPart, но есть BasePart с характерными именами
+    local isDragonfly = (meshPartCount == 0) and (basePartCount > 0) and hasDragonflyParts
+    
+    if CONFIG.DEBUG_MODE and isDragonfly then
+        print("🐉 Подтверждение Dragonfly:")
+        print("   MeshPart: " .. meshPartCount)
+        print("   BasePart: " .. basePartCount) 
+        print("   Характерные части: " .. tostring(hasDragonflyParts))
+    end
+    
+    return isDragonfly
+end
 
--- 🔍 ФУНКЦИЯ ПОИСКА EGGEXPLODE (из CorrectEggDiagnostic)
+-- 🔍 ФУНКЦИЯ ПОИСКА DRAGONFLY РЯДОМ С ИГРОКОМ
+-- Основана на PetScaler_v2.9.lua с учетом особенностей Dragonfly
+local function findNearbyDragonfly()
+    if CONFIG.DEBUG_MODE then
+        print("🔍 Поиск Dragonfly рядом с игроком...")
+    end
+    
+    local foundDragonflyModels = {}
+    
+    -- Поиск UUID моделей (как в PetScaler_v2.9.lua)
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            if success then
+                local distance = (modelCFrame.Position - playerPos).Magnitude
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    -- Проверяем что это Dragonfly (0 MeshPart, но есть BasePart)
+                    local isDragonfly = checkIfDragonfly(obj)
+                    if isDragonfly then
+                        table.insert(foundDragonflyModels, {
+                            model = obj,
+                            distance = distance
+                        })
+                        if CONFIG.DEBUG_MODE then
+                            print("✅ Найден Dragonfly:", obj.Name, "Дистанция:", math.floor(distance))
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    if #foundDragonflyModels == 0 then
+        print("❌ Dragonfly не найден рядом с игроком!")
+        return nil
+    end
+    
+    -- Возвращаем ближайший
+    table.sort(foundDragonflyModels, function(a, b) return a.distance < b.distance end)
+    local targetDragonfly = foundDragonflyModels[1].model
+    
+    print("🐉 Выбран Dragonfly:", targetDragonfly.Name)
+    return targetDragonfly
+end
+
+-- 🔍 ФУНКЦИЯ ПОИСКА EGGEXPLODE
+-- Основана на EggAnimationSourceTracker.lua
 local function checkForEggExplode()
     -- Ищем в ReplicatedStorage
     for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
@@ -66,415 +146,576 @@ local function checkForEggExplode()
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj.Name == "EggExplode" and obj:IsA("Model") then
             return true, obj, "Workspace"
-        elseif obj.Name:lower():find("eggexplode") or (obj.Name:lower():find("egg") and obj.Name:lower():find("explode")) then
-            return true, obj, "Workspace"
         end
     end
     
     return false, nil, nil
 end
 
--- 🎯 ФУНКЦИЯ ПРОВЕРКИ МОДЕЛИ ПИТОМЦА (объединение всех подходов)
-local function isPetModel(model)
-    -- 1. Должна быть Model
-    if not model:IsA("Model") then return false end
-    
-    -- 2. Исключения
-    for _, excluded in pairs(EXCLUDED_NAMES) do
-        if model.Name:find(excluded) then return false end
+-- 🎯 ФУНКЦИЯ ПОИСКА ВРЕМЕННОЙ МОДЕЛИ В VISUALS
+-- Основана на результатах диагностики
+local function findTemporaryPetInVisuals()
+    local visualsFolder = Workspace:FindFirstChild("Visuals")
+    if not visualsFolder then
+        return nil
     end
     
-    -- 3. Исключаем модели инвентаря игроков
-    if model.Name:find("%[") and model.Name:find("KG") and model.Name:find("Age") then
+    -- Ищем модели питомцев в Visuals
+    for _, obj in pairs(visualsFolder:GetChildren()) do
+        if obj:IsA("Model") then
+            local modelName = obj.Name:lower()
+            -- Проверяем известные имена питомцев из диагностики
+            if modelName:find("dog") or modelName:find("bunny") or 
+               modelName:find("golden") or modelName:find("lab") then
+                if CONFIG.DEBUG_MODE then
+                    print("🎯 Найдена временная модель в Visuals:", obj.Name)
+                end
+                return obj
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- 🔄 ФУНКЦИЯ ГЛУБОКОГО КОПИРОВАНИЯ DRAGONFLY
+-- Основана на deepCopyModel из PetScaler_v2.9.lua
+local function deepCopyDragonfly(originalDragonfly)
+    if CONFIG.DEBUG_MODE then
+        print("📋 Создаю глубокую копию Dragonfly:", originalDragonfly.Name)
+    end
+    
+    local copy = originalDragonfly:Clone()
+    copy.Name = "Dragonfly_EggReplacement"
+    
+    -- Убеждаемся что копия не имеет родителя пока
+    copy.Parent = nil
+    
+    if CONFIG.DEBUG_MODE then
+        print("✅ Копия Dragonfly создана:", copy.Name)
+    end
+    
+    return copy
+end
+
+-- 🎯 ФУНКЦИЯ ЗАМЕНЫ ВРЕМЕННОЙ МОДЕЛИ НА DRAGONFLY
+-- Ключевая функция перехвата
+local function replaceTemporaryModel(originalPetModel, dragonflyReplacement)
+    if CONFIG.DEBUG_MODE then
+        print("🔄 Начинаю замену модели:")
+        print("   Оригинал:", originalPetModel.Name)
+        print("   Замена:", dragonflyReplacement.Name)
+    end
+    
+    -- Сохраняем важные параметры оригинальной модели
+    local originalParent = originalPetModel.Parent
+    local originalCFrame = originalPetModel:GetModelCFrame()
+    local originalSize = originalPetModel:GetModelSize()
+    
+    if CONFIG.DEBUG_MODE then
+        print("📍 Параметры оригинала:")
+        print("   Parent:", originalParent and originalParent.Name or "nil")
+        print("   Position:", originalCFrame.Position)
+        print("   Size:", originalSize)
+    end
+    
+    -- Удаляем оригинальную модель
+    originalPetModel:Destroy()
+    
+    -- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Размещаем в WORKSPACE, а не в Visuals!
+    -- Visuals - временная папка, которая может быть скрыта или удалена
+    dragonflyReplacement.Parent = Workspace
+    
+    if CONFIG.DEBUG_MODE then
+        print("🔄 Критическое исправление: Dragonfly размещен в Workspace вместо Visuals")
+    end
+    
+    -- Пробуем использовать PrimaryPart если есть
+    local placementSuccess = false
+    if dragonflyReplacement.PrimaryPart then
+        local success = pcall(function()
+            dragonflyReplacement:SetPrimaryPartCFrame(originalCFrame)
+        end)
+        if success then
+            placementSuccess = true
+            if CONFIG.DEBUG_MODE then
+                print("✅ Dragonfly размещен через PrimaryPart")
+            end
+        end
+    end
+    
+    -- Если PrimaryPart не сработал, размещаем вручную
+    if not placementSuccess then
+        if CONFIG.DEBUG_MODE then
+            print("🔧 PrimaryPart недоступен, размещаю вручную...")
+        end
+        
+        -- Находим первую BasePart в Dragonfly для размещения
+        local firstPart = nil
+        for _, obj in pairs(dragonflyReplacement:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                firstPart = obj
+                break
+            end
+        end
+        
+        if firstPart then
+            local success = pcall(function()
+                firstPart.CFrame = originalCFrame
+            end)
+            if success then
+                placementSuccess = true
+                if CONFIG.DEBUG_MODE then
+                    print("✅ Dragonfly размещен через первую BasePart:", firstPart.Name)
+                end
+            end
+        end
+    end
+    
+    -- Если и это не сработало, пробуем через MoveTo
+    if not placementSuccess then
+        local success = pcall(function()
+            dragonflyReplacement:MoveTo(originalCFrame.Position)
+        end)
+        if success then
+            placementSuccess = true
+            if CONFIG.DEBUG_MODE then
+                print("✅ Dragonfly размещен через MoveTo")
+            end
+        end
+    end
+    
+    if CONFIG.DEBUG_MODE then
+        if placementSuccess then
+            print("✅ Замена завершена! Dragonfly размещен в:", originalParent.Name)
+        else
+            print("⚠️ Замена завершена, но размещение может быть неточным")
+        end
+    end
+    
+    return dragonflyReplacement
+end
+
+-- 🎬 ФУНКЦИЯ КОПИРОВАНИЯ ЭФФЕКТОВ (НЕ IDLE АНИМАЦИИ)
+-- Копирует все эффекты кроме idle анимации
+local function copyNonIdleEffects(fromModel, toModel)
+    if CONFIG.DEBUG_MODE then
+        print("🎬 Копирование эффектов (исключая idle)...")
+    end
+    
+    -- БЕЗОПАСНОЕ копирование Animator
+    local animatorFound = false
+    for _, obj in pairs(fromModel:GetDescendants()) do
+        if obj:IsA("Animator") then
+            local success, animatorCopy = pcall(function()
+                return obj:Clone()
+            end)
+            
+            if success and animatorCopy then
+                -- Ищем безопасное место для размещения
+                local targetHumanoid = toModel:FindFirstChildOfClass("Humanoid")
+                
+                if targetHumanoid then
+                    -- Проверяем что у Humanoid еще нет Animator
+                    local existingAnimator = targetHumanoid:FindFirstChildOfClass("Animator")
+                    if not existingAnimator then
+                        local placeSuccess = pcall(function()
+                            animatorCopy.Parent = targetHumanoid
+                        end)
+                        if placeSuccess then
+                            animatorFound = true
+                            if CONFIG.DEBUG_MODE then
+                                print("✅ Animator безопасно скопирован в Humanoid")
+                            end
+                        end
+                    end
+                end
+                
+                -- Если не удалось поместить в Humanoid, пробуем корень модели
+                if not animatorFound then
+                    local existingAnimator = toModel:FindFirstChildOfClass("Animator")
+                    if not existingAnimator then
+                        local placeSuccess = pcall(function()
+                            animatorCopy.Parent = toModel
+                        end)
+                        if placeSuccess then
+                            animatorFound = true
+                            if CONFIG.DEBUG_MODE then
+                                print("✅ Animator безопасно скопирован в корень модели")
+                            end
+                        end
+                    end
+                end
+                
+                -- Если не удалось разместить, просто удаляем копию
+                if not animatorFound then
+                    animatorCopy:Destroy()
+                    if CONFIG.DEBUG_MODE then
+                        print("⚠️ Не удалось разместить Animator, пропускаем")
+                    end
+                end
+            end
+            break -- Копируем только первый найденный Animator
+        end
+    end
+    
+    -- НЕ копируем Motor6D состояния (чтобы не копировать idle)
+    -- Эффекты роста и взрыва будут применены игрой автоматически
+    
+    if CONFIG.DEBUG_MODE then
+        print("✅ Эффекты скопированы (idle анимация исключена)")
+        print("   Animator скопирован:", animatorFound)
+    end
+end
+
+-- ⚡ ОСНОВНАЯ ФУНКЦИЯ МОНИТОРИНГА И ПЕРЕХВАТА
+local function startEggInterception()
+    print("🚀 Запуск системы перехвата яйца...")
+    
+    -- Шаг 1: Найти Dragonfly рядом с игроком
+    local dragonflyModel = findNearbyDragonfly()
+    if not dragonflyModel then
+        print("❌ Не найден Dragonfly рядом с игроком!")
         return false
     end
     
-    -- 4. Исключаем игроков
-    for _, p in pairs(Players:GetPlayers()) do
-        if model.Name == p.Name or model.Name:find(p.Name) then
-            return false
+    InterceptorState.dragonflyModel = dragonflyModel
+    InterceptorState.dragonflyFound = true
+    print("✅ Dragonfly найден и готов к замене")
+    
+    -- Шаг 2: Создать копию Dragonfly для замены
+    local dragonflyReplacement = deepCopyDragonfly(dragonflyModel)
+    
+    -- Шаг 3: Запустить мониторинг EggExplode
+    InterceptorState.isActive = true
+    local startTime = tick()
+    
+    print("🔍 Мониторинг EggExplode активен. Откройте яйцо!")
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not InterceptorState.isActive then
+            connection:Disconnect()
+            return
         end
-    end
-    
-    -- 5. Проверяем наличие мешей
-    local meshCount = 0
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
+        
+        local elapsed = tick() - startTime
+        
+        -- Таймаут мониторинга
+        if elapsed > CONFIG.MONITOR_DURATION then
+            print("⏰ Мониторинг завершен по таймауту")
+            InterceptorState.isActive = false
+            return
         end
-    end
-    
-    if meshCount < CONFIG.MIN_MESH_COUNT then return false end
-    
-    -- 6. Проверяем количество детей
-    if #model:GetChildren() < CONFIG.MIN_CHILD_COUNT then return false end
-    
-    -- 7. Проверяем расстояние до игрока
-    local playerChar = player.Character
-    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
-            if distance > CONFIG.SEARCH_RADIUS then return false end
+        
+        -- Проверяем EggExplode
+        if not InterceptorState.eggExplodeDetected then
+            local found, eggObj, location = checkForEggExplode()
+            if found then
+                InterceptorState.eggExplodeDetected = true
+                print("⚡ EggExplode обнаружен в", location)
+                
+                -- ДВОЙНОЙ ПЕРЕХВАТ: временная модель + постоянный питомец
+                spawn(function()
+                    print("🔍 Начинаю ДВОЙНОЙ перехват: временная модель + постоянный питомец...")
+                    
+                    local searchAttempts = 0
+                    local maxAttempts = 200 -- 20 секунд поиска
+                    local temporaryPet = nil
+                    local permanentPetFound = false
+                    
+                    -- ЭТАП 1: Поиск временной модели в Visuals
+                    while searchAttempts < maxAttempts and not temporaryPet do
+                        temporaryPet = findTemporaryPetInVisuals()
+                        
+                        if temporaryPet then
+                            print("🎯 Временная модель НАЙДЕНА:", temporaryPet.Name, "(попытка", searchAttempts + 1, ")")
+                            
+                            -- Копируем эффекты от временной модели
+                            copyNonIdleEffects(temporaryPet, dragonflyReplacement)
+                            print("✅ Эффекты скопированы с временной модели")
+                            break
+                        end
+                        
+                        searchAttempts = searchAttempts + 1
+                        if CONFIG.DEBUG_MODE and searchAttempts % 10 == 0 then
+                            print("🔍 Поиск временной модели... попытка", searchAttempts, "из", maxAttempts)
+                        end
+                        
+                        wait(0.1)
+                    end
+                    
+                    -- ЭТАП 2: Мониторинг создания постоянного питомца в Workspace
+                    print("🔍 Начинаю мониторинг создания постоянного питомца в Workspace...")
+                    
+                    local permanentSearchAttempts = 0
+                    local maxPermanentAttempts = 100 -- 10 секунд дополнительного поиска
+                    
+                    while permanentSearchAttempts < maxPermanentAttempts and not permanentPetFound do
+                        -- Ищем новые модели питомцев в Workspace
+                        for _, obj in pairs(Workspace:GetChildren()) do
+                            if obj:IsA("Model") then
+                                local modelName = obj.Name:lower()
+                                -- Проверяем что это питомец (но НЕ наш Dragonfly)
+                                if (modelName:find("dog") or modelName:find("bunny") or 
+                                   modelName:find("golden") or modelName:find("lab")) and
+                                   not modelName:find("dragonfly") then
+                                    
+                                    print("🎯 НАЙДЕН ПОСТОЯННЫЙ ПИТОМЕЦ В WORKSPACE:", obj.Name)
+                                    
+                                    -- Получаем позицию постоянного питомца
+                                    local permanentCFrame = obj:GetModelCFrame()
+                                    
+                                    -- Удаляем постоянного питомца
+                                    obj:Destroy()
+                                    
+                                    -- Размещаем Dragonfly на его месте
+                                    dragonflyReplacement.Parent = Workspace
+                                    
+                                    -- Размещаем с тройной системой безопасности
+                                    local placementSuccess = false
+                                    if dragonflyReplacement.PrimaryPart then
+                                        local success = pcall(function()
+                                            dragonflyReplacement:SetPrimaryPartCFrame(permanentCFrame)
+                                        end)
+                                        if success then
+                                            placementSuccess = true
+                                            print("✅ Dragonfly размещен через PrimaryPart на месте постоянного питомца")
+                                        end
+                                    end
+                                    
+                                    if not placementSuccess then
+                                        local firstPart = nil
+                                        for _, part in pairs(dragonflyReplacement:GetDescendants()) do
+                                            if part:IsA("BasePart") then
+                                                firstPart = part
+                                                break
+                                            end
+                                        end
+                                        
+                                        if firstPart then
+                                            local success = pcall(function()
+                                                firstPart.CFrame = permanentCFrame
+                                            end)
+                                            if success then
+                                                placementSuccess = true
+                                                print("✅ Dragonfly размещен через BasePart на месте постоянного питомца")
+                                            end
+                                        end
+                                    end
+                                    
+                                    if placementSuccess then
+                                        InterceptorState.interceptComplete = true
+                                        permanentPetFound = true
+                                        print("🎉 КРИТИЧЕСКИЙ УСПЕХ! Постоянный питомец заменен на Dragonfly!")
+                                        print("✅ Dragonfly появится ВНУТРИ ЯЙЦА с полными эффектами!")
+                                        print("✅ Idle анимация остается оригинальной Dragonfly")
+                                    else
+                                        print("❌ Ошибка размещения Dragonfly на месте постоянного питомца")
+                                    end
+                                    
+                                    break
+                                end
+                            end
+                        end
+                        
+                        permanentSearchAttempts = permanentSearchAttempts + 1
+                        if CONFIG.DEBUG_MODE and permanentSearchAttempts % 20 == 0 then
+                            print("🔍 Поиск постоянного питомца... попытка", permanentSearchAttempts, "из", maxPermanentAttempts)
+                        end
+                        
+                        wait(0.1)
+                    end
+                    
+                    if not permanentPetFound then
+                        print("❌ Постоянный питомец НЕ НАЙДЕН в Workspace")
+                        print("💡 Возможно питомец создается в другом месте или с задержкой")
+                    end
+                    
+                    InterceptorState.isActive = false
+                end)
+            end
         end
-    end
+    end)
     
     return true
 end
 
--- 🏗️ ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ (из EggExplodeAnalyzer и UniversalTempModelAnalyzer)
-local function deepAnalyzeStructure(obj, depth, parentPath)
-    depth = depth or 0
-    parentPath = parentPath or ""
-    local indent = string.rep("  ", depth)
+-- 🖥️ СОЗДАНИЕ GUI СИСТЕМЫ
+-- Основано на createGUI из PetScaler_v2.9.lua
+local function createEggInterceptorGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
     
-    if depth > CONFIG.ANALYSIS_DEPTH then return end
-    
-    local currentPath = parentPath .. "/" .. obj.Name
-    
-    Logger:log("STRUCTURE", indent .. "📦 " .. obj.Name .. " (" .. obj.ClassName .. ")", {
-        FullPath = currentPath,
-        Parent = obj.Parent and obj.Parent.Name or "nil"
-    })
-    
-    -- Анализ BasePart
-    if obj:IsA("BasePart") then
-        local partData = {
-            Size = tostring(obj.Size),
-            Position = tostring(obj.Position),
-            Transparency = obj.Transparency,
-            Color = tostring(obj.Color),
-            Material = obj.Material.Name,
-            CanCollide = obj.CanCollide,
-            Anchored = obj.Anchored
-        }
-        Logger:log("STRUCTURE", indent .. "  🧱 BasePart Properties", partData)
+    -- Удаляем старый GUI если есть
+    local oldGui = playerGui:FindFirstChild("EggInterceptorGUI")
+    if oldGui then
+        oldGui:Destroy()
     end
     
-    -- Анализ MeshPart/SpecialMesh
-    if obj:IsA("MeshPart") then
-        local meshData = {
-            MeshId = obj.MeshId or "EMPTY",
-            TextureId = obj.TextureId or "EMPTY",
-            Size = tostring(obj.Size)
-        }
-        Logger:log("MESH", indent .. "  🎨 MeshPart Data", meshData)
-    elseif obj:IsA("SpecialMesh") then
-        local meshData = {
-            MeshId = obj.MeshId or "EMPTY",
-            TextureId = obj.TextureId or "EMPTY",
-            MeshType = tostring(obj.MeshType),
-            Scale = tostring(obj.Scale)
-        }
-        Logger:log("MESH", indent .. "  🎨 SpecialMesh Data", meshData)
-    end
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "EggInterceptorGUI"
+    screenGui.Parent = playerGui
     
-    -- Анализ Motor6D для анимации
-    if obj:IsA("Motor6D") then
-        local motorData = {
-            C0 = tostring(obj.C0),
-            C1 = tostring(obj.C1),
-            Part0 = obj.Part0 and obj.Part0.Name or "nil",
-            Part1 = obj.Part1 and obj.Part1.Name or "nil"
-        }
-        Logger:log("ANIMATION", indent .. "  🎬 Motor6D Data", motorData)
-    end
-    
-    -- Рекурсивный анализ детей
-    for _, child in pairs(obj:GetChildren()) do
-        deepAnalyzeStructure(child, depth + 1, currentPath)
-    end
-end
-
--- ⏱️ ОТСЛЕЖИВАНИЕ ЖИЗНЕННОГО ЦИКЛА (из всех скриптов)
-local function trackLifecycle(model)
-    local startTime = tick()
-    local modelName = model.Name
-    
-    Logger:log("LIFECYCLE", "⏱️ НАЧАЛО ОТСЛЕЖИВАНИЯ: " .. modelName)
-    
-    -- Мониторинг изменений позиции/анимации/размера
-    local lastPosition = nil
-    local animationFrames = {}
-    local sizeFrames = {}
-    local initialSize = nil
-    
-    -- Получаем начальный размер модели
-    local success, initialCFrame = pcall(function() return model:GetModelCFrame() end)
-    if success and model.PrimaryPart then
-        initialSize = model.PrimaryPart.Size
-        Logger:log("LIFECYCLE", "📏 НАЧАЛЬНЫЙ РАЗМЕР: " .. tostring(initialSize))
-    elseif success then
-        -- Если нет PrimaryPart, ищем самую большую часть
-        local largestPart = nil
-        local largestVolume = 0
-        for _, part in pairs(model:GetDescendants()) do
-            if part:IsA("BasePart") then
-                local volume = part.Size.X * part.Size.Y * part.Size.Z
-                if volume > largestVolume then
-                    largestVolume = volume
-                    largestPart = part
-                end
-            end
-        end
-        if largestPart then
-            initialSize = largestPart.Size
-            Logger:log("LIFECYCLE", "📏 НАЧАЛЬНЫЙ РАЗМЕР (largest part): " .. tostring(initialSize))
-        end
-    end
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        if not model or not model.Parent then
-            connection:Disconnect()
-            local lifetime = tick() - startTime
-            
-            Logger:log("LIFECYCLE", "⏱️ МОДЕЛЬ ИСЧЕЗЛА: " .. modelName, {
-                lifetime = string.format("%.2f секунд", lifetime),
-                animationFrames = #animationFrames,
-                sizeFrames = #sizeFrames
-            })
-            
-            if #animationFrames > 0 then
-                Logger:log("ANIMATION", "🎬 ЗАПИСАННЫЕ КАДРЫ АНИМАЦИИ: " .. #animationFrames)
-            end
-            
-            if #sizeFrames > 0 then
-                Logger:log("ANIMATION", "📏 ЗАПИСАННЫЕ ИЗМЕНЕНИЯ РАЗМЕРА: " .. #sizeFrames)
-                local finalFrame = sizeFrames[#sizeFrames]
-                if initialSize and finalFrame then
-                    local scaleX = finalFrame.size.X / initialSize.X
-                    local scaleY = finalFrame.size.Y / initialSize.Y
-                    local scaleZ = finalFrame.size.Z / initialSize.Z
-                    Logger:log("ANIMATION", "📈 ИТОГОВОЕ УВЕЛИЧЕНИЕ", {
-                        scaleX = string.format("%.2fx", scaleX),
-                        scaleY = string.format("%.2fx", scaleY),
-                        scaleZ = string.format("%.2fx", scaleZ),
-                        avgScale = string.format("%.2fx", (scaleX + scaleY + scaleZ) / 3)
-                    })
-                end
-            end
-            return
-        end
-        
-        -- Записываем кадры анимации
-        local success, currentCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            if not lastPosition or (currentCFrame.Position - lastPosition).Magnitude > 0.1 then
-                table.insert(animationFrames, {
-                    time = tick() - startTime,
-                    position = currentCFrame.Position,
-                    rotation = currentCFrame.Rotation
-                })
-                lastPosition = currentCFrame.Position
-                
-                Logger:log("ANIMATION", "🎬 КАДР АНИМАЦИИ", {
-                    frame = #animationFrames,
-                    time = string.format("%.2f", tick() - startTime),
-                    position = tostring(currentCFrame.Position)
-                })
-            end
-        end
-        
-        -- Записываем изменения размера
-        local currentSize = nil
-        if model.PrimaryPart then
-            currentSize = model.PrimaryPart.Size
-        else
-            -- Ищем самую большую часть
-            local largestPart = nil
-            local largestVolume = 0
-            for _, part in pairs(model:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    local volume = part.Size.X * part.Size.Y * part.Size.Z
-                    if volume > largestVolume then
-                        largestVolume = volume
-                        largestPart = part
-                    end
-                end
-            end
-            if largestPart then
-                currentSize = largestPart.Size
-            end
-        end
-        
-        if currentSize and initialSize then
-            local lastSizeFrame = sizeFrames[#sizeFrames]
-            if not lastSizeFrame or (currentSize - lastSizeFrame.size).Magnitude > 0.01 then
-                table.insert(sizeFrames, {
-                    time = tick() - startTime,
-                    size = currentSize
-                })
-                
-                local scaleX = currentSize.X / initialSize.X
-                local scaleY = currentSize.Y / initialSize.Y
-                local scaleZ = currentSize.Z / initialSize.Z
-                local avgScale = (scaleX + scaleY + scaleZ) / 3
-                
-                Logger:log("ANIMATION", "📏 ИЗМЕНЕНИЕ РАЗМЕРА", {
-                    frame = #sizeFrames,
-                    time = string.format("%.2f", tick() - startTime),
-                    currentSize = tostring(currentSize),
-                    scale = string.format("%.2fx", avgScale)
-                })
-            end
-        end
-    end)
-end
-
--- 🎯 ОСНОВНАЯ ФУНКЦИЯ АНАЛИЗА
-local function startComprehensiveAnalysis()
-    Logger:log("CRITICAL", "🔥 ЗАПУСК КОМПЛЕКСНОГО АНАЛИЗА АНИМАЦИИ ПИТОМЦЕВ ИЗ ЯИЦ")
-    Logger:log("CRITICAL", "🎯 Цель: dog, bunny, golden lab и другие временные модели")
-    Logger:log("CRITICAL", "📋 Анализ: workspace.visuals, eggexplode, структура, анимация")
-    
-    local eggExplodeDetected = false
-    local analysisStartTime = 0
-    local processedModels = {}
-    local foundPetModels = {}
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        -- Фаза 1: Поиск EggExplode
-        if not eggExplodeDetected then
-            local found, eggObj, location = checkForEggExplode()
-            if found then
-                eggExplodeDetected = true
-                analysisStartTime = tick()
-                
-                Logger:log("EXPLOSION", "💥 EGGEXPLODE ОБНАРУЖЕН В " .. location .. "!")
-                Logger:log("EXPLOSION", "💥 Начинаем поиск и анализ моделей питомцев...")
-                
-                -- Анализируем сам EggExplode
-                if eggObj then
-                    Logger:log("EXPLOSION", "💥 АНАЛИЗ СТРУКТУРЫ EGGEXPLODE:")
-                    deepAnalyzeStructure(eggObj, 0, "EggExplode")
-                end
-            end
-        else
-            -- Фаза 2: Поиск и анализ моделей питомцев
-            local elapsed = tick() - analysisStartTime
-            
-            if elapsed > CONFIG.MONITOR_DURATION then
-                Logger:log("CRITICAL", "🔥 АНАЛИЗ ЗАВЕРШЁН ПО ТАЙМАУТУ")
-                connection:Disconnect()
-                
-                if #foundPetModels > 0 then
-                    Logger:log("CRITICAL", "🔥 НАЙДЕННЫЕ МОДЕЛИ ПИТОМЦЕВ:")
-                    for i, petData in pairs(foundPetModels) do
-                        Logger:log("PET", string.format("🐾 Питомец %d: %s", i, petData.name), petData.summary)
-                    end
-                else
-                    Logger:log("CRITICAL", "❌ МОДЕЛИ ПИТОМЦЕВ НЕ НАЙДЕНЫ!")
-                end
-                return
-            end
-            
-            -- Сканируем все модели
-            for _, obj in pairs(Workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj ~= player.Character and not processedModels[obj] then
-                    processedModels[obj] = true
-                    
-                    if isPetModel(obj) then
-                        -- Проверяем на ключевые слова питомцев
-                        local isPotentialPet = false
-                        for _, keyword in pairs(PET_KEYWORDS) do
-                            if obj.Name:lower():find(keyword) then
-                                isPotentialPet = true
-                                break
-                            end
-                        end
-                        
-                        if isPotentialPet then
-                            Logger:log("FOUND", "🎯 НАЙДЕНА МОДЕЛЬ ПИТОМЦА: " .. obj.Name)
-                            
-                            local petData = {
-                                name = obj.Name,
-                                foundTime = elapsed,
-                                summary = {
-                                    childCount = #obj:GetChildren(),
-                                    hasHumanoid = obj:FindFirstChild("Humanoid") ~= nil,
-                                    hasPrimaryPart = obj.PrimaryPart ~= nil
-                                }
-                            }
-                            
-                            table.insert(foundPetModels, petData)
-                            
-                            -- Полный анализ структуры
-                            Logger:log("PET", "🐾 ПОЛНЫЙ АНАЛИЗ СТРУКТУРЫ: " .. obj.Name)
-                            deepAnalyzeStructure(obj, 0, obj.Name)
-                            
-                            -- Отслеживание жизненного цикла и анимации
-                            trackLifecycle(obj)
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    
-    Logger:log("CRITICAL", "🔥 МОНИТОРИНГ АКТИВЕН. ОТКРОЙТЕ ЯЙЦО ДЛЯ АНАЛИЗА!")
-end
-
--- 🖥️ GUI
-local function createAnalysisGUI()
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "ComprehensiveEggPetAnalyzerGUI"
-    gui.Parent = player:WaitForChild("PlayerGui")
-    
+    -- Основной фрейм
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 450, 0, 200)
-    frame.Position = UDim2.new(0.5, -225, 0.5, -100)
-    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-    frame.BorderSizePixel = 0
-    frame.Parent = gui
+    frame.Name = "MainFrame"
+    frame.Size = UDim2.new(0, 280, 0, 120)
+    frame.Position = UDim2.new(0, 50, 0, 250) -- Под PetScaler
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(255, 100, 0) -- Оранжевая рамка
+    frame.Parent = screenGui
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
+    corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = frame
     
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 50)
-    title.BackgroundTransparency = 1
-    title.Text = "🔥 COMPREHENSIVE EGG PET ANALYZER"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
+    -- Заголовок
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, 0, 0, 25)
+    titleLabel.Position = UDim2.new(0, 0, 0, 5)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "🥚 EGG INTERCEPTOR v1.0"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
+    titleLabel.TextSize = 12
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.Parent = frame
     
-    local startButton = Instance.new("TextButton")
-    startButton.Size = UDim2.new(0.8, 0, 0, 40)
-    startButton.Position = UDim2.new(0.1, 0, 0.3, 0)
-    startButton.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
-    startButton.Text = "🚀 ЗАПУСТИТЬ АНАЛИЗ"
-    startButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-    startButton.TextScaled = true
-    startButton.Font = Enum.Font.SourceSansBold
-    startButton.Parent = frame
+    -- Кнопка запуска
+    local interceptButton = Instance.new("TextButton")
+    interceptButton.Name = "InterceptButton"
+    interceptButton.Size = UDim2.new(0, 260, 0, 35)
+    interceptButton.Position = UDim2.new(0, 10, 0, 35)
+    interceptButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+    interceptButton.BorderSizePixel = 0
+    interceptButton.Text = "🥚 ЗАПУСТИТЬ ПЕРЕХВАТ ЯЙЦА"
+    interceptButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    interceptButton.TextSize = 12
+    interceptButton.Font = Enum.Font.SourceSansBold
+    interceptButton.Parent = frame
     
     local buttonCorner = Instance.new("UICorner")
     buttonCorner.CornerRadius = UDim.new(0, 5)
-    buttonCorner.Parent = startButton
+    buttonCorner.Parent = interceptButton
     
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Size = UDim2.new(0.9, 0, 0.4, 0)
-    infoLabel.Position = UDim2.new(0.05, 0, 0.55, 0)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = "Анализирует: EggExplode → Dog/Bunny/Golden Lab\nСтруктура, анимация, жизненный цикл\nОткройте F9 для просмотра логов"
-    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLabel.TextScaled = true
-    infoLabel.Font = Enum.Font.SourceSans
-    infoLabel.Parent = frame
+    -- Статусная метка
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Size = UDim2.new(1, -20, 0, 40)
+    statusLabel.Position = UDim2.new(0, 10, 0, 75)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "🔍 Найдите Dragonfly рядом и нажмите кнопку"
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.TextSize = 10
+    statusLabel.Font = Enum.Font.SourceSans
+    statusLabel.TextWrapped = true
+    statusLabel.TextYAlignment = Enum.TextYAlignment.Top
+    statusLabel.Parent = frame
     
-    startButton.MouseButton1Click:Connect(function()
-        startButton.Text = "⏳ АНАЛИЗ АКТИВЕН..."
-        startButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-        startComprehensiveAnalysis()
+    -- Логика кнопки
+    interceptButton.MouseButton1Click:Connect(function()
+        if InterceptorState.isActive then
+            print("⚠️ Перехват уже активен!")
+            return
+        end
+        
+        interceptButton.Text = "⏳ ПОИСК DRAGONFLY..."
+        interceptButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        statusLabel.Text = "🔍 Ищем Dragonfly рядом с игроком..."
+        
+        spawn(function()
+            local success = startEggInterception()
+            
+            if success then
+                interceptButton.Text = "🎯 МОНИТОРИНГ АКТИВЕН"
+                interceptButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                statusLabel.Text = "✅ Dragonfly найден! Откройте яйцо для замены."
+                
+                -- Ожидаем завершения перехвата
+                while InterceptorState.isActive do
+                    wait(0.5)
+                end
+                
+                if InterceptorState.interceptComplete then
+                    interceptButton.Text = "🎉 ПЕРЕХВАТ УСПЕШЕН!"
+                    interceptButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+                    statusLabel.Text = "🎉 Успех! Временная модель заменена на Dragonfly!"
+                else
+                    interceptButton.Text = "⏰ ТАЙМАУТ"
+                    interceptButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+                    statusLabel.Text = "⏰ Мониторинг завершен по таймауту."
+                end
+                
+                -- Сброс через 5 секунд
+                wait(5)
+                interceptButton.Text = "🥚 ЗАПУСТИТЬ ПЕРЕХВАТ ЯЙЦА"
+                interceptButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+                statusLabel.Text = "🔍 Готов к новому перехвату."
+                
+                -- Сброс состояния
+                InterceptorState = {
+                    isActive = false,
+                    eggExplodeDetected = false,
+                    dragonflyFound = false,
+                    dragonflyModel = nil,
+                    originalPetModel = nil,
+                    interceptComplete = false
+                }
+            else
+                interceptButton.Text = "❌ DRAGONFLY НЕ НАЙДЕН"
+                interceptButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+                statusLabel.Text = "❌ Dragonfly не найден рядом с игроком!"
+                
+                wait(3)
+                interceptButton.Text = "🥚 ЗАПУСТИТЬ ПЕРЕХВАТ ЯЙЦА"
+                interceptButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+                statusLabel.Text = "🔍 Найдите Dragonfly рядом и попробуйте снова."
+            end
+        end)
     end)
+    
+    -- Эффекты наведения
+    interceptButton.MouseEnter:Connect(function()
+        if interceptButton.BackgroundColor3 == Color3.fromRGB(255, 100, 0) then
+            interceptButton.BackgroundColor3 = Color3.fromRGB(255, 120, 20)
+        end
+    end)
+    
+    interceptButton.MouseLeave:Connect(function()
+        if interceptButton.BackgroundColor3 == Color3.fromRGB(255, 120, 20) then
+            interceptButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+        end
+    end)
+    
+    print("🖥️ EggInterceptor GUI создан!")
 end
 
--- 🚀 ЗАПУСК
-createAnalysisGUI()
-Logger:log("CRITICAL", "🔥 COMPREHENSIVE EGG PET ANIMATION ANALYZER ГОТОВ!")
-Logger:log("CRITICAL", "📋 Основан на анализе 10 диагностических скриптов")
-Logger:log("CRITICAL", "🎯 Нажмите кнопку для начала анализа")
+-- 🚀 ИНИЦИАЛИЗАЦИЯ И ЗАПУСК
+local function initializeEggInterceptor()
+    print("🚀 === ИНИЦИАЛИЗАЦИЯ EGG INTERCEPTOR v1.0 ===")
+    
+    -- Создаем GUI
+    createEggInterceptorGUI()
+    
+    print("✅ EGG INTERCEPTOR v1.0 ГОТОВ К РАБОТЕ!")
+    print("📋 ИНСТРУКЦИЯ:")
+    print("   1. Найдите Dragonfly рядом с собой (UUID имя с {})")
+    print("   2. Нажмите кнопку 'ЗАПУСТИТЬ ПЕРЕХВАТ ЯЙЦА'")
+    print("   3. Откройте яйцо - временная модель заменится на Dragonfly")
+    print("   4. Dragonfly получит ВСЕ эффекты роста и взрыва")
+    print("   5. Idle анимация НЕ копируется (остается оригинальная)")
+    print("🎯 Готов к перехвату!")
+end
+
+-- ✅ ФИНАЛЬНАЯ ЧАСТЬ 3 ЗАГРУЖЕНА
+print("✅ ЧАСТЬ 3 ЗАГРУЖЕНА:")
+print("   🖥️ GUI система с кнопкой запуска")
+print("   📊 Статусные сообщения и индикация")
+print("   🎮 Интерактивное управление")
+print("   🔄 Автоматический сброс состояния")
+print("🎉 === EGG INTERCEPTOR v1.0 ПОЛНОСТЬЮ ГОТОВ! ===")
+print("=" .. string.rep("=", 60))
+
+-- 🚀 ЗАПУСК СИСТЕМЫ
+initializeEggInterceptor()
