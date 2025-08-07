@@ -1,10 +1,6 @@
--- 🔥 COMPREHENSIVE EGG PET ANIMATION ANALYZER
--- Основан на анализе 10 скриптов: EggAnimationDiagnostic, AdvancedEggDiagnostic, EggExplosionTracker,
--- CorrectEggDiagnostic, RealPetModelFinder, EggExplodeAnalyzer, PrecisePetModelFilter, 
--- AggressiveModelCatcher, UniversalTempModelAnalyzer, PreciseAnimationModelFinder
--- 
--- ЦЕЛЬ: Полный анализ анимации workspace.visuals и eggexplode
--- Находит модели: dog, bunny, golden lab и анализирует их анимацию
+-- 🔬 EGG ANIMATION SOURCE TRACKER
+-- Исследует ОТКУДА и КАК игра создает временную анимированную модель питомца
+-- Отслеживает все события, скрипты, источники анимации во время взрыва яйца
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -15,45 +11,316 @@ local player = Players.LocalPlayer
 
 -- 📊 КОНФИГУРАЦИЯ
 local CONFIG = {
-    SEARCH_RADIUS = 200,
-    MONITOR_DURATION = 30,
-    CHECK_INTERVAL = 0.05,
-    ANALYSIS_DEPTH = 8,
-    MIN_CHILD_COUNT = 10,
-    MIN_MESH_COUNT = 1
+    SEARCH_RADIUS = 300,
+    MONITOR_DURATION = 45,
+    DEEP_SCAN_INTERVAL = 0.1
 }
 
--- 🎯 КЛЮЧЕВЫЕ СЛОВА ПИТОМЦЕВ (из всех скриптов)
-local PET_KEYWORDS = {
-    "dog", "bunny", "golden lab", "cat", "rabbit", "pet", "animal", "golden", "lab"
+-- 🖥️ СИСТЕМА ОТДЕЛЬНОЙ КОНСОЛИ
+local ConsoleGUI = nil
+local ConsoleFrame = nil
+local ConsoleScrollFrame = nil
+local ConsoleTextLabel = nil
+local ConsoleLines = {}
+local MaxConsoleLines = 100
+
+-- 📋 СОСТОЯНИЕ ОТСЛЕЖИВАНИЯ
+local TrackingState = {
+    isActive = false,
+    eggExplodeDetected = false,
+    startTime = 0,
+    beforeSnapshot = {},
+    afterSnapshot = {},
+    detectedEvents = {},
+    foundScripts = {},
+    animationSources = {}
 }
 
--- 🚫 ИСКЛЮЧЕНИЯ (из PrecisePetModelFilter и других)
-local EXCLUDED_NAMES = {
-    "EggExplode", "CraftingTables", "EventCraftingWorkBench", "Fruit", "Tree", 
-    "Bush", "Platform", "Stand", "Bench", "Table", "Chair", "Decoration"
-}
+-- Функция создания отдельной консоли
+local function createResearchConsole()
+    if ConsoleGUI then
+        ConsoleGUI:Destroy()
+    end
+    
+    ConsoleGUI = Instance.new("ScreenGui")
+    ConsoleGUI.Name = "EggAnimationSourceTrackerConsole"
+    ConsoleGUI.Parent = player:WaitForChild("PlayerGui")
+    
+    -- Основной фрейм консоли
+    ConsoleFrame = Instance.new("Frame")
+    ConsoleFrame.Size = UDim2.new(0, 700, 0, 500)
+    ConsoleFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+    ConsoleFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+    ConsoleFrame.BorderSizePixel = 2
+    ConsoleFrame.BorderColor3 = Color3.fromRGB(255, 100, 0)
+    ConsoleFrame.Parent = ConsoleGUI
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = ConsoleFrame
+    
+    -- Заголовок
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 40)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "🔬 EGG ANIMATION SOURCE TRACKER - ИССЛЕДОВАТЕЛЬСКАЯ КОНСОЛЬ"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.Parent = ConsoleFrame
+    
+    -- Панель кнопок
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Size = UDim2.new(1, 0, 0, 40)
+    buttonFrame.Position = UDim2.new(0, 0, 0, 45)
+    buttonFrame.BackgroundTransparency = 1
+    buttonFrame.Parent = ConsoleFrame
+    
+    -- Кнопка запуска
+    local startButton = Instance.new("TextButton")
+    startButton.Size = UDim2.new(0, 150, 0, 30)
+    startButton.Position = UDim2.new(0, 10, 0, 5)
+    startButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+    startButton.Text = "🚀 НАЧАТЬ ИССЛЕДОВАНИЕ"
+    startButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    startButton.TextScaled = true
+    startButton.Font = Enum.Font.SourceSansBold
+    startButton.Parent = buttonFrame
+    
+    local startCorner = Instance.new("UICorner")
+    startCorner.CornerRadius = UDim.new(0, 5)
+    startCorner.Parent = startButton
+    
+    -- Кнопка очистки
+    local clearButton = Instance.new("TextButton")
+    clearButton.Size = UDim2.new(0, 100, 0, 30)
+    clearButton.Position = UDim2.new(0, 170, 0, 5)
+    clearButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    clearButton.Text = "🗑️ ОЧИСТИТЬ"
+    clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    clearButton.TextScaled = true
+    clearButton.Font = Enum.Font.SourceSansBold
+    clearButton.Parent = buttonFrame
+    
+    local clearCorner = Instance.new("UICorner")
+    clearCorner.CornerRadius = UDim.new(0, 5)
+    clearCorner.Parent = clearButton
+    
+    -- Кнопка сводки
+    local summaryButton = Instance.new("TextButton")
+    summaryButton.Size = UDim2.new(0, 120, 0, 30)
+    summaryButton.Position = UDim2.new(0, 280, 0, 5)
+    summaryButton.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+    summaryButton.Text = "📊 СВОДКА"
+    summaryButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    summaryButton.TextScaled = true
+    summaryButton.Font = Enum.Font.SourceSansBold
+    summaryButton.Parent = buttonFrame
+    
+    local summaryCorner = Instance.new("UICorner")
+    summaryCorner.CornerRadius = UDim.new(0, 5)
+    summaryCorner.Parent = summaryButton
+    
+    -- Скролл фрейм для консоли
+    ConsoleScrollFrame = Instance.new("ScrollingFrame")
+    ConsoleScrollFrame.Size = UDim2.new(1, -20, 1, -100)
+    ConsoleScrollFrame.Position = UDim2.new(0, 10, 0, 90)
+    ConsoleScrollFrame.BackgroundColor3 = Color3.fromRGB(3, 3, 8)
+    ConsoleScrollFrame.BorderSizePixel = 1
+    ConsoleScrollFrame.BorderColor3 = Color3.fromRGB(80, 80, 80)
+    ConsoleScrollFrame.ScrollBarThickness = 12
+    ConsoleScrollFrame.Parent = ConsoleFrame
+    
+    local scrollCorner = Instance.new("UICorner")
+    scrollCorner.CornerRadius = UDim.new(0, 5)
+    scrollCorner.Parent = ConsoleScrollFrame
+    
+    -- Текстовая метка для консоли
+    ConsoleTextLabel = Instance.new("TextLabel")
+    ConsoleTextLabel.Size = UDim2.new(1, -10, 1, 0)
+    ConsoleTextLabel.Position = UDim2.new(0, 5, 0, 0)
+    ConsoleTextLabel.BackgroundTransparency = 1
+    ConsoleTextLabel.Text = "🔬 Исследовательская консоль готова.\\n📋 Нажмите 'НАЧАТЬ ИССЛЕДОВАНИЕ' для запуска глубокого анализа источников анимации."
+    ConsoleTextLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+    ConsoleTextLabel.TextSize = 11
+    ConsoleTextLabel.Font = Enum.Font.SourceSans
+    ConsoleTextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ConsoleTextLabel.TextYAlignment = Enum.TextYAlignment.Top
+    ConsoleTextLabel.TextWrapped = true
+    ConsoleTextLabel.Parent = ConsoleScrollFrame
+    
+    return startButton, clearButton, summaryButton
+end
 
--- 📋 СИСТЕМА ЛОГИРОВАНИЯ
-local Logger = {
-    log = function(self, level, message, data)
-        local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
-        local prefixes = {
-            EXPLOSION = "💥", PET = "🐾", ANIMATION = "🎬", STRUCTURE = "🏗️",
-            MESH = "🎨", LIFECYCLE = "⏱️", CRITICAL = "🔥", FOUND = "🎯"
-        }
-        
-        print(string.format("[%s] %s %s", timestamp, prefixes[level] or "ℹ️", message))
-        
-        if data and next(data) then
-            for key, value in pairs(data) do
-                print(string.format("    %s: %s", key, tostring(value)))
-            end
+-- Функция добавления строки в консоль
+local function addResearchLog(level, message, data)
+    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+    local prefixes = {
+        RESEARCH = "🔬", EVENT = "⚡", SCRIPT = "📜", ANIMATION = "🎬",
+        CREATION = "⚙️", SOURCE = "🎯", DISCOVERY = "💡", WARNING = "⚠️"
+    }
+    
+    local logLine = string.format("[%s] %s %s", timestamp, prefixes[level] or "ℹ️", message)
+    
+    if data and next(data) then
+        for key, value in pairs(data) do
+            logLine = logLine .. string.format("\\n    %s: %s", key, tostring(value))
         end
     end
-}
+    
+    table.insert(ConsoleLines, logLine)
+    
+    -- Ограничиваем количество строк
+    if #ConsoleLines > MaxConsoleLines then
+        table.remove(ConsoleLines, 1)
+    end
+    
+    -- Обновляем текст консоли
+    if ConsoleTextLabel then
+        ConsoleTextLabel.Text = table.concat(ConsoleLines, "\\n")
+        
+        -- Автоскролл вниз
+        spawn(function()
+            wait(0.1)
+            ConsoleScrollFrame.CanvasPosition = Vector2.new(0, ConsoleTextLabel.TextBounds.Y)
+        end)
+    end
+end
 
--- 🔍 ФУНКЦИЯ ПОИСКА EGGEXPLODE (из CorrectEggDiagnostic)
+-- 🔍 ФУНКЦИЯ СОЗДАНИЯ СНИМКА СОСТОЯНИЯ
+local function createStateSnapshot(name)
+    local snapshot = {
+        name = name,
+        timestamp = tick(),
+        workspace = {},
+        replicatedStorage = {},
+        scripts = {},
+        events = {}
+    }
+    
+    -- Снимок Workspace
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("Folder") then
+            snapshot.workspace[obj.Name] = {
+                className = obj.ClassName,
+                childCount = #obj:GetChildren()
+            }
+        end
+    end
+    
+    -- Снимок ReplicatedStorage
+    for _, obj in pairs(ReplicatedStorage:GetChildren()) do
+        snapshot.replicatedStorage[obj.Name] = {
+            className = obj.ClassName,
+            childCount = #obj:GetChildren()
+        }
+    end
+    
+    -- Поиск скриптов
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+            table.insert(snapshot.scripts, {
+                name = obj.Name,
+                className = obj.ClassName,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            })
+        end
+    end
+    
+    return snapshot
+end
+
+-- 📊 ФУНКЦИЯ СРАВНЕНИЯ СНИМКОВ
+local function compareSnapshots(before, after)
+    local differences = {
+        newWorkspaceObjects = {},
+        newReplicatedObjects = {},
+        newScripts = {},
+        modifiedObjects = {}
+    }
+    
+    -- Сравнение Workspace
+    for name, data in pairs(after.workspace) do
+        if not before.workspace[name] then
+            table.insert(differences.newWorkspaceObjects, {name = name, data = data})
+        elseif before.workspace[name].childCount ~= data.childCount then
+            table.insert(differences.modifiedObjects, {name = name, location = "Workspace", data = data})
+        end
+    end
+    
+    -- Сравнение ReplicatedStorage
+    for name, data in pairs(after.replicatedStorage) do
+        if not before.replicatedStorage[name] then
+            table.insert(differences.newReplicatedObjects, {name = name, data = data})
+        end
+    end
+    
+    -- Сравнение скриптов
+    for _, script in pairs(after.scripts) do
+        local found = false
+        for _, beforeScript in pairs(before.scripts) do
+            if beforeScript.name == script.name and beforeScript.parent == script.parent then
+                found = true
+                break
+            end
+        end
+        if not found then
+            table.insert(differences.newScripts, script)
+        end
+    end
+    
+    return differences
+end
+
+-- 🎬 ФУНКЦИЯ АНАЛИЗА АНИМАЦИИ
+local function analyzeAnimationSources(model)
+    local animationData = {
+        animators = {},
+        animationTracks = {},
+        motor6ds = {},
+        tweens = {},
+        scripts = {}
+    }
+    
+    -- Поиск Animator и AnimationTrack
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Animator") then
+            table.insert(animationData.animators, {
+                name = obj.Name,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            })
+            
+            -- Получаем активные треки анимации
+            local tracks = obj:GetPlayingAnimationTracks()
+            for _, track in pairs(tracks) do
+                table.insert(animationData.animationTracks, {
+                    animationId = track.Animation and track.Animation.AnimationId or "Unknown",
+                    isPlaying = track.IsPlaying,
+                    speed = track.Speed,
+                    weight = track.Weight
+                })
+            end
+        elseif obj:IsA("Motor6D") then
+            table.insert(animationData.motor6ds, {
+                name = obj.Name,
+                c0 = tostring(obj.C0),
+                c1 = tostring(obj.C1),
+                part0 = obj.Part0 and obj.Part0.Name or "nil",
+                part1 = obj.Part1 and obj.Part1.Name or "nil"
+            })
+        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+            table.insert(animationData.scripts, {
+                name = obj.Name,
+                className = obj.ClassName,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            })
+        end
+    end
+    
+    return animationData
+end
+
+-- 🔍 ФУНКЦИЯ ПОИСКА EGGEXPLODE
 local function checkForEggExplode()
     -- Ищем в ReplicatedStorage
     for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
@@ -66,415 +333,196 @@ local function checkForEggExplode()
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj.Name == "EggExplode" and obj:IsA("Model") then
             return true, obj, "Workspace"
-        elseif obj.Name:lower():find("eggexplode") or (obj.Name:lower():find("egg") and obj.Name:lower():find("explode")) then
-            return true, obj, "Workspace"
         end
     end
     
     return false, nil, nil
 end
 
--- 🎯 ФУНКЦИЯ ПРОВЕРКИ МОДЕЛИ ПИТОМЦА (объединение всех подходов)
-local function isPetModel(model)
-    -- 1. Должна быть Model
-    if not model:IsA("Model") then return false end
+-- 🚀 ОСНОВНАЯ ФУНКЦИЯ ИССЛЕДОВАНИЯ
+local function startDeepResearch()
+    addResearchLog("RESEARCH", "🚀 ЗАПУСК ГЛУБОКОГО ИССЛЕДОВАНИЯ ИСТОЧНИКОВ АНИМАЦИИ")
+    addResearchLog("RESEARCH", "🎯 Цель: Найти КАК и ОТКУДА создается временная анимированная модель")
     
-    -- 2. Исключения
-    for _, excluded in pairs(EXCLUDED_NAMES) do
-        if model.Name:find(excluded) then return false end
-    end
+    TrackingState.isActive = true
+    TrackingState.startTime = tick()
     
-    -- 3. Исключаем модели инвентаря игроков
-    if model.Name:find("%[") and model.Name:find("KG") and model.Name:find("Age") then
-        return false
-    end
-    
-    -- 4. Исключаем игроков
-    for _, p in pairs(Players:GetPlayers()) do
-        if model.Name == p.Name or model.Name:find(p.Name) then
-            return false
-        end
-    end
-    
-    -- 5. Проверяем наличие мешей
-    local meshCount = 0
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-        end
-    end
-    
-    if meshCount < CONFIG.MIN_MESH_COUNT then return false end
-    
-    -- 6. Проверяем количество детей
-    if #model:GetChildren() < CONFIG.MIN_CHILD_COUNT then return false end
-    
-    -- 7. Проверяем расстояние до игрока
-    local playerChar = player.Character
-    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
-            if distance > CONFIG.SEARCH_RADIUS then return false end
-        end
-    end
-    
-    return true
-end
-
--- 🏗️ ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ (из EggExplodeAnalyzer и UniversalTempModelAnalyzer)
-local function deepAnalyzeStructure(obj, depth, parentPath)
-    depth = depth or 0
-    parentPath = parentPath or ""
-    local indent = string.rep("  ", depth)
-    
-    if depth > CONFIG.ANALYSIS_DEPTH then return end
-    
-    local currentPath = parentPath .. "/" .. obj.Name
-    
-    Logger:log("STRUCTURE", indent .. "📦 " .. obj.Name .. " (" .. obj.ClassName .. ")", {
-        FullPath = currentPath,
-        Parent = obj.Parent and obj.Parent.Name or "nil"
-    })
-    
-    -- Анализ BasePart
-    if obj:IsA("BasePart") then
-        local partData = {
-            Size = tostring(obj.Size),
-            Position = tostring(obj.Position),
-            Transparency = obj.Transparency,
-            Color = tostring(obj.Color),
-            Material = obj.Material.Name,
-            CanCollide = obj.CanCollide,
-            Anchored = obj.Anchored
-        }
-        Logger:log("STRUCTURE", indent .. "  🧱 BasePart Properties", partData)
-    end
-    
-    -- Анализ MeshPart/SpecialMesh
-    if obj:IsA("MeshPart") then
-        local meshData = {
-            MeshId = obj.MeshId or "EMPTY",
-            Size = tostring(obj.Size)
-        }
-        Logger:log("MESH", indent .. "  🎨 MeshPart Data", meshData)
-    elseif obj:IsA("SpecialMesh") then
-        local meshData = {
-            MeshId = obj.MeshId or "EMPTY",
-            TextureId = obj.TextureId or "EMPTY",
-            MeshType = tostring(obj.MeshType),
-            Scale = tostring(obj.Scale)
-        }
-        Logger:log("MESH", indent .. "  🎨 SpecialMesh Data", meshData)
-    end
-    
-    -- Анализ Motor6D для анимации
-    if obj:IsA("Motor6D") then
-        local motorData = {
-            C0 = tostring(obj.C0),
-            C1 = tostring(obj.C1),
-            Part0 = obj.Part0 and obj.Part0.Name or "nil",
-            Part1 = obj.Part1 and obj.Part1.Name or "nil"
-        }
-        Logger:log("ANIMATION", indent .. "  🎬 Motor6D Data", motorData)
-    end
-    
-    -- Рекурсивный анализ детей
-    for _, child in pairs(obj:GetChildren()) do
-        deepAnalyzeStructure(child, depth + 1, currentPath)
-    end
-end
-
--- ⏱️ ОТСЛЕЖИВАНИЕ ЖИЗНЕННОГО ЦИКЛА (из всех скриптов)
-local function trackLifecycle(model)
-    local startTime = tick()
-    local modelName = model.Name
-    
-    Logger:log("LIFECYCLE", "⏱️ НАЧАЛО ОТСЛЕЖИВАНИЯ: " .. modelName)
-    
-    -- Мониторинг изменений позиции/анимации/размера
-    local lastPosition = nil
-    local animationFrames = {}
-    local sizeFrames = {}
-    local initialSize = nil
-    
-    -- Получаем начальный размер модели
-    local success, initialCFrame = pcall(function() return model:GetModelCFrame() end)
-    if success and model.PrimaryPart then
-        initialSize = model.PrimaryPart.Size
-        Logger:log("LIFECYCLE", "📏 НАЧАЛЬНЫЙ РАЗМЕР: " .. tostring(initialSize))
-    elseif success then
-        -- Если нет PrimaryPart, ищем самую большую часть
-        local largestPart = nil
-        local largestVolume = 0
-        for _, part in pairs(model:GetDescendants()) do
-            if part:IsA("BasePart") then
-                local volume = part.Size.X * part.Size.Y * part.Size.Z
-                if volume > largestVolume then
-                    largestVolume = volume
-                    largestPart = part
-                end
-            end
-        end
-        if largestPart then
-            initialSize = largestPart.Size
-            Logger:log("LIFECYCLE", "📏 НАЧАЛЬНЫЙ РАЗМЕР (largest part): " .. tostring(initialSize))
-        end
-    end
+    -- Создаем снимок ДО взрыва яйца
+    addResearchLog("RESEARCH", "📸 Создание снимка состояния ДО взрыва яйца...")
+    TrackingState.beforeSnapshot = createStateSnapshot("BEFORE_EGG_EXPLODE")
     
     local connection
     connection = RunService.Heartbeat:Connect(function()
-        if not model or not model.Parent then
+        if not TrackingState.isActive then
             connection:Disconnect()
-            local lifetime = tick() - startTime
-            
-            Logger:log("LIFECYCLE", "⏱️ МОДЕЛЬ ИСЧЕЗЛА: " .. modelName, {
-                lifetime = string.format("%.2f секунд", lifetime),
-                animationFrames = #animationFrames,
-                sizeFrames = #sizeFrames
-            })
-            
-            if #animationFrames > 0 then
-                Logger:log("ANIMATION", "🎬 ЗАПИСАННЫЕ КАДРЫ АНИМАЦИИ: " .. #animationFrames)
-            end
-            
-            if #sizeFrames > 0 then
-                Logger:log("ANIMATION", "📏 ЗАПИСАННЫЕ ИЗМЕНЕНИЯ РАЗМЕРА: " .. #sizeFrames)
-                local finalFrame = sizeFrames[#sizeFrames]
-                if initialSize and finalFrame then
-                    local scaleX = finalFrame.size.X / initialSize.X
-                    local scaleY = finalFrame.size.Y / initialSize.Y
-                    local scaleZ = finalFrame.size.Z / initialSize.Z
-                    Logger:log("ANIMATION", "📈 ИТОГОВОЕ УВЕЛИЧЕНИЕ", {
-                        scaleX = string.format("%.2fx", scaleX),
-                        scaleY = string.format("%.2fx", scaleY),
-                        scaleZ = string.format("%.2fx", scaleZ),
-                        avgScale = string.format("%.2fx", (scaleX + scaleY + scaleZ) / 3)
-                    })
-                end
-            end
             return
         end
         
-        -- Записываем кадры анимации
-        local success, currentCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            if not lastPosition or (currentCFrame.Position - lastPosition).Magnitude > 0.1 then
-                table.insert(animationFrames, {
-                    time = tick() - startTime,
-                    position = currentCFrame.Position,
-                    rotation = currentCFrame.Rotation
-                })
-                lastPosition = currentCFrame.Position
-                
-                Logger:log("ANIMATION", "🎬 КАДР АНИМАЦИИ", {
-                    frame = #animationFrames,
-                    time = string.format("%.2f", tick() - startTime),
-                    position = tostring(currentCFrame.Position)
-                })
-            end
-        end
+        local elapsed = tick() - TrackingState.startTime
         
-        -- Записываем изменения размера
-        local currentSize = nil
-        if model.PrimaryPart then
-            currentSize = model.PrimaryPart.Size
-        else
-            -- Ищем самую большую часть
-            local largestPart = nil
-            local largestVolume = 0
-            for _, part in pairs(model:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    local volume = part.Size.X * part.Size.Y * part.Size.Z
-                    if volume > largestVolume then
-                        largestVolume = volume
-                        largestPart = part
-                    end
-                end
-            end
-            if largestPart then
-                currentSize = largestPart.Size
-            end
-        end
-        
-        if currentSize and initialSize then
-            local lastSizeFrame = sizeFrames[#sizeFrames]
-            if not lastSizeFrame or (currentSize - lastSizeFrame.size).Magnitude > 0.01 then
-                table.insert(sizeFrames, {
-                    time = tick() - startTime,
-                    size = currentSize
-                })
-                
-                local scaleX = currentSize.X / initialSize.X
-                local scaleY = currentSize.Y / initialSize.Y
-                local scaleZ = currentSize.Z / initialSize.Z
-                local avgScale = (scaleX + scaleY + scaleZ) / 3
-                
-                Logger:log("ANIMATION", "📏 ИЗМЕНЕНИЕ РАЗМЕРА", {
-                    frame = #sizeFrames,
-                    time = string.format("%.2f", tick() - startTime),
-                    currentSize = tostring(currentSize),
-                    scale = string.format("%.2fx", avgScale)
-                })
-            end
-        end
-    end)
-end
-
--- 🎯 ОСНОВНАЯ ФУНКЦИЯ АНАЛИЗА
-local function startComprehensiveAnalysis()
-    Logger:log("CRITICAL", "🔥 ЗАПУСК КОМПЛЕКСНОГО АНАЛИЗА АНИМАЦИИ ПИТОМЦЕВ ИЗ ЯИЦ")
-    Logger:log("CRITICAL", "🎯 Цель: dog, bunny, golden lab и другие временные модели")
-    Logger:log("CRITICAL", "📋 Анализ: workspace.visuals, eggexplode, структура, анимация")
-    
-    local eggExplodeDetected = false
-    local analysisStartTime = 0
-    local processedModels = {}
-    local foundPetModels = {}
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        -- Фаза 1: Поиск EggExplode
-        if not eggExplodeDetected then
+        -- Фаза 1: Ожидание EggExplode
+        if not TrackingState.eggExplodeDetected then
             local found, eggObj, location = checkForEggExplode()
             if found then
-                eggExplodeDetected = true
-                analysisStartTime = tick()
+                TrackingState.eggExplodeDetected = true
                 
-                Logger:log("EXPLOSION", "💥 EGGEXPLODE ОБНАРУЖЕН В " .. location .. "!")
-                Logger:log("EXPLOSION", "💥 Начинаем поиск и анализ моделей питомцев...")
-                Logger:log("EXPLOSION", "💥 (Пропускаем анализ EggExplode, фокусируемся на питомцах)")
+                addResearchLog("EVENT", "⚡ EGGEXPLODE ОБНАРУЖЕН В " .. location .. "!")
+                addResearchLog("RESEARCH", "📸 Создание снимка состояния ПОСЛЕ взрыва...")
+                
+                -- Создаем снимок ПОСЛЕ взрыва
+                wait(0.5) -- Небольшая задержка для стабилизации
+                TrackingState.afterSnapshot = createStateSnapshot("AFTER_EGG_EXPLODE")
+                
+                -- Сравниваем снимки
+                local differences = compareSnapshots(TrackingState.beforeSnapshot, TrackingState.afterSnapshot)
+                
+                addResearchLog("DISCOVERY", "💡 АНАЛИЗ ИЗМЕНЕНИЙ ПОСЛЕ ВЗРЫВА ЯЙЦА:")
+                
+                if #differences.newWorkspaceObjects > 0 then
+                    addResearchLog("CREATION", "⚙️ НОВЫЕ ОБЪЕКТЫ В WORKSPACE:", {
+                        count = #differences.newWorkspaceObjects
+                    })
+                    for _, obj in pairs(differences.newWorkspaceObjects) do
+                        addResearchLog("CREATION", "  📦 " .. obj.name, obj.data)
+                    end
+                end
+                
+                if #differences.newReplicatedObjects > 0 then
+                    addResearchLog("CREATION", "⚙️ НОВЫЕ ОБЪЕКТЫ В REPLICATEDSTORAGE:", {
+                        count = #differences.newReplicatedObjects
+                    })
+                    for _, obj in pairs(differences.newReplicatedObjects) do
+                        addResearchLog("CREATION", "  📦 " .. obj.name, obj.data)
+                    end
+                end
+                
+                if #differences.newScripts > 0 then
+                    addResearchLog("SCRIPT", "📜 НОВЫЕ СКРИПТЫ ОБНАРУЖЕНЫ:", {
+                        count = #differences.newScripts
+                    })
+                    for _, script in pairs(differences.newScripts) do
+                        addResearchLog("SCRIPT", "  📜 " .. script.name, script)
+                    end
+                end
+                
+                -- Начинаем поиск анимированных моделей
+                addResearchLog("RESEARCH", "🔍 Начинаем поиск временных анимированных моделей...")
             end
         else
-            -- Фаза 2: Поиск и анализ моделей питомцев
-            local elapsed = tick() - analysisStartTime
-            
+            -- Фаза 2: Поиск и анализ анимированных моделей
             if elapsed > CONFIG.MONITOR_DURATION then
-                Logger:log("CRITICAL", "🔥 АНАЛИЗ ЗАВЕРШЁН ПО ТАЙМАУТУ")
-                connection:Disconnect()
-                
-                if #foundPetModels > 0 then
-                    Logger:log("CRITICAL", "🔥 НАЙДЕННЫЕ МОДЕЛИ ПИТОМЦЕВ:")
-                    for i, petData in pairs(foundPetModels) do
-                        Logger:log("PET", string.format("🐾 Питомец %d: %s", i, petData.name), petData.summary)
-                    end
-                else
-                    Logger:log("CRITICAL", "❌ МОДЕЛИ ПИТОМЦЕВ НЕ НАЙДЕНЫ!")
-                end
+                addResearchLog("RESEARCH", "⏰ Исследование завершено по таймауту")
+                TrackingState.isActive = false
                 return
             end
             
-            -- Сканируем все модели
+            -- Поиск моделей питомцев
             for _, obj in pairs(Workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj ~= player.Character and not processedModels[obj] then
-                    processedModels[obj] = true
+                if obj:IsA("Model") and obj.Name:lower():find("dog") or 
+                   obj.Name:lower():find("bunny") or obj.Name:lower():find("golden") then
                     
-                    if isPetModel(obj) then
-                        -- Проверяем на ключевые слова питомцев
-                        local isPotentialPet = false
-                        local objNameLower = obj.Name:lower()
-                        for _, keyword in pairs(PET_KEYWORDS) do
-                            if objNameLower:find(keyword) then
-                                isPotentialPet = true
-                                break
+                    if not TrackingState.animationSources[obj] then
+                        TrackingState.animationSources[obj] = true
+                        
+                        addResearchLog("DISCOVERY", "💡 НАЙДЕНА АНИМИРОВАННАЯ МОДЕЛЬ: " .. obj.Name)
+                        
+                        -- Глубокий анализ анимации
+                        local animationData = analyzeAnimationSources(obj)
+                        
+                        addResearchLog("ANIMATION", "🎬 АНАЛИЗ ИСТОЧНИКОВ АНИМАЦИИ:")
+                        addResearchLog("ANIMATION", "  Animators: " .. #animationData.animators)
+                        addResearchLog("ANIMATION", "  Animation Tracks: " .. #animationData.animationTracks)
+                        addResearchLog("ANIMATION", "  Motor6Ds: " .. #animationData.motor6ds)
+                        addResearchLog("ANIMATION", "  Scripts: " .. #animationData.scripts)
+                        
+                        if #animationData.animationTracks > 0 then
+                            for _, track in pairs(animationData.animationTracks) do
+                                addResearchLog("ANIMATION", "  🎬 Animation Track:", track)
                             end
                         end
                         
-                        -- Дополнительная проверка: исключаем EggExplode и похожие
-                        if objNameLower:find("egg") or objNameLower:find("explode") then
-                            isPotentialPet = false
+                        if #animationData.scripts > 0 then
+                            for _, script in pairs(animationData.scripts) do
+                                addResearchLog("SCRIPT", "  📜 Script in model:", script)
+                            end
                         end
                         
-                        if isPotentialPet then
-                            Logger:log("FOUND", "🎯 НАЙДЕНА МОДЕЛЬ ПИТОМЦА: " .. obj.Name)
+                        -- Отслеживаем время жизни
+                        spawn(function()
+                            local startTime = tick()
+                            local modelName = obj.Name
                             
-                            local petData = {
-                                name = obj.Name,
-                                foundTime = elapsed,
-                                summary = {
-                                    childCount = #obj:GetChildren(),
-                                    hasHumanoid = obj:FindFirstChild("Humanoid") ~= nil,
-                                    hasPrimaryPart = obj.PrimaryPart ~= nil
-                                }
-                            }
+                            while obj and obj.Parent do
+                                wait(0.2)
+                            end
                             
-                            table.insert(foundPetModels, petData)
-                            
-                            -- Полный анализ структуры
-                            Logger:log("PET", "🐾 ПОЛНЫЙ АНАЛИЗ СТРУКТУРЫ: " .. obj.Name)
-                            deepAnalyzeStructure(obj, 0, obj.Name)
-                            
-                            -- Отслеживание жизненного цикла и анимации
-                            trackLifecycle(obj)
-                        end
+                            local lifetime = tick() - startTime
+                            addResearchLog("DISCOVERY", string.format("⏱️ %s исчез через %.2f сек", modelName, lifetime))
+                        end)
                     end
                 end
             end
         end
     end)
     
-    Logger:log("CRITICAL", "🔥 МОНИТОРИНГ АКТИВЕН. ОТКРОЙТЕ ЯЙЦО ДЛЯ АНАЛИЗА!")
+    addResearchLog("RESEARCH", "🔍 Глубокое исследование активно. Откройте яйцо для анализа!")
 end
 
--- 🖥️ GUI
-local function createAnalysisGUI()
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "ComprehensiveEggPetAnalyzerGUI"
-    gui.Parent = player:WaitForChild("PlayerGui")
+-- 📊 ФУНКЦИЯ СОЗДАНИЯ СВОДКИ
+local function generateSummary()
+    addResearchLog("RESEARCH", "📊 === СВОДКА ИССЛЕДОВАНИЯ ===")
+    addResearchLog("RESEARCH", "🎯 Найдено источников анимации: " .. #TrackingState.animationSources)
+    addResearchLog("RESEARCH", "📜 Обнаружено скриптов: " .. #TrackingState.foundScripts)
+    addResearchLog("RESEARCH", "⚡ Зафиксировано событий: " .. #TrackingState.detectedEvents)
     
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 450, 0, 200)
-    frame.Position = UDim2.new(0.5, -225, 0.5, -100)
-    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-    frame.BorderSizePixel = 0
-    frame.Parent = gui
+    if TrackingState.beforeSnapshot and TrackingState.afterSnapshot then
+        local differences = compareSnapshots(TrackingState.beforeSnapshot, TrackingState.afterSnapshot)
+        addResearchLog("RESEARCH", "📦 Новых объектов в Workspace: " .. #differences.newWorkspaceObjects)
+        addResearchLog("RESEARCH", "📦 Новых объектов в ReplicatedStorage: " .. #differences.newReplicatedObjects)
+        addResearchLog("RESEARCH", "📜 Новых скриптов: " .. #differences.newScripts)
+    end
     
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = frame
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 50)
-    title.BackgroundTransparency = 1
-    title.Text = "🔥 COMPREHENSIVE EGG PET ANALYZER"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
-    local startButton = Instance.new("TextButton")
-    startButton.Size = UDim2.new(0.8, 0, 0, 40)
-    startButton.Position = UDim2.new(0.1, 0, 0.3, 0)
-    startButton.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
-    startButton.Text = "🚀 ЗАПУСТИТЬ АНАЛИЗ"
-    startButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-    startButton.TextScaled = true
-    startButton.Font = Enum.Font.SourceSansBold
-    startButton.Parent = frame
-    
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 5)
-    buttonCorner.Parent = startButton
-    
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Size = UDim2.new(0.9, 0, 0.4, 0)
-    infoLabel.Position = UDim2.new(0.05, 0, 0.55, 0)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = "Анализирует: EggExplode → Dog/Bunny/Golden Lab\nСтруктура, анимация, жизненный цикл\nОткройте F9 для просмотра логов"
-    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLabel.TextScaled = true
-    infoLabel.Font = Enum.Font.SourceSans
-    infoLabel.Parent = frame
+    addResearchLog("RESEARCH", "📋 === КОНЕЦ СВОДКИ ===")
+end
+
+-- 🖥️ СОЗДАНИЕ GUI И ЗАПУСК
+local function initializeResearchTracker()
+    local startButton, clearButton, summaryButton = createResearchConsole()
     
     startButton.MouseButton1Click:Connect(function()
-        startButton.Text = "⏳ АНАЛИЗ АКТИВЕН..."
-        startButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-        startComprehensiveAnalysis()
+        if not TrackingState.isActive then
+            startButton.Text = "⏳ ИССЛЕДОВАНИЕ АКТИВНО..."
+            startButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+            startDeepResearch()
+        end
     end)
+    
+    clearButton.MouseButton1Click:Connect(function()
+        ConsoleLines = {}
+        TrackingState = {
+            isActive = false,
+            eggExplodeDetected = false,
+            startTime = 0,
+            beforeSnapshot = {},
+            afterSnapshot = {},
+            detectedEvents = {},
+            foundScripts = {},
+            animationSources = {}
+        }
+        if ConsoleTextLabel then
+            ConsoleTextLabel.Text = "🔬 Консоль очищена. Готов к новому исследованию."
+        end
+    end)
+    
+    summaryButton.MouseButton1Click:Connect(function()
+        generateSummary()
+    end)
+    
+    addResearchLog("RESEARCH", "✅ EGG ANIMATION SOURCE TRACKER ГОТОВ!")
+    addResearchLog("RESEARCH", "🔬 Исследует ОТКУДА берется анимация временной модели питомца")
+    addResearchLog("RESEARCH", "📋 Отслеживает события, скрипты, источники анимации")
+    addResearchLog("RESEARCH", "🎯 Нажмите 'НАЧАТЬ ИССЛЕДОВАНИЕ' для запуска")
 end
 
 -- 🚀 ЗАПУСК
-createAnalysisGUI()
-Logger:log("CRITICAL", "🔥 COMPREHENSIVE EGG PET ANIMATION ANALYZER ГОТОВ!")
-Logger:log("CRITICAL", "📋 Основан на анализе 10 диагностических скриптов")
-Logger:log("CRITICAL", "🎯 Нажмите кнопку для начала анализа")
+initializeResearchTracker()
