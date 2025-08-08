@@ -1,13 +1,13 @@
--- MinimalShovelReplacer.lua
--- МИНИМАЛЬНОЕ решение: просто меняем содержимое Shovel на питомца
+-- DirectShovelFix.lua
+-- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
-print("=== MINIMAL SHOVEL REPLACER ===")
+print("=== DIRECT SHOVEL FIX ===")
 
 -- Глобальные переменные
-local savedPetTool = nil
+local petTool = nil
 
 -- Поиск питомца в руках
 local function findPetInHands()
@@ -46,16 +46,19 @@ local function savePet()
     end
     
     print("✅ Найден питомец: " .. pet.Name)
-    savedPetTool = pet
+    
+    -- Сохраняем ссылку на питомца
+    petTool = pet
+    
     print("✅ Питомец сохранен!")
     return true
 end
 
--- МИНИМАЛЬНАЯ ЗАМЕНА (БЕЗ анимации - просто меняем содержимое)
-local function minimalReplace()
-    print("\n🔧 === МИНИМАЛЬНАЯ ЗАМЕНА ===")
+-- ПРЯМАЯ ЗАМЕНА содержимого
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
     
-    if not savedPetTool then
+    if not petTool then
         print("❌ Сначала сохраните питомца!")
         return false
     end
@@ -67,71 +70,150 @@ local function minimalReplace()
     end
     
     print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Минимальная замена содержимого...")
+    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
     
-    -- ШАГ 1: Очищаем содержимое Shovel (кроме Handle)
-    print("🧹 Очищаю содержимое Shovel...")
+    -- Шаг 1: Меняем имя
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 3: Удаляем все содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
     for _, child in pairs(shovel:GetChildren()) do
-        if child.Name ~= "Handle" then
-            child:Destroy()
-            print("   🗑️ Удален:", child.Name)
-        end
+        child:Destroy()
     end
     
     wait(0.1)
     
-    -- ШАГ 2: Копируем содержимое питомца
+    -- Шаг 4: Копируем все содержимое питомца
     print("📋 Копирую содержимое питомца...")
-    for _, child in pairs(savedPetTool:GetChildren()) do
-        if child.Name ~= "Handle" then
-            local copy = child:Clone()
-            copy.Parent = shovel
-            print("   ✅ Скопирован:", child.Name)
-            
-            -- Все части НЕ заякорены
-            if copy:IsA("BasePart") then
-                copy.Anchored = false
-            end
-        end
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
     end
     
-    -- ШАГ 3: Меняем имя
-    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("✅ Имя изменено на:", shovel.Name)
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 В руках должен быть питомец с именем Dragonfly!")
     
-    print("✅ Минимальная замена завершена!")
-    print("🎯 Shovel теперь содержит питомца (БЕЗ анимации)")
     return true
 end
 
--- Создаем МИНИМАЛЬНУЮ GUI
-local function createMinimalGUI()
+-- АЛЬТЕРНАТИВА: Замена через удаление и создание
+local function alternativeReplace()
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Альтернативная замена...")
+    
+    -- Создаем новый Tool на основе питомца
+    local newTool = Instance.new("Tool")
+    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    newTool.RequiresHandle = true
+    newTool.CanBeDropped = true
+    newTool.ManualActivationOnly = false
+    
+    -- ИСПРАВЛЕНО: Сохраняем позицию Shovel Handle ПЕРЕД удалением
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local shovelPosition = nil
+    if shovelHandle then
+        shovelPosition = shovelHandle.CFrame
+        print("📍 Сохранена позиция Shovel Handle")
+    end
+    
+    -- Копируем содержимое питомца
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = newTool
+        
+        -- ИСПРАВЛЕНО: Настраиваем Anchored для правильной работы
+        if copy:IsA("BasePart") then
+            copy.Anchored = false  -- Все части свободны для анимации
+        end
+    end
+    
+    -- ИСПРАВЛЕНО: Устанавливаем правильную позицию Handle ПЕРЕД удалением Shovel
+    local newHandle = newTool:FindFirstChild("Handle")
+    if newHandle and shovelPosition then
+        newHandle.CFrame = shovelPosition
+        print("📍 Установлена позиция нового Handle")
+    end
+    
+    -- Удаляем Shovel
+    shovel:Destroy()
+    
+    wait(0.1)
+    
+    -- ИСПРАВЛЕНО: Добавляем в Backpack сначала, потом в руки
+    local backpack = character:FindFirstChild("Backpack")
+    if not backpack then
+        backpack = Instance.new("Backpack")
+        backpack.Parent = character
+    end
+    
+    -- Сначала в Backpack
+    newTool.Parent = backpack
+    wait(0.1)
+    
+    -- Затем в руки
+    newTool.Parent = character
+    
+    print("✅ Альтернативная замена завершена!")
+    return true
+end
+
+-- Создаем GUI
+local function createDirectFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "MinimalShovelReplacerGUI"
+    screenGui.Name = "DirectShovelFixGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 350, 0, 200)
-    frame.Position = UDim2.new(0.5, -175, 0.5, -100)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    frame.Size = UDim2.new(0, 400, 0, 350)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
     title.BorderSizePixel = 0
-    title.Text = "🔧 MINIMAL REPLACER"
+    title.Text = "🎯 DIRECT SHOVEL FIX"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 50)
+    status.Size = UDim2.new(1, -20, 0, 80)
     status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "1. Питомец в руки → Сохранить\n2. Shovel в руки → Заменить"
+    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
@@ -140,57 +222,110 @@ local function createMinimalGUI()
     
     -- Кнопка сохранения
     local saveBtn = Instance.new("TextButton")
-    saveBtn.Size = UDim2.new(0.45, 0, 0, 40)
-    saveBtn.Position = UDim2.new(0.05, 0, 0, 110)
-    saveBtn.BackgroundColor3 = Color3.new(0, 0.6, 0)
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
     saveBtn.BorderSizePixel = 0
-    saveBtn.Text = "💾 Сохранить"
+    saveBtn.Text = "💾 Сохранить питомца"
     saveBtn.TextColor3 = Color3.new(1, 1, 1)
     saveBtn.TextScaled = true
     saveBtn.Font = Enum.Font.SourceSansBold
     saveBtn.Parent = frame
     
-    -- Кнопка замены
-    local replaceBtn = Instance.new("TextButton")
-    replaceBtn.Size = UDim2.new(0.45, 0, 0, 40)
-    replaceBtn.Position = UDim2.new(0.5, 0, 0, 110)
-    replaceBtn.BackgroundColor3 = Color3.new(0.6, 0, 0)
-    replaceBtn.BorderSizePixel = 0
-    replaceBtn.Text = "🔧 Заменить"
-    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
-    replaceBtn.TextScaled = true
-    replaceBtn.Font = Enum.Font.SourceSansBold
-    replaceBtn.Visible = false
-    replaceBtn.Parent = frame
+    -- Кнопка прямой замены
+    local directBtn = Instance.new("TextButton")
+    directBtn.Size = UDim2.new(1, -20, 0, 50)
+    directBtn.Position = UDim2.new(0, 10, 0, 200)
+    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    directBtn.BorderSizePixel = 0
+    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
+    directBtn.TextColor3 = Color3.new(1, 1, 1)
+    directBtn.TextScaled = true
+    directBtn.Font = Enum.Font.SourceSansBold
+    directBtn.Visible = false
+    directBtn.Parent = frame
+    
+    -- Кнопка альтернативы
+    local altBtn = Instance.new("TextButton")
+    altBtn.Size = UDim2.new(1, -20, 0, 50)
+    altBtn.Position = UDim2.new(0, 10, 0, 260)
+    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    altBtn.BorderSizePixel = 0
+    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.TextColor3 = Color3.new(1, 1, 1)
+    altBtn.TextScaled = true
+    altBtn.Font = Enum.Font.SourceSansBold
+    altBtn.Visible = false
+    altBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 310)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
     
     -- События
     saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
         local success = savePet()
+        
         if success then
-            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel"
+            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel и замените!"
             status.TextColor3 = Color3.new(0, 1, 0)
-            replaceBtn.Visible = true
+            directBtn.Visible = true
+            altBtn.Visible = true
         else
-            status.Text = "❌ Возьмите питомца в руки!"
+            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    replaceBtn.MouseButton1Click:Connect(function()
-        local success = minimalReplace()
+    directBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Прямая замена содержимого..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = directReplace()
+        
         if success then
-            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel → Питомец"
+            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Возьмите Shovel в руки!"
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
+    end)
+    
+    altBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Альтернативная замена..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = alternativeReplace()
+        
+        if success then
+            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка альтернативы!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
     end)
 end
 
 -- Запускаем
-createMinimalGUI()
-print("✅ MinimalShovelReplacer готов!")
-print("🔧 МИНИМАЛЬНОЕ решение БЕЗ анимации")
+createDirectFixGUI()
+print("✅ DirectShovelFix готов!")
+print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
 print("💾 1. Сохранить питомца")
-print("🔧 2. Заменить Shovel")
+print("🔄 2. Заменить Shovel")
