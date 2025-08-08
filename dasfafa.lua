@@ -1,421 +1,570 @@
--- ToolCloneDiagnostic.lua
--- Диагностика проблем с клонированием и добавлением Tool в руки
+-- TempModelDeepAnalyzer.lua
+-- ГЛУБОКИЙ АНАЛИЗАТОР ВРЕМЕННОЙ МОДЕЛИ: Находит источник и анализирует ВСЁ
+-- Определяет: откуда создается, каким скриптом, из какого шаблона, все свойства
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 
-print("=== TOOL CLONE DIAGNOSTIC ===")
+print("🔬 === TEMP MODEL DEEP ANALYZER ===")
+print("🎯 Цель: Найти ИСТОЧНИК временной модели и проанализировать ВСЁ")
+print("=" .. string.rep("=", 60))
 
--- Глобальные переменные
-local scannedTool = nil
-local diagnosticConnection = nil
+-- 📊 ДАННЫЕ ГЛУБОКОГО АНАЛИЗА
+local DeepAnalysisData = {
+    tempModel = nil,
+    sourceModel = nil,
+    creationScript = nil,
+    modelProperties = {},
+    sourceLocation = nil,
+    connectionChain = {},
+    isAnalyzing = false
+}
 
--- Функция поиска питомца в руках
-local function findPetInHands()
-    local character = player.Character
-    if not character then return nil end
-    
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
-            return tool
-        end
-    end
-    return nil
-end
+-- 🖥️ КОНСОЛЬ ГЛУБОКОГО АНАЛИЗА
+local AnalyzerConsole = nil
+local ConsoleLines = {}
+local MaxLines = 100
 
--- Функция поиска Shovel в руках
-local function findShovelInHands()
-    local character = player.Character
-    if not character then return nil end
+-- Создание консоли
+local function createAnalyzerConsole()
+    if AnalyzerConsole then AnalyzerConsole:Destroy() end
     
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            return tool
-        end
-    end
-    return nil
-end
-
--- ГЛУБОКОЕ СКАНИРОВАНИЕ питомца
-local function deepScanPet()
-    print("\n🔍 === ГЛУБОКОЕ СКАНИРОВАНИЕ ПИТОМЦА ===")
-    
-    local pet = findPetInHands()
-    if not pet then
-        print("❌ Питомец в руках не найден!")
-        return false
-    end
-    
-    print("✅ Найден питомец: " .. pet.Name)
-    print("📊 Анализирую структуру...")
-    
-    -- Анализируем структуру питомца
-    local structure = {
-        name = pet.Name,
-        className = pet.ClassName,
-        parent = pet.Parent and pet.Parent.Name or "NIL",
-        children = {},
-        properties = {}
-    }
-    
-    -- Сохраняем важные свойства
-    if pet:IsA("Tool") then
-        structure.properties.RequiresHandle = pet.RequiresHandle
-        structure.properties.CanBeDropped = pet.CanBeDropped
-        structure.properties.ManualActivationOnly = pet.ManualActivationOnly
-        print("🔧 Tool свойства:")
-        print("   RequiresHandle: " .. tostring(pet.RequiresHandle))
-        print("   CanBeDropped: " .. tostring(pet.CanBeDropped))
-        print("   ManualActivationOnly: " .. tostring(pet.ManualActivationOnly))
-    end
-    
-    -- Анализируем детей
-    print("📦 Дети питомца:")
-    for _, child in pairs(pet:GetChildren()) do
-        local childData = {
-            name = child.Name,
-            className = child.ClassName,
-            parent = child.Parent.Name
-        }
-        
-        if child:IsA("BasePart") then
-            childData.size = child.Size
-            childData.cframe = child.CFrame
-            childData.canCollide = child.CanCollide
-            print(string.format("   📦 Part: %s (Size: %.2f,%.2f,%.2f)", 
-                child.Name, child.Size.X, child.Size.Y, child.Size.Z))
-        elseif child:IsA("SpecialMesh") then
-            childData.meshType = child.MeshType
-            childData.scale = child.Scale
-            print(string.format("   🎨 Mesh: %s (Scale: %.2f,%.2f,%.2f)", 
-                child.Name, child.Scale.X, child.Scale.Y, child.Scale.Z))
-        elseif child:IsA("Motor6D") then
-            childData.part0 = child.Part0 and child.Part0.Name or "NIL"
-            childData.part1 = child.Part1 and child.Part1.Name or "NIL"
-            print(string.format("   🔗 Motor6D: %s (%s -> %s)", 
-                child.Name, childData.part0, childData.part1))
-        elseif child:IsA("Script") or child:IsA("LocalScript") then
-            childData.enabled = child.Enabled
-            print(string.format("   📜 Script: %s (Enabled: %s)", 
-                child.Name, tostring(child.Enabled)))
-        else
-            print(string.format("   ❓ Other: %s (%s)", child.Name, child.ClassName))
-        end
-        
-        table.insert(structure.children, childData)
-    end
-    
-    -- Сохраняем структуру
-    scannedTool = structure
-    
-    print("✅ Сканирование завершено!")
-    print(string.format("📊 Итого: %d детей", #structure.children))
-    
-    return true
-end
-
--- СОЗДАНИЕ ТОЧНОГО КЛОНА
-local function createPerfectClone()
-    print("\n🎭 === СОЗДАНИЕ ТОЧНОГО КЛОНА ===")
-    
-    if not scannedTool then
-        print("❌ Сначала отсканируйте питомца!")
-        return nil
-    end
-    
-    local pet = findPetInHands()
-    if not pet then
-        print("❌ Питомец в руках не найден!")
-        return nil
-    end
-    
-    print("🔧 Создаю точный клон...")
-    
-    -- Создаем клон
-    local clone = pet:Clone()
-    clone.Name = "Dragonfly [6.36 KG] [Age 35]"
-    
-    print("✅ Клон создан: " .. clone.Name)
-    print("📊 Проверяю структуру клона...")
-    
-    -- Проверяем структуру клона
-    local cloneChildCount = #clone:GetChildren()
-    local originalChildCount = #pet:GetChildren()
-    
-    print(string.format("📊 Дети: Оригинал=%d, Клон=%d", originalChildCount, cloneChildCount))
-    
-    if cloneChildCount ~= originalChildCount then
-        print("⚠️ ВНИМАНИЕ: Количество детей не совпадает!")
-    end
-    
-    -- Проверяем Handle
-    local handle = clone:FindFirstChild("Handle")
-    if handle then
-        print("✅ Handle найден: " .. handle.Name)
-        print(string.format("   Size: %.2f,%.2f,%.2f", handle.Size.X, handle.Size.Y, handle.Size.Z))
-        print("   CanCollide: " .. tostring(handle.CanCollide))
-    else
-        print("❌ Handle НЕ найден! Создаю...")
-        handle = Instance.new("Part")
-        handle.Name = "Handle"
-        handle.Size = Vector3.new(1, 1, 1)
-        handle.Transparency = 1
-        handle.CanCollide = false
-        handle.Parent = clone
-        print("✅ Handle создан")
-    end
-    
-    return clone
-end
-
--- ДИАГНОСТИЧЕСКАЯ ЗАМЕНА с подробным логированием
-local function diagnosticReplace()
-    print("\n🔬 === ДИАГНОСТИЧЕСКАЯ ЗАМЕНА ===")
-    
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    local character = player.Character
-    if not character then
-        print("❌ Character не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("📍 Character: " .. character.Name)
-    
-    -- Создаем клон
-    local clone = createPerfectClone()
-    if not clone then
-        print("❌ Не удалось создать клон!")
-        return false
-    end
-    
-    print("🔧 Начинаю замену...")
-    
-    -- Шаг 1: Логируем состояние ДО замены
-    print("📊 СОСТОЯНИЕ ДО ЗАМЕНЫ:")
-    local toolsInCharacterBefore = {}
-    for _, obj in pairs(character:GetChildren()) do
-        if obj:IsA("Tool") then
-            table.insert(toolsInCharacterBefore, obj.Name)
-        end
-    end
-    print("   Tools в Character: " .. table.concat(toolsInCharacterBefore, ", "))
-    
-    -- Шаг 2: Удаляем Shovel
-    print("🗑️ Удаляю Shovel...")
-    shovel:Destroy()
-    
-    -- Шаг 3: Пауза
-    wait(0.3)
-    
-    -- Шаг 4: Логируем состояние ПОСЛЕ удаления
-    print("📊 СОСТОЯНИЕ ПОСЛЕ УДАЛЕНИЯ:")
-    local toolsInCharacterAfterDelete = {}
-    for _, obj in pairs(character:GetChildren()) do
-        if obj:IsA("Tool") then
-            table.insert(toolsInCharacterAfterDelete, obj.Name)
-        end
-    end
-    print("   Tools в Character: " .. (table.concat(toolsInCharacterAfterDelete, ", ") ~= "" and table.concat(toolsInCharacterAfterDelete, ", ") or "ПУСТО"))
-    
-    -- Шаг 5: Добавляем клон
-    print("🐉 Добавляю клон в Character...")
-    clone.Parent = character
-    
-    -- Шаг 6: Пауза
-    wait(0.2)
-    
-    -- Шаг 7: Логируем состояние ПОСЛЕ добавления
-    print("📊 СОСТОЯНИЕ ПОСЛЕ ДОБАВЛЕНИЯ:")
-    local toolsInCharacterAfterAdd = {}
-    for _, obj in pairs(character:GetChildren()) do
-        if obj:IsA("Tool") then
-            table.insert(toolsInCharacterAfterAdd, obj.Name)
-            print("   🎮 Tool в руках: " .. obj.Name)
-            print("      Parent: " .. (obj.Parent and obj.Parent.Name or "NIL"))
-            print("      ClassName: " .. obj.ClassName)
-        end
-    end
-    
-    -- Шаг 8: Проверяем Backpack
-    local backpack = character:FindFirstChild("Backpack")
-    if backpack then
-        print("📦 ПРОВЕРКА BACKPACK:")
-        local toolsInBackpack = {}
-        for _, obj in pairs(backpack:GetChildren()) do
-            if obj:IsA("Tool") then
-                table.insert(toolsInBackpack, obj.Name)
-                print("   📦 Tool в Backpack: " .. obj.Name)
-            end
-        end
-        if #toolsInBackpack == 0 then
-            print("   📦 Backpack пуст")
-        end
-    else
-        print("❌ Backpack не найден!")
-    end
-    
-    print("🎯 === ИТОГ ДИАГНОСТИКИ ===")
-    if #toolsInCharacterAfterAdd > 0 then
-        print("✅ УСПЕХ: Клон добавлен в руки!")
-        print("📝 Имя: " .. toolsInCharacterAfterAdd[1])
-    else
-        print("❌ ПРОВАЛ: Клон НЕ появился в руках!")
-        print("🔍 Возможные причины:")
-        print("   1. Клон был удален системой")
-        print("   2. Клон попал в Backpack")
-        print("   3. Проблема с Handle")
-        print("   4. Проблема с Tool свойствами")
-    end
-    
-    return #toolsInCharacterAfterAdd > 0
-end
-
--- Создаем GUI
-local function createDiagnosticGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "ToolCloneDiagnosticGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+    AnalyzerConsole = Instance.new("ScreenGui")
+    AnalyzerConsole.Name = "TempModelDeepAnalyzerConsole"
+    AnalyzerConsole.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 500, 0, 450)
-    frame.Position = UDim2.new(0.5, -250, 0.5, -225)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
-    frame.BorderSizePixel = 0
-    frame.Parent = screenGui
+    frame.Size = UDim2.new(0, 800, 0, 600)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.02, 0.02, 0.1)
+    frame.BorderSizePixel = 3
+    frame.BorderColor3 = Color3.new(0.8, 0.4, 0.1)
+    frame.Parent = AnalyzerConsole
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.Size = UDim2.new(1, 0, 0, 35)
+    title.BackgroundColor3 = Color3.new(0.8, 0.4, 0.1)
     title.BorderSizePixel = 0
-    title.Text = "🔬 TOOL CLONE DIAGNOSTIC"
+    title.Text = "🔬 TEMP MODEL DEEP ANALYZER"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
+    scrollFrame.BackgroundColor3 = Color3.new(0.01, 0.01, 0.05)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 10
+    scrollFrame.Parent = frame
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -10, 1, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = "🔬 Глубокий анализатор готов..."
+    textLabel.TextColor3 = Color3.new(1, 0.9, 0.9)
+    textLabel.TextSize = 11
+    textLabel.Font = Enum.Font.SourceSans
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Parent = scrollFrame
+    
+    return textLabel
+end
+
+-- Функция глубокого логирования
+local function deepLog(category, message, data)
+    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+    local prefixes = {
+        ANALYZER = "🔬", SOURCE = "📦", SCRIPT = "📜", PROPERTY = "🔧",
+        STRUCTURE = "🏗️", CONNECTION = "🔗", FOUND = "🎯", CRITICAL = "🔥",
+        SUCCESS = "✅", ERROR = "❌", INFO = "ℹ️", DEEP = "🕳️"
+    }
+    
+    local logLine = string.format("[%s] %s %s", timestamp, prefixes[category] or "ℹ️", message)
+    
+    if data and next(data) then
+        for key, value in pairs(data) do
+            logLine = logLine .. string.format("\n    %s: %s", key, tostring(value))
+        end
+    end
+    
+    table.insert(ConsoleLines, logLine)
+    
+    if #ConsoleLines > MaxLines then
+        table.remove(ConsoleLines, 1)
+    end
+    
+    -- Обновляем консоль
+    if AnalyzerConsole then
+        local textLabel = AnalyzerConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
+        if textLabel then
+            textLabel.Text = table.concat(ConsoleLines, "\n")
+            local scrollFrame = textLabel.Parent
+            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
+            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
+        end
+    end
+    
+    print(logLine)
+end
+
+-- 🔍 ПОИСК ИСТОЧНИКОВ В REPLICATEDSTORAGE
+local function findPotentialSources()
+    deepLog("SOURCE", "🔍 Поиск потенциальных источников в ReplicatedStorage...")
+    
+    local sources = {}
+    
+    -- Поиск в ReplicatedStorage
+    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("Model") then
+            local name = obj.Name:lower()
+            if name == "dog" or name == "bunny" or name == "golden lab" or 
+               name == "cat" or name == "rabbit" or name == "puppy" or
+               name:find("pet") then
+                
+                sources[obj:GetFullName()] = {
+                    object = obj,
+                    name = obj.Name,
+                    path = obj:GetFullName(),
+                    children = #obj:GetChildren(),
+                    className = obj.ClassName
+                }
+                
+                deepLog("FOUND", "🎯 ПОТЕНЦИАЛЬНЫЙ ИСТОЧНИК НАЙДЕН!", {
+                    Name = obj.Name,
+                    Path = obj:GetFullName(),
+                    Children = #obj:GetChildren()
+                })
+            end
+        end
+    end
+    
+    deepLog("SOURCE", string.format("📊 Найдено %d потенциальных источников", #sources))
+    return sources
+end
+
+-- 🔍 ПОИСК СКРИПТОВ СОЗДАНИЯ
+local function findCreationScripts()
+    deepLog("SCRIPT", "📜 Поиск скриптов создания моделей...")
+    
+    local scripts = {}
+    
+    -- Поиск в workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") then
+            local scriptName = obj.Name:lower()
+            if scriptName:find("pet") or scriptName:find("egg") or scriptName:find("spawn") or 
+               scriptName:find("create") or scriptName:find("model") or scriptName:find("clone") then
+                
+                scripts[obj:GetFullName()] = {
+                    script = obj,
+                    name = obj.Name,
+                    path = obj:GetFullName(),
+                    parent = obj.Parent and obj.Parent.Name or "NIL"
+                }
+                
+                deepLog("SCRIPT", "📜 ПОДОЗРИТЕЛЬНЫЙ СКРИПТ!", {
+                    Name = obj.Name,
+                    Path = obj:GetFullName(),
+                    Parent = obj.Parent and obj.Parent.Name or "NIL"
+                })
+            end
+        end
+    end
+    
+    return scripts
+end
+
+-- 🔬 ГЛУБОКИЙ АНАЛИЗ ВРЕМЕННОЙ МОДЕЛИ
+local function deepAnalyzeTempModel(model)
+    deepLog("ANALYZER", "🔬 ГЛУБОКИЙ АНАЛИЗ ВРЕМЕННОЙ МОДЕЛИ: " .. model.Name)
+    
+    DeepAnalysisData.tempModel = model
+    
+    -- Базовые свойства
+    local properties = {
+        Name = model.Name,
+        ClassName = model.ClassName,
+        Parent = model.Parent and model.Parent.Name or "NIL",
+        Position = model.PrimaryPart and tostring(model.PrimaryPart.Position) or "NIL",
+        PrimaryPart = model.PrimaryPart and model.PrimaryPart.Name or "NIL",
+        Children = #model:GetChildren(),
+        Descendants = #model:GetDescendants()
+    }
+    
+    DeepAnalysisData.modelProperties = properties
+    
+    deepLog("PROPERTY", "📊 Базовые свойства модели:", properties)
+    
+    -- Анализ структуры
+    local structure = {
+        BaseParts = 0,
+        MeshParts = 0,
+        Motor6Ds = 0,
+        Welds = 0,
+        Scripts = 0,
+        Animators = 0,
+        Attachments = 0,
+        Decals = 0
+    }
+    
+    local partDetails = {}
+    local motor6dDetails = {}
+    local scriptDetails = {}
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            structure.BaseParts = structure.BaseParts + 1
+            table.insert(partDetails, {
+                Name = obj.Name,
+                Size = tostring(obj.Size),
+                Material = tostring(obj.Material),
+                Anchored = obj.Anchored
+            })
+        elseif obj:IsA("MeshPart") then
+            structure.MeshParts = structure.MeshParts + 1
+        elseif obj:IsA("Motor6D") then
+            structure.Motor6Ds = structure.Motor6Ds + 1
+            table.insert(motor6dDetails, {
+                Name = obj.Name,
+                Part0 = obj.Part0 and obj.Part0.Name or "NIL",
+                Part1 = obj.Part1 and obj.Part1.Name or "NIL"
+            })
+        elseif obj:IsA("Weld") then
+            structure.Welds = structure.Welds + 1
+        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+            structure.Scripts = structure.Scripts + 1
+            table.insert(scriptDetails, {
+                Name = obj.Name,
+                ClassName = obj.ClassName,
+                Parent = obj.Parent and obj.Parent.Name or "NIL"
+            })
+        elseif obj:IsA("Animator") then
+            structure.Animators = structure.Animators + 1
+        elseif obj:IsA("Attachment") then
+            structure.Attachments = structure.Attachments + 1
+        elseif obj:IsA("Decal") then
+            structure.Decals = structure.Decals + 1
+        end
+    end
+    
+    deepLog("STRUCTURE", "🏗️ Детальная структура модели:", structure)
+    
+    -- Детали частей
+    if #partDetails > 0 then
+        deepLog("DEEP", "🕳️ ДЕТАЛИ ЧАСТЕЙ:")
+        for i, part in ipairs(partDetails) do
+            deepLog("DEEP", string.format("  Часть %d: %s", i, part.Name), part)
+        end
+    end
+    
+    -- Детали Motor6D
+    if #motor6dDetails > 0 then
+        deepLog("DEEP", "🕳️ ДЕТАЛИ MOTOR6D:")
+        for i, motor in ipairs(motor6dDetails) do
+            deepLog("DEEP", string.format("  Motor6D %d: %s", i, motor.Name), motor)
+        end
+    end
+    
+    -- Детали скриптов
+    if #scriptDetails > 0 then
+        deepLog("DEEP", "🕳️ СКРИПТЫ В МОДЕЛИ:")
+        for i, script in ipairs(scriptDetails) do
+            deepLog("DEEP", string.format("  Скрипт %d: %s", i, script.Name), script)
+        end
+    end
+end
+
+-- 🔗 ПОИСК СВЯЗИ С ИСТОЧНИКОМ
+local function findSourceConnection(tempModel, sources)
+    deepLog("CONNECTION", "🔗 Поиск связи с источником...")
+    
+    local bestMatch = nil
+    local bestScore = 0
+    
+    for sourcePath, sourceData in pairs(sources) do
+        local score = 0
+        
+        -- Совпадение имени
+        if sourceData.name:lower() == tempModel.Name:lower() then
+            score = score + 100
+        elseif sourceData.name:lower():find(tempModel.Name:lower()) then
+            score = score + 50
+        end
+        
+        -- Совпадение количества детей
+        local tempChildren = #tempModel:GetChildren()
+        local sourceChildren = sourceData.children
+        if tempChildren == sourceChildren then
+            score = score + 30
+        elseif math.abs(tempChildren - sourceChildren) <= 2 then
+            score = score + 10
+        end
+        
+        -- Совпадение структуры
+        local tempStructure = {}
+        for _, obj in pairs(tempModel:GetDescendants()) do
+            tempStructure[obj.ClassName] = (tempStructure[obj.ClassName] or 0) + 1
+        end
+        
+        local sourceStructure = {}
+        for _, obj in pairs(sourceData.object:GetDescendants()) do
+            sourceStructure[obj.ClassName] = (sourceStructure[obj.ClassName] or 0) + 1
+        end
+        
+        local structureMatch = 0
+        for className, count in pairs(tempStructure) do
+            if sourceStructure[className] and sourceStructure[className] == count then
+                structureMatch = structureMatch + 1
+            end
+        end
+        
+        score = score + structureMatch * 5
+        
+        deepLog("CONNECTION", string.format("🔗 Анализ источника: %s (Score: %d)", sourceData.name, score), {
+            NameMatch = sourceData.name:lower() == tempModel.Name:lower(),
+            ChildrenMatch = tempChildren == sourceChildren,
+            StructureMatch = structureMatch
+        })
+        
+        if score > bestScore then
+            bestScore = score
+            bestMatch = sourceData
+        end
+    end
+    
+    if bestMatch then
+        DeepAnalysisData.sourceModel = bestMatch.object
+        DeepAnalysisData.sourceLocation = bestMatch.path
+        
+        deepLog("SUCCESS", "✅ ИСТОЧНИК НАЙДЕН!", {
+            Source = bestMatch.name,
+            Path = bestMatch.path,
+            Score = bestScore,
+            Confidence = bestScore > 100 and "ВЫСОКАЯ" or (bestScore > 50 and "СРЕДНЯЯ" or "НИЗКАЯ")
+        })
+        
+        return bestMatch
+    else
+        deepLog("ERROR", "❌ Источник не найден или совпадение слишком слабое")
+        return nil
+    end
+end
+
+-- 📊 СРАВНИТЕЛЬНЫЙ АНАЛИЗ
+local function compareWithSource(tempModel, sourceModel)
+    if not sourceModel then
+        deepLog("ERROR", "❌ Нет источника для сравнения")
+        return
+    end
+    
+    deepLog("ANALYZER", "📊 СРАВНИТЕЛЬНЫЙ АНАЛИЗ: Временная модель VS Источник")
+    
+    -- Сравнение базовых свойств
+    local comparison = {
+        Name = {
+            Temp = tempModel.Name,
+            Source = sourceModel.Name,
+            Match = tempModel.Name == sourceModel.Name
+        },
+        Children = {
+            Temp = #tempModel:GetChildren(),
+            Source = #sourceModel:GetChildren(),
+            Match = #tempModel:GetChildren() == #sourceModel:GetChildren()
+        },
+        Descendants = {
+            Temp = #tempModel:GetDescendants(),
+            Source = #sourceModel:GetDescendants(),
+            Match = #tempModel:GetDescendants() == #sourceModel:GetDescendants()
+        }
+    }
+    
+    deepLog("ANALYZER", "📊 Сравнение свойств:", comparison)
+    
+    -- Сравнение структуры
+    local tempStructure = {}
+    local sourceStructure = {}
+    
+    for _, obj in pairs(tempModel:GetDescendants()) do
+        tempStructure[obj.ClassName] = (tempStructure[obj.ClassName] or 0) + 1
+    end
+    
+    for _, obj in pairs(sourceModel:GetDescendants()) do
+        sourceStructure[obj.ClassName] = (sourceStructure[obj.ClassName] or 0) + 1
+    end
+    
+    deepLog("ANALYZER", "📊 Структура временной модели:", tempStructure)
+    deepLog("ANALYZER", "📊 Структура источника:", sourceStructure)
+    
+    -- Различия
+    local differences = {}
+    for className, count in pairs(tempStructure) do
+        if not sourceStructure[className] then
+            differences[className] = string.format("Только в временной: %d", count)
+        elseif sourceStructure[className] ~= count then
+            differences[className] = string.format("Временная: %d, Источник: %d", count, sourceStructure[className])
+        end
+    end
+    
+    for className, count in pairs(sourceStructure) do
+        if not tempStructure[className] then
+            differences[className] = string.format("Только в источнике: %d", count)
+        end
+    end
+    
+    if next(differences) then
+        deepLog("CRITICAL", "🔥 РАЗЛИЧИЯ ОБНАРУЖЕНЫ:", differences)
+    else
+        deepLog("SUCCESS", "✅ СТРУКТУРЫ ИДЕНТИЧНЫ!")
+    end
+end
+
+-- 📋 ГЕНЕРАЦИЯ ИТОГОВОГО ОТЧЕТА
+local function generateDeepReport()
+    deepLog("CRITICAL", "📋 === ИТОГОВЫЙ ГЛУБОКИЙ ОТЧЕТ ===")
+    
+    if DeepAnalysisData.tempModel then
+        deepLog("SUCCESS", "✅ ВРЕМЕННАЯ МОДЕЛЬ ПРОАНАЛИЗИРОВАНА: " .. DeepAnalysisData.tempModel.Name)
+    end
+    
+    if DeepAnalysisData.sourceModel then
+        deepLog("SUCCESS", "✅ ИСТОЧНИК НАЙДЕН: " .. DeepAnalysisData.sourceLocation)
+    else
+        deepLog("ERROR", "❌ ИСТОЧНИК НЕ НАЙДЕН")
+    end
+    
+    if DeepAnalysisData.modelProperties then
+        deepLog("INFO", "📊 Свойства модели записаны")
+    end
+    
+    deepLog("CRITICAL", "🔬 ГЛУБОКИЙ АНАЛИЗ ЗАВЕРШЕН!")
+end
+
+-- 🚀 ГЛАВНАЯ ФУНКЦИЯ ГЛУБОКОГО АНАЛИЗА
+local function startDeepAnalysis()
+    deepLog("ANALYZER", "🚀 ЗАПУСК ГЛУБОКОГО АНАЛИЗА")
+    deepLog("ANALYZER", "🎯 Цель: Найти источник временной модели и проанализировать всё")
+    
+    DeepAnalysisData.isAnalyzing = true
+    
+    -- Фаза 1: Поиск источников
+    local sources = findPotentialSources()
+    
+    -- Фаза 2: Поиск скриптов
+    local scripts = findCreationScripts()
+    
+    -- Фаза 3: Мониторинг временной модели
+    deepLog("ANALYZER", "🔍 Мониторинг появления временной модели...")
+    
+    local modelConnection = Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Model") then
+            local name = obj.Name:lower()
+            if name == "dog" or name == "bunny" or name == "golden lab" or 
+               name == "cat" or name == "rabbit" or name == "puppy" then
+                
+                deepLog("FOUND", "🎯 ВРЕМЕННАЯ МОДЕЛЬ ОБНАРУЖЕНА: " .. obj.Name)
+                
+                -- Глубокий анализ
+                deepAnalyzeTempModel(obj)
+                
+                -- Поиск связи с источником
+                local sourceMatch = findSourceConnection(obj, sources)
+                
+                -- Сравнительный анализ
+                if sourceMatch then
+                    compareWithSource(obj, sourceMatch.object)
+                end
+                
+                -- Генерация отчета
+                generateDeepReport()
+                
+                -- Отключаем мониторинг
+                modelConnection:Disconnect()
+                DeepAnalysisData.isAnalyzing = false
+            end
+        end
+    end)
+    
+    deepLog("ANALYZER", "✅ Глубокий анализ активен!")
+    deepLog("ANALYZER", "🥚 ОТКРОЙТЕ ЯЙЦО ДЛЯ АНАЛИЗА!")
+    
+    -- Автоостановка через 2 минуты
+    spawn(function()
+        wait(120)
+        if modelConnection then
+            modelConnection:Disconnect()
+        end
+        deepLog("ANALYZER", "⏰ Анализ завершен по таймауту")
+    end)
+end
+
+-- Создаем GUI
+local function createAnalyzerGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "TempModelDeepAnalyzerGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 350, 0, 120)
+    frame.Position = UDim2.new(1, -370, 0, 140)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.05, 0.02)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundColor3 = Color3.new(0.8, 0.4, 0.1)
+    title.BorderSizePixel = 0
+    title.Text = "🔬 DEEP ANALYZER"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(1, -20, 0, 40)
+    startBtn.Position = UDim2.new(0, 10, 0, 40)
+    startBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0.1)
+    startBtn.BorderSizePixel = 0
+    startBtn.Text = "🚀 ГЛУБОКИЙ АНАЛИЗ"
+    startBtn.TextColor3 = Color3.new(1, 1, 1)
+    startBtn.TextScaled = true
+    startBtn.Font = Enum.Font.SourceSansBold
+    startBtn.Parent = frame
+    
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 100)
-    status.Position = UDim2.new(0, 10, 0, 50)
+    status.Size = UDim2.new(1, -20, 0, 30)
+    status.Position = UDim2.new(0, 10, 0, 90)
     status.BackgroundTransparency = 1
-    status.Text = "ДИАГНОСТИКА ПРОБЛЕМ С КЛОНИРОВАНИЕМ:\n1. Возьмите питомца в руки\n2. Глубоко отсканируйте структуру\n3. Возьмите Shovel\n4. Выполните диагностическую замену"
+    status.Text = "Готов к глубокому анализу"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
-    status.TextWrapped = true
     status.Parent = frame
     
-    -- Кнопка сканирования
-    local scanBtn = Instance.new("TextButton")
-    scanBtn.Size = UDim2.new(1, -20, 0, 50)
-    scanBtn.Position = UDim2.new(0, 10, 0, 160)
-    scanBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
-    scanBtn.BorderSizePixel = 0
-    scanBtn.Text = "🔍 Глубокое сканирование"
-    scanBtn.TextColor3 = Color3.new(1, 1, 1)
-    scanBtn.TextScaled = true
-    scanBtn.Font = Enum.Font.SourceSansBold
-    scanBtn.Parent = frame
-    
-    -- Кнопка создания клона
-    local cloneBtn = Instance.new("TextButton")
-    cloneBtn.Size = UDim2.new(1, -20, 0, 50)
-    cloneBtn.Position = UDim2.new(0, 10, 0, 220)
-    cloneBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    cloneBtn.BorderSizePixel = 0
-    cloneBtn.Text = "🎭 Создать точный клон"
-    cloneBtn.TextColor3 = Color3.new(1, 1, 1)
-    cloneBtn.TextScaled = true
-    cloneBtn.Font = Enum.Font.SourceSansBold
-    cloneBtn.Visible = false
-    cloneBtn.Parent = frame
-    
-    -- Кнопка диагностической замены
-    local replaceBtn = Instance.new("TextButton")
-    replaceBtn.Size = UDim2.new(1, -20, 0, 50)
-    replaceBtn.Position = UDim2.new(0, 10, 0, 280)
-    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0, 0.4)
-    replaceBtn.BorderSizePixel = 0
-    replaceBtn.Text = "🔬 ДИАГНОСТИЧЕСКАЯ ЗАМЕНА"
-    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
-    replaceBtn.TextScaled = true
-    replaceBtn.Font = Enum.Font.SourceSansBold
-    replaceBtn.Visible = false
-    replaceBtn.Parent = frame
-    
-    -- Кнопка закрытия
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(1, -20, 0, 40)
-    closeBtn.Position = UDim2.new(0, 10, 0, 340)
-    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
-    closeBtn.BorderSizePixel = 0
-    closeBtn.Text = "❌ Закрыть"
-    closeBtn.TextColor3 = Color3.new(1, 1, 1)
-    closeBtn.TextScaled = true
-    closeBtn.Font = Enum.Font.SourceSansBold
-    closeBtn.Parent = frame
-    
-    -- События
-    scanBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔍 Сканирую питомца...\nАнализирую структуру и свойства..."
-        status.TextColor3 = Color3.new(1, 1, 0)
+    startBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔬 Анализ активен!"
+        status.TextColor3 = Color3.new(1, 0.4, 0.1)
+        startBtn.Text = "✅ АНАЛИЗ АКТИВЕН"
+        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
+        startBtn.Active = false
         
-        local success = deepScanPet()
-        
-        if success then
-            status.Text = "✅ Сканирование завершено!\nСтруктура питомца сохранена.\nТеперь возьмите Shovel."
-            status.TextColor3 = Color3.new(0, 1, 0)
-            cloneBtn.Visible = true
-            replaceBtn.Visible = true
-        else
-            status.Text = "❌ Ошибка сканирования!\nВозьмите питомца в руки."
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    cloneBtn.MouseButton1Click:Connect(function()
-        status.Text = "🎭 Создаю точный клон...\nПроверяю структуру..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local clone = createPerfectClone()
-        
-        if clone then
-            status.Text = "✅ Точный клон создан!\nПроверьте консоль для деталей."
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка создания клона!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    replaceBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔬 Диагностическая замена...\nПодробное логирование..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = diagnosticReplace()
-        
-        if success then
-            status.Text = "✅ ДИАГНОСТИКА ЗАВЕРШЕНА!\nКлон в руках! Проверьте консоль."
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ ДИАГНОСТИКА: Клон НЕ появился!\nПроверьте консоль для деталей."
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    closeBtn.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
+        startDeepAnalysis()
     end)
 end
 
 -- Запускаем
-createDiagnosticGUI()
-print("✅ ToolCloneDiagnostic готов!")
-print("🔬 ЦЕЛЬ: Выяснить, почему клон питомца не появляется в руках")
-print("📊 Будет подробное логирование каждого шага")
+local consoleTextLabel = createAnalyzerConsole()
+createAnalyzerGUI()
+
+deepLog("ANALYZER", "✅ TempModelDeepAnalyzer готов!")
+deepLog("ANALYZER", "🔬 Глубокий анализ источника временной модели")
+deepLog("ANALYZER", "🚀 Нажмите 'ГЛУБОКИЙ АНАЛИЗ' и откройте яйцо!")
