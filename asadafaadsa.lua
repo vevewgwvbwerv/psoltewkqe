@@ -1,476 +1,584 @@
--- AdvancedTextReplacer.lua
--- Замена текста + анализ и замена полной структуры Tool в руке
+-- CompleteEggToHandAnalyzer.lua
+-- КОМПЛЕКСНЫЙ АНАЛИЗАТОР: Яйцо → workspace.visuals → Handle
+-- Анализирует ПОЛНЫЙ путь появления питомца от взрыва яйца до руки игрока
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
+
 local player = Players.LocalPlayer
 
-print("=== ADVANCED TEXT REPLACER ===")
+print("🔬 === COMPLETE EGG TO HAND ANALYZER ===")
+print("🎯 Анализ: Яйцо → workspace.visuals → Handle")
+print("=" .. string.rep("=", 60))
 
--- Глобальные переменные
-local currentHandTool = nil
-local analyzedToolData = nil
-local diagnosticConnection = nil
-
--- Данные для анализа
-local animationData = {
-    animators = {},
-    animationTracks = {},
-    scripts = {},
-    motor6ds = {},
-    cframes = {},
-    lastUpdate = 0
+-- 📊 КОНФИГУРАЦИЯ
+local CONFIG = {
+    SEARCH_RADIUS = 250,
+    MONITOR_DURATION = 60,
+    CHECK_INTERVAL = 0.05,
+    DEEP_ANALYSIS = true,
+    TRACK_ALL_CHANGES = true
 }
 
--- Функция поиска питомца в руке
-local function findHandPetTool()
-    local character = player.Character
-    if not character then return nil end
+-- 🎯 КЛЮЧЕВЫЕ СЛОВА ПИТОМЦЕВ
+local PET_KEYWORDS = {
+    "dog", "bunny", "golden lab", "dragonfly", "cat", "rabbit", "pet", "animal"
+}
+
+-- 📋 СИСТЕМА ОТСЛЕЖИВАНИЯ
+local TrackingData = {
+    -- Фаза 1: Взрыв яйца
+    eggExplosion = {
+        detected = false,
+        location = nil,
+        timestamp = 0
+    },
     
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
-            return tool
-        end
-    end
-    return nil
+    -- Фаза 2: Появление в workspace.visuals
+    visualsAppearance = {
+        detected = false,
+        model = nil,
+        timestamp = 0,
+        structure = {}
+    },
+    
+    -- Фаза 3: Появление в руке/handle
+    handAppearance = {
+        detected = false,
+        tool = nil,
+        timestamp = 0,
+        structure = {}
+    },
+    
+    -- Общие данные
+    timeline = {},
+    allModels = {},
+    allTools = {}
+}
+
+-- 🖥️ КОНСОЛЬ ЛОГИРОВАНИЯ
+local ConsoleGUI = nil
+local ConsoleLines = {}
+local MaxLines = 50
+
+-- Создание консоли
+local function createAnalysisConsole()
+    if ConsoleGUI then ConsoleGUI:Destroy() end
+    
+    ConsoleGUI = Instance.new("ScreenGui")
+    ConsoleGUI.Name = "CompleteEggAnalyzerConsole"
+    ConsoleGUI.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 600, 0, 400)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.15)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.new(0.2, 0.4, 0.8)
+    frame.Parent = ConsoleGUI
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundColor3 = Color3.new(0.1, 0.2, 0.6)
+    title.BorderSizePixel = 0
+    title.Text = "🔬 COMPLETE EGG TO HAND ANALYZER"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -40)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 35)
+    scrollFrame.BackgroundColor3 = Color3.new(0.02, 0.02, 0.08)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 8
+    scrollFrame.Parent = frame
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -10, 1, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = "🔬 Анализатор готов. Откройте яйцо для начала анализа..."
+    textLabel.TextColor3 = Color3.new(0.9, 0.9, 1)
+    textLabel.TextSize = 12
+    textLabel.Font = Enum.Font.SourceSans
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Parent = scrollFrame
+    
+    return textLabel
 end
 
--- Функция поиска и замены текста в Hotbar
-local function replaceTextInHotbar(slotNumber, newText)
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
+-- Функция логирования в консоль
+local function logToConsole(level, message, data)
+    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+    local prefixes = {
+        EGG = "🥚", VISUALS = "🌍", HANDLE = "🎮", STRUCTURE = "🏗️",
+        TIMELINE = "⏱️", CRITICAL = "🔥", FOUND = "🎯", ERROR = "❌"
+    }
     
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then return false end
+    local logLine = string.format("[%s] %s %s", timestamp, prefixes[level] or "ℹ️", message)
     
-    local backpack = backpackGui:FindFirstChild("Backpack")
-    if not backpack then return false end
+    if data and next(data) then
+        for key, value in pairs(data) do
+            logLine = logLine .. string.format("\n    %s: %s", key, tostring(value))
+        end
+    end
     
-    local hotbar = backpack:FindFirstChild("Hotbar")
-    if not hotbar then return false end
+    table.insert(ConsoleLines, logLine)
     
-    local targetSlot = hotbar:FindFirstChild(tostring(slotNumber))
-    if not targetSlot then return false end
+    -- Ограничиваем количество строк
+    if #ConsoleLines > MaxLines then
+        table.remove(ConsoleLines, 1)
+    end
     
-    -- Ищем TextLabel в слоте
-    for _, desc in pairs(targetSlot:GetDescendants()) do
-        if desc:IsA("TextLabel") and desc.Text ~= "" then
-            local oldText = desc.Text
-            desc.Text = newText
-            print("✅ Текст заменен: " .. oldText .. " → " .. newText)
-            return true
+    -- Обновляем консоль
+    if ConsoleGUI then
+        local textLabel = ConsoleGUI:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
+        if textLabel then
+            textLabel.Text = table.concat(ConsoleLines, "\n")
+        end
+    end
+    
+    -- Также в обычную консоль
+    print(logLine)
+end
+
+-- 🥚 ФАЗА 1: Детекция взрыва яйца
+local function detectEggExplosion()
+    local playerPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not playerPos then return false end
+    
+    -- Поиск EggExplode в workspace
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj.Name == "EggExplode" and obj:IsA("Model") then
+            local distance = (obj:GetModelCFrame().Position - playerPos.Position).Magnitude
+            if distance <= CONFIG.SEARCH_RADIUS then
+                TrackingData.eggExplosion.detected = true
+                TrackingData.eggExplosion.location = obj:GetModelCFrame().Position
+                TrackingData.eggExplosion.timestamp = tick()
+                
+                logToConsole("EGG", "💥 ВЗРЫВ ЯЙЦА ОБНАРУЖЕН!", {
+                    Position = tostring(obj:GetModelCFrame().Position),
+                    Distance = string.format("%.1f", distance),
+                    Children = #obj:GetChildren()
+                })
+                
+                -- Добавляем в timeline
+                table.insert(TrackingData.timeline, {
+                    phase = "EGG_EXPLOSION",
+                    timestamp = tick(),
+                    data = obj
+                })
+                
+                return true, obj
+            end
         end
     end
     
     return false
 end
 
--- Функция глубокого копирования Tool
-local function deepCopyTool(originalTool)
-    if not originalTool then return nil end
+-- 🌍 ФАЗА 2: Мониторинг workspace.visuals
+local function monitorWorkspaceVisuals()
+    local visuals = Workspace:FindFirstChild("visuals")
+    if not visuals then
+        logToConsole("ERROR", "❌ workspace.visuals не найден!")
+        return
+    end
     
-    print("🔄 Создаю глубокую копию Tool: " .. originalTool.Name)
+    logToConsole("VISUALS", "🌍 Мониторинг workspace.visuals активен")
     
-    local function copyInstance(instance)
-        local copy = Instance.new(instance.ClassName)
-        
-        -- Копируем основные свойства
-        local basicProperties = {"Name", "Archivable"}
-        for _, property in pairs(basicProperties) do
-            local success, value = pcall(function()
-                return instance[property]
-            end)
-            if success then
-                pcall(function()
-                    copy[property] = value
-                end)
+    -- Снимок ДО взрыва
+    local beforeModels = {}
+    for _, child in pairs(visuals:GetChildren()) do
+        if child:IsA("Model") then
+            beforeModels[child.Name] = child
+        end
+    end
+    
+    -- Мониторинг изменений
+    local connection
+    connection = visuals.ChildAdded:Connect(function(child)
+        if child:IsA("Model") then
+            -- Проверяем является ли это питомцем
+            local isPet = false
+            local petName = child.Name:lower()
+            for _, keyword in ipairs(PET_KEYWORDS) do
+                if petName:find(keyword) then
+                    isPet = true
+                    break
+                end
+            end
+            
+            if isPet then
+                TrackingData.visualsAppearance.detected = true
+                TrackingData.visualsAppearance.model = child
+                TrackingData.visualsAppearance.timestamp = tick()
+                
+                logToConsole("VISUALS", "🎯 ПИТОМЕЦ ПОЯВИЛСЯ В VISUALS!", {
+                    Name = child.Name,
+                    ClassName = child.ClassName,
+                    Children = #child:GetChildren(),
+                    Position = tostring(child:GetModelCFrame().Position)
+                })
+                
+                -- Глубокий анализ структуры
+                analyzeModelStructure(child, "VISUALS")
+                
+                -- Добавляем в timeline
+                table.insert(TrackingData.timeline, {
+                    phase = "VISUALS_APPEARANCE",
+                    timestamp = tick(),
+                    data = child
+                })
+                
+                -- Отслеживаем жизненный цикл
+                trackModelLifecycle(child, "VISUALS")
             end
         end
-        
-        -- Специальные свойства для Tool
-        if instance:IsA("Tool") then
-            pcall(function() copy.RequiresHandle = instance.RequiresHandle end)
-            pcall(function() copy.ManualActivationOnly = instance.ManualActivationOnly end)
-            pcall(function() copy.CanBeDropped = instance.CanBeDropped end)
-            pcall(function() copy.Enabled = instance.Enabled end)
-            pcall(function() copy.ToolTip = instance.ToolTip end)
-            print("🔧 Tool свойства скопированы")
-            
-        -- Специальные свойства для BasePart
-        elseif instance:IsA("BasePart") then
-            pcall(function() copy.Size = instance.Size end)
-            pcall(function() copy.CFrame = instance.CFrame end)
-            pcall(function() copy.Material = instance.Material end)
-            pcall(function() copy.BrickColor = instance.BrickColor end)
-            pcall(function() copy.Color = instance.Color end)
-            pcall(function() copy.Transparency = instance.Transparency end)
-            pcall(function() copy.Reflectance = instance.Reflectance end)
-            pcall(function() copy.CanCollide = instance.CanCollide end)
-            pcall(function() copy.Anchored = instance.Anchored end)
-            pcall(function() copy.Shape = instance.Shape end)
-            pcall(function() copy.TopSurface = instance.TopSurface end)
-            pcall(function() copy.BottomSurface = instance.BottomSurface end)
-            print("🧱 Part свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для SpecialMesh
-        elseif instance:IsA("SpecialMesh") then
-            pcall(function() copy.MeshType = instance.MeshType end)
-            pcall(function() copy.MeshId = instance.MeshId end)
-            pcall(function() copy.TextureId = instance.TextureId end)
-            pcall(function() copy.Scale = instance.Scale end)
-            pcall(function() copy.Offset = instance.Offset end)
-            pcall(function() copy.VertexColor = instance.VertexColor end)
-            print("🎨 Mesh свойства скопированы")
-            
-        -- Специальные свойства для Motor6D
-        elseif instance:IsA("Motor6D") then
-            pcall(function() copy.C0 = instance.C0 end)
-            pcall(function() copy.C1 = instance.C1 end)
-            -- Part0 и Part1 установим после создания всех частей
-            print("⚙️ Motor6D свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для Weld
-        elseif instance:IsA("Weld") then
-            pcall(function() copy.C0 = instance.C0 end)
-            pcall(function() copy.C1 = instance.C1 end)
-            print("🔗 Weld свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для LocalScript/Script
-        elseif instance:IsA("LocalScript") or instance:IsA("Script") then
-            pcall(function() copy.Enabled = instance.Enabled end)
-            pcall(function() copy.Source = instance.Source end)
-            print("📜 Script свойства скопированы: " .. instance.Name)
-        end
-        
-        return copy
+    end)
+    
+    return connection
+end
+
+-- 🎮 ФАЗА 3: Мониторинг появления в руке/handle
+local function monitorHandAppearance()
+    logToConsole("HANDLE", "🎮 Мониторинг появления в руке активен")
+    
+    local character = player.Character
+    if not character then
+        logToConsole("ERROR", "❌ Character не найден!")
+        return
     end
     
-    -- Создаем копию с детьми
-    local toolCopy = copyInstance(originalTool)
+    -- Мониторинг добавления Tool в character
+    local connection
+    connection = character.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            -- Проверяем является ли это питомцем
+            local isPet = false
+            local toolName = child.Name:lower()
+            for _, keyword in ipairs(PET_KEYWORDS) do
+                if toolName:find(keyword) then
+                    isPet = true
+                    break
+                end
+            end
+            
+            if isPet then
+                TrackingData.handAppearance.detected = true
+                TrackingData.handAppearance.tool = child
+                TrackingData.handAppearance.timestamp = tick()
+                
+                logToConsole("HANDLE", "🎯 ПИТОМЕЦ ПОЯВИЛСЯ В РУКЕ!", {
+                    Name = child.Name,
+                    ClassName = child.ClassName,
+                    Children = #child:GetChildren(),
+                    Handle = child:FindFirstChild("Handle") and "✅" or "❌"
+                })
+                
+                -- Глубокий анализ структуры Tool
+                analyzeModelStructure(child, "HANDLE")
+                
+                -- Добавляем в timeline
+                table.insert(TrackingData.timeline, {
+                    phase = "HANDLE_APPEARANCE",
+                    timestamp = tick(),
+                    data = child
+                })
+                
+                -- Отслеживаем жизненный цикл
+                trackModelLifecycle(child, "HANDLE")
+            end
+        end
+    end)
     
-    -- Рекурсивно копируем всех детей
-    local function copyChildren(original, copy)
-        for _, child in pairs(original:GetChildren()) do
-            local childCopy = copyInstance(child)
-            childCopy.Parent = copy
-            copyChildren(child, childCopy) -- Рекурсивно копируем детей детей
+    return connection
+end
+
+-- 🏗️ АНАЛИЗ СТРУКТУРЫ МОДЕЛИ
+local function analyzeModelStructure(model, phase)
+    logToConsole("STRUCTURE", string.format("🏗️ АНАЛИЗ СТРУКТУРЫ [%s]", phase), {
+        Name = model.Name,
+        ClassName = model.ClassName,
+        Parent = model.Parent and model.Parent.Name or "NIL"
+    })
+    
+    -- Анализ содержимого
+    local structure = {
+        baseParts = 0,
+        meshParts = 0,
+        specialMeshes = 0,
+        motor6ds = 0,
+        welds = 0,
+        attachments = 0,
+        scripts = 0,
+        animators = 0
+    }
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            structure.baseParts = structure.baseParts + 1
+        elseif obj:IsA("MeshPart") then
+            structure.meshParts = structure.meshParts + 1
+        elseif obj:IsA("SpecialMesh") then
+            structure.specialMeshes = structure.specialMeshes + 1
+        elseif obj:IsA("Motor6D") then
+            structure.motor6ds = structure.motor6ds + 1
+        elseif obj:IsA("Weld") then
+            structure.welds = structure.welds + 1
+        elseif obj:IsA("Attachment") then
+            structure.attachments = structure.attachments + 1
+        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+            structure.scripts = structure.scripts + 1
+            logToConsole("STRUCTURE", "📜 Найден скрипт: " .. obj.Name)
+        elseif obj:IsA("Animator") then
+            structure.animators = structure.animators + 1
         end
     end
     
-    copyChildren(originalTool, toolCopy)
+    logToConsole("STRUCTURE", string.format("📊 Структура [%s]:", phase), structure)
     
-    -- Восстанавливаем связи Motor6D и Weld
-    local function restoreConnections(original, copy)
-        for _, originalChild in pairs(original:GetDescendants()) do
-            if originalChild:IsA("Motor6D") or originalChild:IsA("Weld") then
-                -- Находим соответствующую копию
-                local copyChild = copy:FindFirstChild(originalChild.Name, true)
-                if copyChild and (copyChild:IsA("Motor6D") or copyChild:IsA("Weld")) then
-                    -- Восстанавливаем Part0 и Part1 только для BasePart
-                    if originalChild.Part0 and originalChild.Part0:IsA("BasePart") then
-                        local part0Copy = copy:FindFirstChild(originalChild.Part0.Name, true)
-                        if part0Copy and part0Copy:IsA("BasePart") then
-                            pcall(function()
-                                copyChild.Part0 = part0Copy
-                                print("🔗 Part0 восстановлен: " .. originalChild.Name .. " -> " .. part0Copy.Name)
-                            end)
-                        else
-                            print("⚠️ Part0 не найден или не BasePart: " .. originalChild.Name)
-                        end
-                    end
-                    if originalChild.Part1 and originalChild.Part1:IsA("BasePart") then
-                        local part1Copy = copy:FindFirstChild(originalChild.Part1.Name, true)
-                        if part1Copy and part1Copy:IsA("BasePart") then
-                            pcall(function()
-                                copyChild.Part1 = part1Copy
-                                print("🔗 Part1 восстановлен: " .. originalChild.Name .. " -> " .. part1Copy.Name)
-                            end)
-                        else
-                            print("⚠️ Part1 не найден или не BasePart: " .. originalChild.Name)
-                        end
-                    end
-                else
-                    print("⚠️ Копия Motor6D/Weld не найдена: " .. originalChild.Name)
+    -- Сохраняем структуру
+    if phase == "VISUALS" then
+        TrackingData.visualsAppearance.structure = structure
+    elseif phase == "HANDLE" then
+        TrackingData.handAppearance.structure = structure
+    end
+end
+
+-- ⏱️ ОТСЛЕЖИВАНИЕ ЖИЗНЕННОГО ЦИКЛА
+local function trackModelLifecycle(model, phase)
+    local startTime = tick()
+    local modelName = model.Name
+    
+    logToConsole("TIMELINE", string.format("⏱️ НАЧАЛО ОТСЛЕЖИВАНИЯ [%s]: %s", phase, modelName))
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not model or not model.Parent then
+            connection:Disconnect()
+            local lifetime = tick() - startTime
+            
+            logToConsole("TIMELINE", string.format("💀 МОДЕЛЬ УДАЛЕНА [%s]: %s", phase, modelName), {
+                Lifetime = string.format("%.2f сек", lifetime)
+            })
+            
+            return
+        end
+        
+        -- Проверяем изменения каждые 2 секунды
+        if math.floor((tick() - startTime) * 10) % 20 == 0 then
+            local currentPos = model:GetModelCFrame().Position
+            logToConsole("TIMELINE", string.format("📍 ПОЗИЦИЯ [%s]: %s", phase, modelName), {
+                Position = tostring(currentPos),
+                Alive = string.format("%.1f сек", tick() - startTime)
+            })
+        end
+    end)
+end
+
+-- 🔍 ПОИСК ИСТОЧНИКОВ СОЗДАНИЯ МОДЕЛИ
+local function analyzeModelSources()
+    logToConsole("CRITICAL", "🔍 АНАЛИЗ ИСТОЧНИКОВ СОЗДАНИЯ МОДЕЛИ")
+    
+    -- Анализ ReplicatedStorage
+    logToConsole("CRITICAL", "📦 Анализ ReplicatedStorage...")
+    local petModelsFound = 0
+    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("Model") then
+            local name = obj.Name:lower()
+            for _, keyword in ipairs(PET_KEYWORDS) do
+                if name:find(keyword) then
+                    petModelsFound = petModelsFound + 1
+                    logToConsole("FOUND", "🎯 НАЙДЕНА МОДЕЛЬ В REPLICATEDSTORAGE!", {
+                        Name = obj.Name,
+                        Path = obj:GetFullName(),
+                        Children = #obj:GetChildren()
+                    })
                 end
             end
         end
     end
     
-    restoreConnections(originalTool, toolCopy)
-    
-    print("✅ Глубокая копия Tool создана успешно!")
-    return toolCopy
+    logToConsole("CRITICAL", string.format("📊 Найдено %d моделей питомцев в ReplicatedStorage", petModelsFound))
 end
 
--- Функция анализа Tool
-local function analyzeTool(tool)
-    if not tool then return nil end
+-- 🚀 ГЛАВНАЯ ФУНКЦИЯ АНАЛИЗА
+local function startCompleteAnalysis()
+    logToConsole("CRITICAL", "🚀 ЗАПУСК КОМПЛЕКСНОГО АНАЛИЗА")
+    logToConsole("CRITICAL", "🎯 Цель: Полный путь Яйцо → workspace.visuals → Handle")
     
-    print("\n🔍 === АНАЛИЗ TOOL: " .. tool.Name .. " ===")
-    
-    local toolData = {
-        name = tool.Name,
-        className = tool.ClassName,
-        parts = {},
-        motor6ds = {},
-        welds = {},
-        meshes = {},
-        scripts = {},
-        animators = {},
-        totalChildren = 0
+    -- Сброс данных
+    TrackingData = {
+        eggExplosion = {detected = false, location = nil, timestamp = 0},
+        visualsAppearance = {detected = false, model = nil, timestamp = 0, structure = {}},
+        handAppearance = {detected = false, tool = nil, timestamp = 0, structure = {}},
+        timeline = {},
+        allModels = {},
+        allTools = {}
     }
     
-    -- Анализируем все компоненты
-    for _, obj in pairs(tool:GetDescendants()) do
-        toolData.totalChildren = toolData.totalChildren + 1
+    -- Анализ источников
+    analyzeModelSources()
+    
+    -- Запуск мониторинга
+    local visualsConnection = monitorWorkspaceVisuals()
+    local handConnection = monitorHandAppearance()
+    
+    -- Основной цикл анализа
+    local startTime = tick()
+    local mainConnection
+    mainConnection = RunService.Heartbeat:Connect(function()
+        local elapsed = tick() - startTime
         
-        if obj:IsA("BasePart") then
-            table.insert(toolData.parts, {
-                name = obj.Name,
-                size = obj.Size,
-                cframe = obj.CFrame,
-                material = obj.Material.Name,
-                transparency = obj.Transparency
-            })
-            print("🧱 Part: " .. obj.Name .. " | Size: " .. tostring(obj.Size))
-            
-        elseif obj:IsA("Motor6D") then
-            table.insert(toolData.motor6ds, {
-                name = obj.Name,
-                part0 = obj.Part0 and obj.Part0.Name or "NIL",
-                part1 = obj.Part1 and obj.Part1.Name or "NIL",
-                c0 = obj.C0,
-                c1 = obj.C1
-            })
-            print("⚙️ Motor6D: " .. obj.Name .. " | " .. (obj.Part0 and obj.Part0.Name or "NIL") .. " → " .. (obj.Part1 and obj.Part1.Name or "NIL"))
-            
-        elseif obj:IsA("Weld") then
-            table.insert(toolData.welds, {
-                name = obj.Name,
-                part0 = obj.Part0 and obj.Part0.Name or "NIL",
-                part1 = obj.Part1 and obj.Part1.Name or "NIL",
-                c0 = obj.C0,
-                c1 = obj.C1
-            })
-            print("🔗 Weld: " .. obj.Name)
-            
-        elseif obj:IsA("SpecialMesh") then
-            table.insert(toolData.meshes, {
-                name = obj.Name,
-                meshType = obj.MeshType.Name,
-                meshId = obj.MeshId,
-                textureId = obj.TextureId,
-                scale = obj.Scale
-            })
-            print("🎨 Mesh: " .. obj.Name .. " | Type: " .. obj.MeshType.Name)
-            
-        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
-            table.insert(toolData.scripts, {
-                name = obj.Name,
-                className = obj.ClassName,
-                enabled = obj.Enabled
-            })
-            print("📜 Script: " .. obj.Name .. " (" .. obj.ClassName .. ")")
-            
-        elseif obj:IsA("Animator") then
-            table.insert(toolData.animators, {
-                name = obj.Name,
-                parent = obj.Parent.Name
-            })
-            print("🎭 Animator: " .. obj.Name .. " в " .. obj.Parent.Name)
-        end
-    end
-    
-    print("📊 Анализ завершен:")
-    print("   🧱 Частей: " .. #toolData.parts)
-    print("   ⚙️ Motor6D: " .. #toolData.motor6ds)
-    print("   🔗 Weld: " .. #toolData.welds)
-    print("   🎨 Мешей: " .. #toolData.meshes)
-    print("   📜 Скриптов: " .. #toolData.scripts)
-    print("   🎭 Аниматоров: " .. #toolData.animators)
-    print("   📦 Всего объектов: " .. toolData.totalChildren)
-    
-    return toolData
-end
-
--- Функция замены Tool в руке (упрощенная версия)
-local function replaceToolInHand(newToolData)
-    local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден")
-        return false
-    end
-    
-    -- Находим текущий Tool в руке
-    local currentTool = findHandPetTool()
-    if not currentTool then
-        print("❌ Tool в руке не найден")
-        return false
-    end
-    
-    print("🔄 Заменяю Tool в руке: " .. currentTool.Name)
-    print("🔄 Используем простую замену имени...")
-    
-    -- Простой способ: меняем только имя существующего Tool
-    local oldName = currentTool.Name
-    currentTool.Name = "Dragonfly [6.36 KG] [Age 35]"
-    
-    print("📝 Структура Tool сохранена:")
-    print("   🧱 Частей: " .. #newToolData.parts)
-    print("   ⚙️ Motor6D: " .. #newToolData.motor6ds)
-    print("   🔗 Weld: " .. #newToolData.welds)
-    print("   🎨 Мешей: " .. #newToolData.meshes)
-    print("   📜 Скриптов: " .. #newToolData.scripts)
-    
-    print("✅ Tool переименован: " .. oldName .. " → Dragonfly [6.36 KG] [Age 35]")
-    print("✅ Вся структура и анимация сохранены!")
-    return true
-end
-
--- Функция создания GUI
-local function createControlGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "AdvancedTextReplacerGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
-    
-    -- Главное окно
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 500, 0, 400)
-    mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
-    mainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
-    
-    -- Заголовок
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Size = UDim2.new(1, 0, 0, 40)
-    titleLabel.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    titleLabel.BorderSizePixel = 0
-    titleLabel.Text = "🔧 Продвинутая замена Tool"
-    titleLabel.TextColor3 = Color3.new(1, 1, 1)
-    titleLabel.TextScaled = true
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.Parent = mainFrame
-    
-    -- Статус
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(1, -20, 0, 60)
-    statusLabel.Position = UDim2.new(0, 10, 0, 50)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Готов к работе. Возьмите питомца в руки для анализа."
-    statusLabel.TextColor3 = Color3.new(1, 1, 1)
-    statusLabel.TextScaled = true
-    statusLabel.Font = Enum.Font.SourceSans
-    statusLabel.TextWrapped = true
-    statusLabel.Parent = mainFrame
-    
-    -- Кнопка замены текста
-    local replaceTextButton = Instance.new("TextButton")
-    replaceTextButton.Size = UDim2.new(1, -20, 0, 40)
-    replaceTextButton.Position = UDim2.new(0, 10, 0, 120)
-    replaceTextButton.BackgroundColor3 = Color3.new(0, 0.6, 0)
-    replaceTextButton.BorderSizePixel = 0
-    replaceTextButton.Text = "📝 Заменить текст слота 1"
-    replaceTextButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceTextButton.TextScaled = true
-    replaceTextButton.Font = Enum.Font.SourceSansBold
-    replaceTextButton.Parent = mainFrame
-    
-    -- Кнопка анализа Tool
-    local analyzeButton = Instance.new("TextButton")
-    analyzeButton.Size = UDim2.new(1, -20, 0, 40)
-    analyzeButton.Position = UDim2.new(0, 10, 0, 170)
-    analyzeButton.BackgroundColor3 = Color3.new(0, 0.4, 0.8)
-    analyzeButton.BorderSizePixel = 0
-    analyzeButton.Text = "🔍 Анализировать питомца в руке"
-    analyzeButton.TextColor3 = Color3.new(1, 1, 1)
-    analyzeButton.TextScaled = true
-    analyzeButton.Font = Enum.Font.SourceSansBold
-    analyzeButton.Parent = mainFrame
-    
-    -- Кнопка замены Tool
-    local replaceToolButton = Instance.new("TextButton")
-    replaceToolButton.Size = UDim2.new(1, -20, 0, 40)
-    replaceToolButton.Position = UDim2.new(0, 10, 0, 220)
-    replaceToolButton.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    replaceToolButton.BorderSizePixel = 0
-    replaceToolButton.Text = "🔧 Заменить Tool + текст"
-    replaceToolButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceToolButton.TextScaled = true
-    replaceToolButton.Font = Enum.Font.SourceSansBold
-    replaceToolButton.Visible = false
-    replaceToolButton.Parent = mainFrame
-    
-    -- Кнопка закрытия
-    local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(1, -20, 0, 40)
-    closeButton.Position = UDim2.new(0, 10, 0, 320)
-    closeButton.BackgroundColor3 = Color3.new(0.8, 0, 0)
-    closeButton.BorderSizePixel = 0
-    closeButton.Text = "❌ Закрыть"
-    closeButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceToolButton.TextScaled = true
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.Parent = mainFrame
-    
-    -- Подключаем события
-    replaceTextButton.MouseButton1Click:Connect(function()
-        local success = replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-        if success then
-            statusLabel.Text = "✅ Текст в слоте 1 заменен на Dragonfly!"
-            statusLabel.TextColor3 = Color3.new(0, 1, 0)
-        else
-            statusLabel.Text = "❌ Не удалось заменить текст"
-            statusLabel.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    analyzeButton.MouseButton1Click:Connect(function()
-        local tool = findHandPetTool()
-        if tool then
-            statusLabel.Text = "🔍 Анализирую Tool: " .. tool.Name
-            statusLabel.TextColor3 = Color3.new(0, 1, 1)
-            
-            analyzedToolData = analyzeTool(tool)
-            
-            -- Заменяем текст слота 1 при анализе
-            replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-            
-            statusLabel.Text = "✅ Анализ завершен! Tool готов к замене."
-            statusLabel.TextColor3 = Color3.new(0, 1, 0)
-            replaceToolButton.Visible = true
-        else
-            statusLabel.Text = "❌ Питомец в руке не найден!"
-            statusLabel.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    replaceToolButton.MouseButton1Click:Connect(function()
-        if analyzedToolData then
-            local success = replaceToolInHand(analyzedToolData)
-            if success then
-                -- Также заменяем текст
-                replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-                statusLabel.Text = "✅ Tool и текст успешно заменены!"
-                statusLabel.TextColor3 = Color3.new(0, 1, 0)
-            else
-                statusLabel.Text = "❌ Не удалось заменить Tool"
-                statusLabel.TextColor3 = Color3.new(1, 0, 0)
+        -- Фаза 1: Поиск взрыва яйца
+        if not TrackingData.eggExplosion.detected then
+            local found, eggObj = detectEggExplosion()
+            if found then
+                logToConsole("EGG", "💥 ПЕРЕХОД К ФАЗЕ 2: Мониторинг workspace.visuals")
             end
         end
+        
+        -- Проверка завершения анализа
+        if elapsed > CONFIG.MONITOR_DURATION then
+            logToConsole("CRITICAL", "⏰ Анализ завершен по таймауту")
+            mainConnection:Disconnect()
+            if visualsConnection then visualsConnection:Disconnect() end
+            if handConnection then handConnection:Disconnect() end
+            generateCompleteReport()
+        end
+        
+        -- Проверка завершения всех фаз
+        if TrackingData.eggExplosion.detected and 
+           TrackingData.visualsAppearance.detected and 
+           TrackingData.handAppearance.detected then
+            logToConsole("CRITICAL", "✅ ВСЕ ФАЗЫ ЗАВЕРШЕНЫ! Генерация отчета...")
+            mainConnection:Disconnect()
+            if visualsConnection then visualsConnection:Disconnect() end
+            if handConnection then handConnection:Disconnect() end
+            generateCompleteReport()
+        end
     end)
     
-    closeButton.MouseButton1Click:Connect(function()
-        if diagnosticConnection then
-            diagnosticConnection:Disconnect()
-        end
-        screenGui:Destroy()
+    logToConsole("CRITICAL", "🔬 КОМПЛЕКСНЫЙ АНАЛИЗ АКТИВЕН!")
+    logToConsole("CRITICAL", "🥚 ОТКРОЙТЕ ЯЙЦО ДЛЯ НАЧАЛА АНАЛИЗА!")
+end
+
+-- 📊 ГЕНЕРАЦИЯ ПОЛНОГО ОТЧЕТА
+local function generateCompleteReport()
+    logToConsole("CRITICAL", "📊 === ПОЛНЫЙ ОТЧЕТ АНАЛИЗА ===")
+    
+    -- Фаза 1: Взрыв яйца
+    if TrackingData.eggExplosion.detected then
+        logToConsole("EGG", "✅ ФАЗА 1: Взрыв яйца обнаружен", {
+            Timestamp = string.format("%.2f сек", TrackingData.eggExplosion.timestamp),
+            Location = tostring(TrackingData.eggExplosion.location)
+        })
+    else
+        logToConsole("EGG", "❌ ФАЗА 1: Взрыв яйца НЕ обнаружен")
+    end
+    
+    -- Фаза 2: workspace.visuals
+    if TrackingData.visualsAppearance.detected then
+        local delay = TrackingData.visualsAppearance.timestamp - TrackingData.eggExplosion.timestamp
+        logToConsole("VISUALS", "✅ ФАЗА 2: Появление в workspace.visuals", {
+            Model = TrackingData.visualsAppearance.model.Name,
+            Delay = string.format("%.3f сек после взрыва", delay),
+            BaseParts = TrackingData.visualsAppearance.structure.baseParts,
+            Motor6Ds = TrackingData.visualsAppearance.structure.motor6ds
+        })
+    else
+        logToConsole("VISUALS", "❌ ФАЗА 2: Появление в workspace.visuals НЕ обнаружено")
+    end
+    
+    -- Фаза 3: Handle/рука
+    if TrackingData.handAppearance.detected then
+        local delay = TrackingData.handAppearance.timestamp - TrackingData.eggExplosion.timestamp
+        logToConsole("HANDLE", "✅ ФАЗА 3: Появление в руке/handle", {
+            Tool = TrackingData.handAppearance.tool.Name,
+            Delay = string.format("%.3f сек после взрыва", delay),
+            BaseParts = TrackingData.handAppearance.structure.baseParts,
+            Motor6Ds = TrackingData.handAppearance.structure.motor6ds
+        })
+    else
+        logToConsole("HANDLE", "❌ ФАЗА 3: Появление в руке/handle НЕ обнаружено")
+    end
+    
+    -- Timeline
+    logToConsole("TIMELINE", "⏱️ ВРЕМЕННАЯ ЛИНИЯ:")
+    for i, event in ipairs(TrackingData.timeline) do
+        logToConsole("TIMELINE", string.format("  %d. %s (%.3f сек)", i, event.phase, event.timestamp))
+    end
+    
+    logToConsole("CRITICAL", "🎯 АНАЛИЗ ЗАВЕРШЕН! Проверьте результаты выше.")
+end
+
+-- Создаем GUI с кнопкой запуска
+local function createMainGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "CompleteEggAnalyzerGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 300, 0, 150)
+    frame.Position = UDim2.new(1, -320, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.BorderSizePixel = 0
+    title.Text = "🔬 EGG TO HAND ANALYZER"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(1, -20, 0, 50)
+    startBtn.Position = UDim2.new(0, 10, 0, 50)
+    startBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    startBtn.BorderSizePixel = 0
+    startBtn.Text = "🚀 НАЧАТЬ АНАЛИЗ"
+    startBtn.TextColor3 = Color3.new(1, 1, 1)
+    startBtn.TextScaled = true
+    startBtn.Font = Enum.Font.SourceSansBold
+    startBtn.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 40)
+    status.Position = UDim2.new(0, 10, 0, 110)
+    status.BackgroundTransparency = 1
+    status.Text = "Готов к анализу.\nОткройте яйцо после запуска."
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
+    
+    startBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔬 Анализ активен!\nОткройте яйцо сейчас!"
+        status.TextColor3 = Color3.new(0, 1, 0)
+        startBtn.Text = "✅ АНАЛИЗ АКТИВЕН"
+        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
+        startBtn.Active = false
+        
+        startCompleteAnalysis()
     end)
 end
 
--- Создаем GUI
-createControlGUI()
+-- Запускаем
+local consoleTextLabel = createAnalysisConsole()
+createMainGUI()
 
-print("✅ AdvancedTextReplacer готов!")
-print("🎮 Используйте GUI для замены текста и анализа Tool")
+logToConsole("CRITICAL", "✅ CompleteEggToHandAnalyzer готов!")
+logToConsole("CRITICAL", "🔬 Анализирует: Яйцо → workspace.visuals → Handle")
+logToConsole("CRITICAL", "🚀 Нажмите 'НАЧАТЬ АНАЛИЗ' и откройте яйцо!")
