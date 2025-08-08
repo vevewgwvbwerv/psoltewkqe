@@ -1,14 +1,26 @@
--- DirectSlotReplacer.lua
--- Прямая замена Tool в слоте 1 Hotbar
+-- ShovelHider.lua
+-- Скрывает Shovel из рук и заменяет на копию питомца
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
-print("=== DIRECT SLOT REPLACER ===")
+print("=== SHOVEL HIDER ===")
 
--- Функция поиска питомца в руке
-local function findHandPetTool()
+-- Функция поиска Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
+        end
+    end
+    return nil
+end
+
+-- Функция поиска питомца в руках
+local function findPetInHands()
     local character = player.Character
     if not character then return nil end
     
@@ -20,249 +32,320 @@ local function findHandPetTool()
     return nil
 end
 
--- НОВЫЙ ПОДХОД: Прямое управление слотом через StarterPlayer
-local function replaceSlot1Direct()
-    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СЛОТА 1 ===")
+-- Функция скрытия Shovel
+local function hideShovel()
+    print("\n🔄 === СКРЫТИЕ SHOVEL ===")
     
-    -- Находим питомца для копирования
-    local sourceTool = findHandPetTool()
-    if not sourceTool then
-        print("❌ Питомец в руке не найден!")
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
         return false
     end
     
-    print("✅ Найден питомец: " .. sourceTool.Name)
+    print("✅ Найден Shovel: " .. shovel.Name)
     
-    local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден!")
+    -- Метод 1: Делаем невидимым
+    print("🔧 Делаю Shovel невидимым...")
+    
+    local handle = shovel:FindFirstChild("Handle")
+    if handle then
+        handle.Transparency = 1
+        handle.CanCollide = false
+        print("✅ Handle скрыт (Transparency = 1)")
+    end
+    
+    -- Скрываем все части
+    for _, part in pairs(shovel:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 1
+            part.CanCollide = false
+        elseif part:IsA("Decal") or part:IsA("Texture") then
+            part.Transparency = 1
+        elseif part:IsA("SurfaceGui") then
+            part.Enabled = false
+        end
+    end
+    
+    print("✅ Все части Shovel скрыты!")
+    return true
+end
+
+-- Функция замены Shovel на копию питомца
+local function replaceShovelWithPet()
+    print("\n🔄 === ЗАМЕНА SHOVEL НА ПИТОМЦА ===")
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
         return false
     end
     
-    -- Шаг 1: Создаем копию питомца
-    print("🔧 Создаю копию питомца...")
-    local newTool = sourceTool:Clone()
-    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
-    
-    -- Шаг 2: Находим StarterPlayer для управления слотами
-    local starterPlayer = game:GetService("StarterPlayer")
-    local starterPlayerScripts = starterPlayer:FindFirstChild("StarterPlayerScripts")
-    
-    -- Шаг 3: Принудительно заменяем Tool в слоте 1
-    print("🎯 Принудительно заменяю Tool в слоте 1...")
-    
-    -- Метод 1: Через прямое управление Backpack
-    local backpack = character:FindFirstChild("Backpack")
-    if not backpack then
-        backpack = Instance.new("Backpack")
-        backpack.Parent = character
-        print("✅ Создан Backpack")
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден! Возьмите питомца в руки.")
+        return false
     end
     
-    -- Удаляем все Tool из Backpack
-    for _, tool in pairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            print("🗑️ Удаляю: " .. tool.Name)
-            tool:Destroy()
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("✅ Найден питомец: " .. pet.Name)
+    
+    -- Шаг 1: Скрываем Shovel
+    hideShovel()
+    
+    -- Шаг 2: Меняем имя Shovel на имя питомца
+    print("🔧 Меняю имя Shovel на имя питомца...")
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("✅ Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 3: Копируем содержимое питомца в Shovel
+    print("🔧 Копирую содержимое питомца в Shovel...")
+    
+    -- Удаляем старое содержимое Shovel (кроме Handle)
+    for _, child in pairs(shovel:GetChildren()) do
+        if child.Name ~= "Handle" then
+            child:Destroy()
         end
     end
     
-    -- Удаляем Tool из рук (кроме питомца)
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and tool ~= sourceTool then
-            print("🗑️ Удаляю из рук: " .. tool.Name)
-            tool:Destroy()
+    -- Копируем содержимое питомца
+    for _, child in pairs(pet:GetChildren()) do
+        if child.Name ~= "Handle" then
+            local childCopy = child:Clone()
+            childCopy.Parent = shovel
+            print("   📋 Скопирован: " .. child.Name .. " (" .. child.ClassName .. ")")
         end
     end
     
-    wait(0.2)
+    -- Шаг 4: Заменяем Handle
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local petHandle = pet:FindFirstChild("Handle")
     
-    -- Добавляем новый Tool как ПЕРВЫЙ в Backpack
-    newTool.Parent = backpack
-    print("✅ Dragonfly добавлен в Backpack как первый Tool")
-    
-    -- Шаг 4: Принудительно активируем слот 1 через UserInputService
-    print("⌨️ Активирую слот 1 через клавишу...")
-    
-    -- Симулируем нажатие клавиши "1"
-    wait(0.1)
-    pcall(function()
-        -- Создаем InputObject для клавиши "1"
-        local inputObj = {
-            KeyCode = Enum.KeyCode.One,
-            UserInputType = Enum.UserInputType.Keyboard
-        }
+    if shovelHandle and petHandle then
+        print("🔧 Заменяю Handle...")
         
-        -- Пытаемся симулировать нажатие
-        game:GetService("UserInputService").InputBegan:Fire(inputObj, false)
-        print("✅ Клавиша '1' нажата!")
-    end)
-    
-    -- Шаг 5: Дополнительно - прямое перемещение в руки
-    wait(0.3)
-    if newTool.Parent == backpack then
-        print("🔄 Принудительно перемещаю Tool в руки...")
-        newTool.Parent = character
-        print("✅ Tool перемещен в руки!")
+        -- Копируем свойства Handle питомца
+        local newHandle = petHandle:Clone()
+        newHandle.Name = "Handle"
+        newHandle.Parent = shovel
+        
+        -- Удаляем старый Handle
+        shovelHandle:Destroy()
+        
+        print("✅ Handle заменен!")
     end
     
     print("🎯 === РЕЗУЛЬТАТ ===")
-    print("📝 Tool создан: " .. newTool.Name)
-    print("📍 Местоположение: " .. (newTool.Parent and newTool.Parent.Name or "NIL"))
-    print("🎮 Слот 1 должен быть активирован")
+    print("✅ Shovel заменен на питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 Теперь в руках должен быть питомец вместо Shovel")
     
     return true
 end
 
--- Альтернативный метод: Через прямое управление GUI
-local function replaceSlot1GUI()
-    print("\n🔄 === ЗАМЕНА ЧЕРЕЗ GUI ===")
+-- Функция полного удаления Shovel
+local function deleteShovel()
+    print("\n🗑️ === УДАЛЕНИЕ SHOVEL ===")
     
-    local sourceTool = findHandPetTool()
-    if not sourceTool then
-        print("❌ Питомец в руке не найден!")
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
         return false
     end
     
-    -- Находим GUI элементы
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then
-        print("❌ PlayerGui не найден!")
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🗑️ Удаляю Shovel...")
+    
+    shovel:Destroy()
+    
+    print("✅ Shovel удален!")
+    return true
+end
+
+-- Функция создания копии питомца в руках
+local function createPetCopyInHands()
+    print("\n🔄 === СОЗДАНИЕ КОПИИ ПИТОМЦА В РУКАХ ===")
+    
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
         return false
     end
     
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then
-        print("❌ BackpackGui не найден!")
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
         return false
     end
+    
+    print("✅ Найден питомец: " .. pet.Name)
     
     -- Создаем копию питомца
-    local newTool = sourceTool:Clone()
-    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    local petCopy = pet:Clone()
+    petCopy.Name = "Dragonfly [6.36 KG] [Age 35]"
     
-    -- Очищаем Backpack
-    local character = player.Character
-    local backpack = character and character:FindFirstChild("Backpack")
-    if backpack then
-        for _, tool in pairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                tool:Destroy()
-            end
-        end
+    -- Удаляем Shovel
+    local shovel = findShovelInHands()
+    if shovel then
+        shovel:Destroy()
+        print("🗑️ Shovel удален")
     end
     
-    -- Добавляем новый Tool
-    if not backpack then
-        backpack = Instance.new("Backpack")
-        backpack.Parent = character
-    end
+    wait(0.1)
     
-    newTool.Parent = backpack
+    -- Добавляем копию питомца в руки
+    petCopy.Parent = character
     
-    -- Принудительно обновляем GUI
-    print("🔄 Обновляю BackpackGui...")
-    pcall(function()
-        backpackGui.Enabled = false
-        wait(0.1)
-        backpackGui.Enabled = true
-        print("✅ BackpackGui обновлен!")
-    end)
+    print("✅ Копия питомца создана в руках!")
+    print("📝 Имя: " .. petCopy.Name)
     
     return true
 end
 
--- Создаем GUI для тестирования
-local function createTestGUI()
+-- Создаем GUI для управления
+local function createShovelHiderGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "DirectSlotReplacerGUI"
+    screenGui.Name = "ShovelHiderGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 400, 0, 300)
-    frame.Position = UDim2.new(0.5, -200, 0.5, -150)
-    frame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    frame.Size = UDim2.new(0, 400, 0, 350)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
+    frame.BackgroundColor3 = Color3.new(0.2, 0.1, 0.1)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    title.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
     title.BorderSizePixel = 0
-    title.Text = "🎯 Прямая замена слота 1"
+    title.Text = "🔧 SHOVEL HIDER"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 60)
+    status.Size = UDim2.new(1, -20, 0, 50)
     status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "Возьмите питомца в руки и нажмите кнопку замены."
+    status.Text = "Возьмите питомца в руки и выберите действие."
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
     status.TextWrapped = true
     status.Parent = frame
     
-    -- Кнопка прямой замены
-    local directBtn = Instance.new("TextButton")
-    directBtn.Size = UDim2.new(1, -20, 0, 50)
-    directBtn.Position = UDim2.new(0, 10, 0, 120)
-    directBtn.BackgroundColor3 = Color3.new(0, 0.6, 0)
-    directBtn.BorderSizePixel = 0
-    directBtn.Text = "🎯 Прямая замена слота 1"
-    directBtn.TextColor3 = Color3.new(1, 1, 1)
-    directBtn.TextScaled = true
-    directBtn.Font = Enum.Font.SourceSansBold
-    directBtn.Parent = frame
+    -- Кнопка скрытия Shovel
+    local hideBtn = Instance.new("TextButton")
+    hideBtn.Size = UDim2.new(1, -20, 0, 40)
+    hideBtn.Position = UDim2.new(0, 10, 0, 110)
+    hideBtn.BackgroundColor3 = Color3.new(0.6, 0.3, 0)
+    hideBtn.BorderSizePixel = 0
+    hideBtn.Text = "👻 Скрыть Shovel"
+    hideBtn.TextColor3 = Color3.new(1, 1, 1)
+    hideBtn.TextScaled = true
+    hideBtn.Font = Enum.Font.SourceSansBold
+    hideBtn.Parent = frame
     
-    -- Кнопка GUI замены
-    local guiBtn = Instance.new("TextButton")
-    guiBtn.Size = UDim2.new(1, -20, 0, 50)
-    guiBtn.Position = UDim2.new(0, 10, 0, 180)
-    guiBtn.BackgroundColor3 = Color3.new(0, 0.4, 0.8)
-    guiBtn.BorderSizePixel = 0
-    guiBtn.Text = "🔄 Замена через GUI"
-    guiBtn.TextColor3 = Color3.new(1, 1, 1)
-    guiBtn.TextScaled = true
-    guiBtn.Font = Enum.Font.SourceSansBold
-    guiBtn.Parent = frame
+    -- Кнопка замены Shovel
+    local replaceBtn = Instance.new("TextButton")
+    replaceBtn.Size = UDim2.new(1, -20, 0, 40)
+    replaceBtn.Position = UDim2.new(0, 10, 0, 160)
+    replaceBtn.BackgroundColor3 = Color3.new(0, 0.6, 0.8)
+    replaceBtn.BorderSizePixel = 0
+    replaceBtn.Text = "🔄 Заменить Shovel на питомца"
+    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
+    replaceBtn.TextScaled = true
+    replaceBtn.Font = Enum.Font.SourceSansBold
+    replaceBtn.Parent = frame
     
-    -- События
-    directBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Выполняю прямую замену..."
+    -- Кнопка удаления Shovel
+    local deleteBtn = Instance.new("TextButton")
+    deleteBtn.Size = UDim2.new(1, -20, 0, 40)
+    deleteBtn.Position = UDim2.new(0, 10, 0, 210)
+    deleteBtn.BackgroundColor3 = Color3.new(0.8, 0, 0)
+    deleteBtn.BorderSizePixel = 0
+    deleteBtn.Text = "🗑️ Удалить Shovel"
+    deleteBtn.TextColor3 = Color3.new(1, 1, 1)
+    deleteBtn.TextScaled = true
+    deleteBtn.Font = Enum.Font.SourceSansBold
+    deleteBtn.Parent = frame
+    
+    -- Кнопка создания копии
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.new(1, -20, 0, 40)
+    copyBtn.Position = UDim2.new(0, 10, 0, 260)
+    copyBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    copyBtn.BorderSizePixel = 0
+    copyBtn.Text = "🐉 Создать копию питомца"
+    copyBtn.TextColor3 = Color3.new(1, 1, 1)
+    copyBtn.TextScaled = true
+    copyBtn.Font = Enum.Font.SourceSansBold
+    copyBtn.Parent = frame
+    
+    -- События кнопок
+    hideBtn.MouseButton1Click:Connect(function()
+        status.Text = "👻 Скрываю Shovel..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = replaceSlot1Direct()
+        local success = hideShovel()
         
         if success then
-            status.Text = "✅ Прямая замена выполнена!"
+            status.Text = "✅ Shovel скрыт!"
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Ошибка прямой замены"
+            status.Text = "❌ Ошибка скрытия Shovel"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    guiBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Выполняю замену через GUI..."
+    replaceBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Заменяю Shovel на питомца..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = replaceSlot1GUI()
+        local success = replaceShovelWithPet()
         
         if success then
-            status.Text = "✅ Замена через GUI выполнена!"
+            status.Text = "✅ Shovel заменен на питомца!"
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Ошибка замены через GUI"
+            status.Text = "❌ Ошибка замены Shovel"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    deleteBtn.MouseButton1Click:Connect(function()
+        status.Text = "🗑️ Удаляю Shovel..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = deleteShovel()
+        
+        if success then
+            status.Text = "✅ Shovel удален!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка удаления Shovel"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    copyBtn.MouseButton1Click:Connect(function()
+        status.Text = "🐉 Создаю копию питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = createPetCopyInHands()
+        
+        if success then
+            status.Text = "✅ Копия питомца создана!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка создания копии"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
 end
 
 -- Запускаем
-createTestGUI()
-print("✅ DirectSlotReplacer готов!")
-print("🎮 Попробуйте оба метода замены слота 1")
+createShovelHiderGUI()
+print("✅ ShovelHider готов!")
+print("🎮 Возьмите питомца в руки и попробуйте разные методы")
