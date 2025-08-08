@@ -1,345 +1,273 @@
--- ShovelDeepDiagnostic.lua
--- ЖЕСТКАЯ ДИАГНОСТИКА Shovel - где находится, как связана со слотом 1
+-- PerfectShovelReplacer.lua
+-- РАДИКАЛЬНЫЙ ПОДХОД: Полная замена Tool на клонированный питомец
 
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
-print("=== SHOVEL DEEP DIAGNOSTIC ===")
+print("=== PERFECT SHOVEL REPLACER ===")
 
--- Функция глубокого поиска Shovel везде
-local function findShovelEverywhere()
-    print("\n🔍 === ПОИСК SHOVEL ВЕЗДЕ ===")
-    
-    local shovelLocations = {}
+-- Глобальная переменная для хранения клонированного питомца
+local clonedPetTool = nil
+
+-- Функция поиска Shovel в руках
+local function findShovelInHands()
     local character = player.Character
+    if not character then return nil end
     
-    -- 1. Поиск в Character (руки)
-    if character then
-        print("📦 Поиск в Character:")
-        for _, obj in pairs(character:GetChildren()) do
-            if obj:IsA("Tool") and (string.find(obj.Name, "Shovel") or string.find(obj.Name, "Destroy")) then
-                table.insert(shovelLocations, {
-                    location = "Character (руки)",
-                    tool = obj,
-                    path = "Character." .. obj.Name
-                })
-                print("   ✅ Найден: " .. obj.Name .. " в руках")
-            end
-        end
-        
-        -- 2. Поиск в Backpack
-        local backpack = character:FindFirstChild("Backpack")
-        if backpack then
-            print("📦 Поиск в Backpack:")
-            for _, obj in pairs(backpack:GetChildren()) do
-                if obj:IsA("Tool") and (string.find(obj.Name, "Shovel") or string.find(obj.Name, "Destroy")) then
-                    table.insert(shovelLocations, {
-                        location = "Backpack",
-                        tool = obj,
-                        path = "Character.Backpack." .. obj.Name
-                    })
-                    print("   ✅ Найден: " .. obj.Name .. " в Backpack")
-                end
-            end
-        else
-            print("   ❌ Backpack не найден!")
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
         end
     end
-    
-    -- 3. Поиск в PlayerGui
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if playerGui then
-        print("📦 Поиск в PlayerGui:")
-        
-        -- Рекурсивный поиск в GUI
-        local function searchInGui(parent, path)
-            for _, obj in pairs(parent:GetChildren()) do
-                if obj.Name and (string.find(obj.Name, "Shovel") or string.find(obj.Name, "Destroy")) then
-                    table.insert(shovelLocations, {
-                        location = "PlayerGui",
-                        tool = obj,
-                        path = path .. "." .. obj.Name
-                    })
-                    print("   ✅ Найден GUI элемент: " .. obj.Name .. " в " .. path)
-                end
-                
-                -- Рекурсивно ищем в детях
-                if #obj:GetChildren() > 0 then
-                    searchInGui(obj, path .. "." .. obj.Name)
-                end
-            end
-        end
-        
-        searchInGui(playerGui, "PlayerGui")
-    end
-    
-    -- 4. Поиск в StarterPack
-    local starterPack = game:GetService("StarterPack")
-    if starterPack then
-        print("📦 Поиск в StarterPack:")
-        for _, obj in pairs(starterPack:GetChildren()) do
-            if obj:IsA("Tool") and (string.find(obj.Name, "Shovel") or string.find(obj.Name, "Destroy")) then
-                table.insert(shovelLocations, {
-                    location = "StarterPack",
-                    tool = obj,
-                    path = "StarterPack." .. obj.Name
-                })
-                print("   ✅ Найден: " .. obj.Name .. " в StarterPack")
-            end
-        end
-    end
-    
-    return shovelLocations
+    return nil
 end
 
--- Функция анализа связи со слотом 1
-local function analyzeSlot1Connection()
-    print("\n🔗 === АНАЛИЗ СВЯЗИ СО СЛОТОМ 1 ===")
+-- Функция поиска питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then
-        print("❌ PlayerGui не найден!")
-        return
-    end
-    
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then
-        print("❌ BackpackGui не найден!")
-        return
-    end
-    
-    local backpack = backpackGui:FindFirstChild("Backpack")
-    if not backpack then
-        print("❌ Backpack Frame не найден!")
-        return
-    end
-    
-    local hotbar = backpack:FindFirstChild("Hotbar")
-    if not hotbar then
-        print("❌ Hotbar не найден!")
-        return
-    end
-    
-    local slot1 = hotbar:FindFirstChild("1")
-    if not slot1 then
-        print("❌ Слот 1 не найден!")
-        return
-    end
-    
-    print("✅ Найден слот 1: " .. slot1:GetFullName())
-    
-    -- Анализируем содержимое слота 1
-    print("📋 Содержимое слота 1:")
-    for _, child in pairs(slot1:GetDescendants()) do
-        print("   📄 " .. child.ClassName .. ": " .. child.Name)
-        
-        if child:IsA("TextLabel") then
-            print("      📝 Текст: '" .. child.Text .. "'")
-        end
-        
-        if child:IsA("ImageLabel") then
-            print("      🖼️ Image: " .. child.Image)
-        end
-        
-        -- Ищем связи с Tool
-        if child:IsA("ObjectValue") or child:IsA("StringValue") then
-            print("      🔗 Значение: " .. tostring(child.Value))
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
         end
     end
-    
-    -- Ищем скрипты в слоте
-    print("📜 Скрипты в слоте 1:")
-    for _, child in pairs(slot1:GetDescendants()) do
-        if child:IsA("LocalScript") or child:IsA("Script") then
-            print("   📜 Скрипт: " .. child.Name .. " (" .. child.ClassName .. ")")
-            print("      🔧 Enabled: " .. tostring(child.Enabled))
-        end
-    end
+    return nil
 end
 
--- Функция анализа всех Tool в инвентаре
-local function analyzeAllTools()
-    print("\n🔧 === АНАЛИЗ ВСЕХ TOOL В ИНВЕНТАРЕ ===")
+-- НОВЫЙ ПОДХОД: Полное клонирование питомца Tool
+local function clonePetTool()
+    print("\n📋 === КЛОНИРОВАНИЕ ПИТОМЦА TOOL ===")
+    
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден питомец: " .. pet.Name)
+    
+    -- Создаем ПОЛНУЮ копию Tool питомца
+    clonedPetTool = pet:Clone()
+    clonedPetTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    
+    print("✅ Создан клон питомца: " .. clonedPetTool.Name)
+    print("📊 Структура клона:")
+    
+    -- Анализируем структуру клона
+    local partCount = 0
+    local meshCount = 0
+    local scriptCount = 0
+    
+    for _, obj in pairs(clonedPetTool:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            partCount = partCount + 1
+            print("   📦 Part: " .. obj.Name)
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            print("   🎨 Mesh: " .. obj.Name)
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            scriptCount = scriptCount + 1
+            print("   📜 Script: " .. obj.Name)
+        elseif obj:IsA("Motor6D") then
+            print("   🔗 Motor6D: " .. obj.Name)
+        elseif obj:IsA("Weld") then
+            print("   🔗 Weld: " .. obj.Name)
+        end
+    end
+    
+    print(string.format("📊 Итого: %d частей, %d мешей, %d скриптов", partCount, meshCount, scriptCount))
+    print("✅ Клонирование завершено!")
+    
+    return true
+end
+
+-- ИСПРАВЛЕННАЯ ЗАМЕНА: Создаем новый клон каждый раз
+local function perfectReplace()
+    print("\n🔄 === ИДЕАЛЬНАЯ ЗАМЕНА SHOVEL ===")
+    
+    if not clonedPetTool then
+        print("❌ Клон питомца не создан! Сначала клонируйте питомца.")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
     
     local character = player.Character
     if not character then
         print("❌ Character не найден!")
-        return
+        return false
     end
     
-    local allTools = {}
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Выполняю идеальную замену...")
     
-    -- Собираем все Tool
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") then
-            table.insert(allTools, {tool = tool, location = "Character"})
-        end
+    -- Шаг 1: Создаем НОВЫЙ клон (важно!)
+    print("📋 Создаю новый клон для замены...")
+    local newClone = clonedPetTool:Clone()
+    newClone.Name = "Dragonfly [6.36 KG] [Age 35]"
+    
+    -- Шаг 2: Проверяем что клон имеет Handle
+    local handle = newClone:FindFirstChild("Handle")
+    if not handle then
+        print("❌ У клона нет Handle! Создаю Handle...")
+        handle = Instance.new("Part")
+        handle.Name = "Handle"
+        handle.Size = Vector3.new(1, 1, 1)
+        handle.Transparency = 1
+        handle.CanCollide = false
+        handle.Parent = newClone
+    else
+        print("✅ Handle найден: " .. handle.Name)
     end
     
-    local backpack = character:FindFirstChild("Backpack")
-    if backpack then
-        for _, tool in pairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                table.insert(allTools, {tool = tool, location = "Backpack"})
+    -- Шаг 3: Удаляем Shovel
+    print("🗑️ Удаляю Shovel...")
+    shovel:Destroy()
+    
+    -- Шаг 4: Пауза для стабилизации
+    wait(0.2)
+    
+    -- Шаг 5: Добавляем новый клон в руки
+    print("🐉 Добавляю новый клон в руки...")
+    newClone.Parent = character
+    
+    -- Шаг 6: Проверяем результат
+    wait(0.1)
+    local toolInHands = character:FindFirstChildOfClass("Tool")
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    if toolInHands then
+        print("✅ Shovel ПОЛНОСТЬЮ заменен на клон питомца!")
+        print("📝 Имя: " .. toolInHands.Name)
+        print("📍 Местоположение: " .. (toolInHands.Parent and toolInHands.Parent.Name or "NIL"))
+        print("🎮 В руках: " .. toolInHands.Name)
+        print("🎭 Со всеми анимациями и правильным положением!")
+    else
+        print("❌ Клон не появился в руках! Проверяю Backpack...")
+        local backpack = character:FindFirstChild("Backpack")
+        if backpack then
+            local toolInBackpack = backpack:FindFirstChildOfClass("Tool")
+            if toolInBackpack then
+                print("📦 Клон найден в Backpack: " .. toolInBackpack.Name)
+                print("🔄 Перемещаю в руки...")
+                toolInBackpack.Parent = character
+                print("✅ Клон перемещен в руки!")
+            else
+                print("❌ Клон не найден нигде!")
+                return false
             end
         end
     end
     
-    print("📊 Найдено Tool: " .. #allTools)
-    
-    for i, toolData in pairs(allTools) do
-        local tool = toolData.tool
-        print("\n🔧 Tool #" .. i .. ": " .. tool.Name)
-        print("   📍 Местоположение: " .. toolData.location)
-        print("   🆔 ClassName: " .. tool.ClassName)
-        print("   👆 RequiresHandle: " .. tostring(tool.RequiresHandle))
-        print("   🎯 CanBeDropped: " .. tostring(tool.CanBeDropped))
-        print("   ⚡ Enabled: " .. tostring(tool.Enabled))
-        
-        -- Анализируем Handle
-        local handle = tool:FindFirstChild("Handle")
-        if handle then
-            print("   🔗 Handle найден: " .. handle.ClassName)
-            print("      📏 Size: " .. tostring(handle.Size))
-            print("      🎨 Material: " .. handle.Material.Name)
-            print("      🌈 Color: " .. tostring(handle.Color))
-        else
-            print("   ❌ Handle не найден!")
-        end
-        
-        -- Считаем компоненты
-        local parts = 0
-        local meshes = 0
-        local scripts = 0
-        
-        for _, child in pairs(tool:GetDescendants()) do
-            if child:IsA("BasePart") then
-                parts = parts + 1
-            elseif child:IsA("SpecialMesh") then
-                meshes = meshes + 1
-            elseif child:IsA("LocalScript") or child:IsA("Script") then
-                scripts = scripts + 1
-            end
-        end
-        
-        print("   📊 Компоненты: " .. parts .. " частей, " .. meshes .. " мешей, " .. scripts .. " скриптов")
-    end
+    return true
 end
 
--- Функция создания отчета
-local function createDiagnosticReport()
-    print("\n📋 === СОЗДАНИЕ ДИАГНОСТИЧЕСКОГО ОТЧЕТА ===")
+-- ПРОСТАЯ АЛЬТЕРНАТИВА: Только переименование Shovel
+local function simpleRename()
+    print("\n📝 === ПРОСТОЕ ПЕРЕИМЕНОВАНИЕ SHOVEL ===")
     
-    local report = {
-        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-        shovelLocations = findShovelEverywhere(),
-        playerInfo = {
-            name = player.Name,
-            userId = player.UserId
-        }
-    }
-    
-    print("📄 ОТЧЕТ ДИАГНОСТИКИ:")
-    print("🕒 Время: " .. report.timestamp)
-    print("👤 Игрок: " .. report.playerInfo.name .. " (ID: " .. report.playerInfo.userId .. ")")
-    print("🔍 Найдено Shovel локаций: " .. #report.shovelLocations)
-    
-    for i, location in pairs(report.shovelLocations) do
-        print("   " .. i .. ". " .. location.location .. " - " .. location.tool.Name)
-        print("      📍 Путь: " .. location.path)
-        print("      🆔 Класс: " .. location.tool.ClassName)
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
     end
     
-    return report
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("📝 Меняю только имя...")
+    
+    -- Просто меняем имя Shovel
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Имя Shovel изменено на: " .. shovel.Name)
+    print("📝 В хотбаре должно отображаться новое имя")
+    print("💡 Это простое решение без замены модели")
+    
+    return true
 end
 
--- Создаем GUI для диагностики
-local function createDiagnosticGUI()
+-- Создаем GUI
+local function createPerfectReplacerGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "ShovelDeepDiagnosticGUI"
+    screenGui.Name = "PerfectShovelReplacerGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 500, 0, 400)
-    frame.Position = UDim2.new(0.5, -250, 0.5, -200)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    frame.Size = UDim2.new(0, 450, 0, 400)
+    frame.Position = UDim2.new(0.5, -225, 0.5, -200)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.8, 0, 0)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
     title.BorderSizePixel = 0
-    title.Text = "🔍 ЖЕСТКАЯ ДИАГНОСТИКА SHOVEL"
+    title.Text = "🎯 PERFECT SHOVEL REPLACER"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 60)
+    status.Size = UDim2.new(1, -20, 0, 80)
     status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "Готов к диагностике. Нажмите кнопки для анализа Shovel."
+    status.Text = "РАДИКАЛЬНЫЙ ПОДХОД:\n1. Возьмите питомца в руки\n2. Клонируйте питомца\n3. Возьмите Shovel\n4. Выполните идеальную замену"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
     status.TextWrapped = true
     status.Parent = frame
     
-    -- Кнопка поиска Shovel
-    local findBtn = Instance.new("TextButton")
-    findBtn.Size = UDim2.new(1, -20, 0, 40)
-    findBtn.Position = UDim2.new(0, 10, 0, 120)
-    findBtn.BackgroundColor3 = Color3.new(0.8, 0, 0)
-    findBtn.BorderSizePixel = 0
-    findBtn.Text = "🔍 Найти Shovel везде"
-    findBtn.TextColor3 = Color3.new(1, 1, 1)
-    findBtn.TextScaled = true
-    findBtn.Font = Enum.Font.SourceSansBold
-    findBtn.Parent = frame
+    -- Кнопка клонирования
+    local cloneBtn = Instance.new("TextButton")
+    cloneBtn.Size = UDim2.new(1, -20, 0, 50)
+    cloneBtn.Position = UDim2.new(0, 10, 0, 140)
+    cloneBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    cloneBtn.BorderSizePixel = 0
+    cloneBtn.Text = "📋 Клонировать питомца Tool"
+    cloneBtn.TextColor3 = Color3.new(1, 1, 1)
+    cloneBtn.TextScaled = true
+    cloneBtn.Font = Enum.Font.SourceSansBold
+    cloneBtn.Parent = frame
     
-    -- Кнопка анализа слота 1
-    local slot1Btn = Instance.new("TextButton")
-    slot1Btn.Size = UDim2.new(1, -20, 0, 40)
-    slot1Btn.Position = UDim2.new(0, 10, 0, 170)
-    slot1Btn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    slot1Btn.BorderSizePixel = 0
-    slot1Btn.Text = "🔗 Анализ связи со слотом 1"
-    slot1Btn.TextColor3 = Color3.new(1, 1, 1)
-    slot1Btn.TextScaled = true
-    slot1Btn.Font = Enum.Font.SourceSansBold
-    slot1Btn.Parent = frame
+    -- Кнопка идеальной замены
+    local perfectBtn = Instance.new("TextButton")
+    perfectBtn.Size = UDim2.new(1, -20, 0, 50)
+    perfectBtn.Position = UDim2.new(0, 10, 0, 200)
+    perfectBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    perfectBtn.BorderSizePixel = 0
+    perfectBtn.Text = "🎯 ИДЕАЛЬНАЯ ЗАМЕНА"
+    perfectBtn.TextColor3 = Color3.new(1, 1, 1)
+    perfectBtn.TextScaled = true
+    perfectBtn.Font = Enum.Font.SourceSansBold
+    perfectBtn.Visible = false
+    perfectBtn.Parent = frame
     
-    -- Кнопка анализа всех Tool
-    local allToolsBtn = Instance.new("TextButton")
-    allToolsBtn.Size = UDim2.new(1, -20, 0, 40)
-    allToolsBtn.Position = UDim2.new(0, 10, 0, 220)
-    allToolsBtn.BackgroundColor3 = Color3.new(0, 0.6, 0.8)
-    allToolsBtn.BorderSizePixel = 0
-    allToolsBtn.Text = "🔧 Анализ всех Tool"
-    allToolsBtn.TextColor3 = Color3.new(1, 1, 1)
-    allToolsBtn.TextScaled = true
-    allToolsBtn.Font = Enum.Font.SourceSansBold
-    allToolsBtn.Parent = frame
-    
-    -- Кнопка полного отчета
-    local reportBtn = Instance.new("TextButton")
-    reportBtn.Size = UDim2.new(1, -20, 0, 40)
-    reportBtn.Position = UDim2.new(0, 10, 0, 270)
-    reportBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
-    reportBtn.BorderSizePixel = 0
-    reportBtn.Text = "📋 Полный диагностический отчет"
-    reportBtn.TextColor3 = Color3.new(1, 1, 1)
-    reportBtn.TextScaled = true
-    reportBtn.Font = Enum.Font.SourceSansBold
-    reportBtn.Parent = frame
+    -- Кнопка замены через Backpack
+    local backpackBtn = Instance.new("TextButton")
+    backpackBtn.Size = UDim2.new(1, -20, 0, 50)
+    backpackBtn.Position = UDim2.new(0, 10, 0, 260)
+    backpackBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    backpackBtn.BorderSizePixel = 0
+    backpackBtn.Text = "🔄 Замена через Backpack"
+    backpackBtn.TextColor3 = Color3.new(1, 1, 1)
+    backpackBtn.TextScaled = true
+    backpackBtn.Font = Enum.Font.SourceSansBold
+    backpackBtn.Visible = false
+    backpackBtn.Parent = frame
     
     -- Кнопка закрытия
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(1, -20, 0, 40)
     closeBtn.Position = UDim2.new(0, 10, 0, 320)
-    closeBtn.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
     closeBtn.BorderSizePixel = 0
     closeBtn.Text = "❌ Закрыть"
     closeBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -347,52 +275,52 @@ local function createDiagnosticGUI()
     closeBtn.Font = Enum.Font.SourceSansBold
     closeBtn.Parent = frame
     
-    -- События кнопок
-    findBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔍 Ищу Shovel везде..."
+    -- События
+    cloneBtn.MouseButton1Click:Connect(function()
+        status.Text = "📋 Клонирую питомца Tool...\nАнализирую структуру..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local locations = findShovelEverywhere()
+        local success = clonePetTool()
         
-        if #locations > 0 then
-            status.Text = "✅ Найдено " .. #locations .. " Shovel! Проверьте консоль."
+        if success then
+            status.Text = "✅ Питомец клонирован!\nТеперь возьмите Shovel и выполните замену."
             status.TextColor3 = Color3.new(0, 1, 0)
+            perfectBtn.Visible = true
+            backpackBtn.Visible = true
         else
-            status.Text = "❌ Shovel не найден нигде!"
+            status.Text = "❌ Ошибка клонирования!\nВозьмите питомца в руки."
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    slot1Btn.MouseButton1Click:Connect(function()
-        status.Text = "🔗 Анализирую связь со слотом 1..."
+    perfectBtn.MouseButton1Click:Connect(function()
+        status.Text = "🎯 Выполняю идеальную замену...\nУдаляю Shovel, добавляю клон питомца..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        analyzeSlot1Connection()
+        local success = perfectReplace()
         
-        status.Text = "✅ Анализ слота 1 завершен! Проверьте консоль."
-        status.TextColor3 = Color3.new(0, 1, 0)
+        if success then
+            status.Text = "✅ ИДЕАЛЬНАЯ ЗАМЕНА ЗАВЕРШЕНА!\nВ руках точный клон питомца!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки."
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
     end)
     
-    allToolsBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔧 Анализирую все Tool..."
+    backpackBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Замена через Backpack...\nОчищаю инвентарь и добавляю клон..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        analyzeAllTools()
+        local success = replaceViaBackpack()
         
-        status.Text = "✅ Анализ всех Tool завершен! Проверьте консоль."
-        status.TextColor3 = Color3.new(0, 1, 0)
-    end)
-    
-    reportBtn.MouseButton1Click:Connect(function()
-        status.Text = "📋 Создаю полный отчет..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local report = createDiagnosticReport()
-        analyzeSlot1Connection()
-        analyzeAllTools()
-        
-        status.Text = "✅ Полный отчет готов! Проверьте консоль."
-        status.TextColor3 = Color3.new(0, 1, 0)
+        if success then
+            status.Text = "✅ Замена через Backpack завершена!\nКлон питомца в руках!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены через Backpack!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
     end)
     
     closeBtn.MouseButton1Click:Connect(function()
@@ -400,8 +328,11 @@ local function createDiagnosticGUI()
     end)
 end
 
--- Запускаем диагностику
-createDiagnosticGUI()
-print("✅ ShovelDeepDiagnostic готов!")
-print("🔍 Используйте кнопки для жесткой диагностики Shovel")
-print("📋 Все результаты будут в консоли с подробной информацией")
+-- Запускаем
+createPerfectReplacerGUI()
+print("✅ PerfectShovelReplacer готов!")
+print("🎯 РАДИКАЛЬНЫЙ ПОДХОД:")
+print("   📋 1. Клонируем ВЕСЬ Tool питомца")
+print("   🗑️ 2. Полностью удаляем Shovel")
+print("   🐉 3. Добавляем клон питомца в руки")
+print("🎮 Результат: ТОЧНАЯ копия питомца вместо Shovel!")
