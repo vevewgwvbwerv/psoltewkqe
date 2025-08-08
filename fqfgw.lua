@@ -86,15 +86,38 @@ local function findMainInventory()
             
             -- Проверяем количество дочерних элементов
             local childCount = 0
+            local hasNumberedSlots = false
+            
             for _, grandChild in pairs(child:GetChildren()) do
                 if grandChild:IsA("GuiObject") and grandChild.Visible then
                     childCount = childCount + 1
+                    
+                    -- Проверяем, есть ли слоты с числовыми именами (1, 2, 3...)
+                    if grandChild:IsA("TextButton") and tonumber(grandChild.Name) then
+                        hasNumberedSlots = true
+                    end
                 end
             end
             
-            -- Если найдено около 10 элементов, это может быть основной инвентарь
-            if childCount >= 8 and childCount <= 12 then
-                print("✅ Найден возможный основной инвентарь:", child.Name, "с", childCount, "элементами")
+            print("      🎯 Элементов:", childCount, "| Числовые слоты:", hasNumberedSlots)
+            
+            -- Если найдено около 10 элементов И есть числовые слоты, это основной инвентарь
+            if childCount >= 8 and childCount <= 12 and hasNumberedSlots then
+                print("✅ Найден основной инвентарь:", child.Name, "с", childCount, "элементами")
+                return child
+            end
+            
+            -- Альтернативно, если имя содержит "hotbar" или "backpack"
+            if child.Name:lower():find("hotbar") or child.Name:lower():find("backpack") then
+                if childCount >= 5 then -- Менее строгие требования для именованных контейнеров
+                    print("✅ Найден основной инвентарь по имени:", child.Name, "с", childCount, "элементами")
+                    return child
+                end
+            end
+            
+            -- Если это единственный фрейм с достаточным количеством элементов
+            if childCount >= 8 and childCount <= 15 then
+                print("✅ Найден возможный основной инвентарь:", child.Name, "с", childCount, "элементами (без числовых слотов)")
                 return child
             end
         end
@@ -162,18 +185,92 @@ local function findDragonflyInExtended()
 end
 
 -- Функция поиска пустого слота в основном инвентаре
-local function findEmptySlotInMain(hotbar)
-    if not hotbar then return nil end
+local function findEmptySlotInMain(mainInventory)
+    if not mainInventory then 
+        print("❌ Основной инвентарь не передан")
+        return nil 
+    end
     
-    -- Ищем слоты 1 и 2 (где Shovel и Egg)
-    for _, child in pairs(hotbar:GetChildren()) do
-        if child:IsA("TextButton") and (child.Name == "1" or child.Name == "2") then
-            print("✅ Найден слот для замены:", child.Name)
-            return child
+    print("🔍 Ищу пустые слоты в:", mainInventory.Name)
+    
+    -- Ищем слоты с предметами (не питомцами)
+    local foundSlots = {}
+    local itemSlots = {}
+    
+    for _, child in pairs(mainInventory:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("Frame") then
+            table.insert(foundSlots, child.Name)
+            
+            -- Проверяем содержимое слота
+            local itemText = ""
+            local hasPet = false
+            
+            for _, desc in pairs(child:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Text ~= "" then
+                    itemText = desc.Text
+                    -- Проверяем, это питомец или предмет
+                    if desc.Text:lower():find("kg") and desc.Text:lower():find("age") then
+                        hasPet = true
+                    end
+                    break
+                end
+            end
+            
+            if itemText ~= "" then
+                if hasPet then
+                    print("   🐾 Слот " .. child.Name .. ": " .. itemText .. " (питомец)")
+                else
+                    print("   📦 Слот " .. child.Name .. ": " .. itemText .. " (предмет)")
+                    table.insert(itemSlots, {slot = child, text = itemText})
+                end
+            else
+                print("   📭 Слот " .. child.Name .. ": пустой")
+            end
+            
+            -- Приоритет слотам 1 и 2
+            if (child.Name == "1" or child.Name == "2") and not hasPet and itemText ~= "" then
+                print("✅ Найден приоритетный слот для замены:", child.Name, "(" .. itemText .. ")")
+                return child
+            end
         end
     end
     
-    print("❌ Пустые слоты не найдены")
+    print("🔍 Найденные слоты:", table.concat(foundSlots, ", "))
+    
+    -- Если слоты 1 и 2 не найдены, берем первый слот с предметом
+    if #itemSlots > 0 then
+        local bestSlot = itemSlots[1]
+        print("✅ Найден слот с предметом для замены:", bestSlot.slot.Name, "(" .. bestSlot.text .. ")")
+        return bestSlot.slot
+    end
+    
+    -- Альтернативный поиск - любой слот с не-питомцем
+    print("🔍 Ищу альтернативные слоты с предметами...")
+    for _, child in pairs(mainInventory:GetChildren()) do
+        if child:IsA("TextButton") then
+            local hasPet = false
+            local itemText = ""
+            
+            for _, desc in pairs(child:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Text ~= "" then
+                    itemText = desc.Text
+                    -- Проверяем, это питомец или предмет
+                    if desc.Text:lower():find("kg") and desc.Text:lower():find("age") then
+                        hasPet = true
+                    end
+                    break
+                end
+            end
+            
+            -- Если это не питомец, можно заменить
+            if not hasPet and itemText ~= "" then
+                print("✅ Найден слот с предметом для замены:", child.Name, "(" .. itemText .. ")")
+                return child
+            end
+        end
+    end
+    
+    print("❌ Подходящие слоты не найдены")
     return nil
 end
 
