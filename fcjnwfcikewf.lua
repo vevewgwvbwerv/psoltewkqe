@@ -1,217 +1,351 @@
--- DragonflySwitcher.lua
--- Скрипт для автоматического перемещения Dragonfly из BackpackGui в handle
+-- ShovelHider.lua
+-- Скрывает Shovel из рук и заменяет на копию питомца
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-
 local player = Players.LocalPlayer
 
--- Создаем компактный GUI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DragonflySwitcher"
-screenGui.Parent = player:WaitForChild("PlayerGui")
+print("=== SHOVEL HIDER ===")
 
--- Главный фрейм (компактный)
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0.8, 0, 0.3, 0)
-mainFrame.Position = UDim2.new(0.1, 0, 0.35, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
--- Заголовок
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
-titleLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-titleLabel.BorderSizePixel = 0
-titleLabel.Text = "🐉 Dragonfly Switcher"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextScaled = true
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.Parent = mainFrame
-
--- Кнопка переключения
-local switchButton = Instance.new("TextButton")
-switchButton.Size = UDim2.new(0.8, 0, 0.4, 0)
-switchButton.Position = UDim2.new(0.1, 0, 0.4, 0)
-switchButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-switchButton.BorderSizePixel = 0
-switchButton.Text = "🔄 Переместить Dragonfly в руку"
-switchButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-switchButton.TextScaled = true
-switchButton.Font = Enum.Font.SourceSansBold
-switchButton.Parent = mainFrame
-
--- Статус лейбл
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, 0, 0.3, 0)
-statusLabel.Position = UDim2.new(0, 0, 0.7, 0)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Готов к переключению"
-statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.SourceSans
-statusLabel.Parent = mainFrame
-
--- Функция поиска Dragonfly в BackpackGui
-local function findDragonflyInGui()
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return nil end
+-- Функция поиска Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then
-        print("❌ BackpackGui не найден")
-        return nil
-    end
-    
-    -- Ищем элемент с Dragonfly
-    for _, desc in pairs(backpackGui:GetDescendants()) do
-        if desc:IsA("TextLabel") and desc.Text:lower():find("dragonfly") then
-            print("✅ Найден Dragonfly в GUI:", desc.Text)
-            return desc.Parent -- Возвращаем родительский элемент (кнопку/фрейм)
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
         end
     end
-    
-    print("❌ Dragonfly не найден в BackpackGui")
     return nil
 end
 
--- Функция симуляции клика по элементу GUI
-local function simulateClick(guiElement)
-    if not guiElement then return false end
+-- Функция поиска питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    -- Пробуем разные способы активации
-    if guiElement:IsA("GuiButton") then
-        -- Если это кнопка, симулируем клик
-        print("🖱️ Симулирую клик по кнопке:", guiElement.Name)
-        
-        -- Способ 1: Прямая активация события
-        if guiElement.MouseButton1Click then
-            guiElement.MouseButton1Click:Fire()
-            return true
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
         end
+    end
+    return nil
+end
+
+-- Функция скрытия Shovel
+local function hideShovel()
+    print("\n🔄 === СКРЫТИЕ SHOVEL ===")
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    
+    -- Метод 1: Делаем невидимым
+    print("🔧 Делаю Shovel невидимым...")
+    
+    local handle = shovel:FindFirstChild("Handle")
+    if handle then
+        handle.Transparency = 1
+        handle.CanCollide = false
+        print("✅ Handle скрыт (Transparency = 1)")
+    end
+    
+    -- Скрываем все части
+    for _, part in pairs(shovel:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 1
+            part.CanCollide = false
+        elseif part:IsA("Decal") or part:IsA("Texture") then
+            part.Transparency = 1
+        elseif part:IsA("SurfaceGui") then
+            part.Enabled = false
+        end
+    end
+    
+    print("✅ Все части Shovel скрыты!")
+    return true
+end
+
+-- Функция замены Shovel на копию питомца
+local function replaceShovelWithPet()
+    print("\n🔄 === ЗАМЕНА SHOVEL НА ПИТОМЦА ===")
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден! Возьмите питомца в руки.")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("✅ Найден питомец: " .. pet.Name)
+    
+    -- Шаг 1: Скрываем Shovel
+    hideShovel()
+    
+    -- Шаг 2: Меняем имя Shovel на имя питомца
+    print("🔧 Меняю имя Shovel на имя питомца...")
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("✅ Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 3: Копируем содержимое питомца в Shovel
+    print("🔧 Копирую содержимое питомца в Shovel...")
+    
+    -- Удаляем старое содержимое Shovel (кроме Handle)
+    for _, child in pairs(shovel:GetChildren()) do
+        if child.Name ~= "Handle" then
+            child:Destroy()
+        end
+    end
+    
+    -- Копируем содержимое питомца
+    for _, child in pairs(pet:GetChildren()) do
+        if child.Name ~= "Handle" then
+            local childCopy = child:Clone()
+            childCopy.Parent = shovel
+            print("   📋 Скопирован: " .. child.Name .. " (" .. child.ClassName .. ")")
+        end
+    end
+    
+    -- Шаг 4: Заменяем Handle
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local petHandle = pet:FindFirstChild("Handle")
+    
+    if shovelHandle and petHandle then
+        print("🔧 Заменяю Handle...")
         
-        -- Способ 2: Симуляция через UserInputService (если доступно)
-        local success, error = pcall(function()
-            guiElement.MouseButton1Down:Fire()
-            wait(0.1)
-            guiElement.MouseButton1Up:Fire()
-        end)
+        -- Копируем свойства Handle питомца
+        local newHandle = petHandle:Clone()
+        newHandle.Name = "Handle"
+        newHandle.Parent = shovel
+        
+        -- Удаляем старый Handle
+        shovelHandle:Destroy()
+        
+        print("✅ Handle заменен!")
+    end
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel заменен на питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 Теперь в руках должен быть питомец вместо Shovel")
+    
+    return true
+end
+
+-- Функция полного удаления Shovel
+local function deleteShovel()
+    print("\n🗑️ === УДАЛЕНИЕ SHOVEL ===")
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🗑️ Удаляю Shovel...")
+    
+    shovel:Destroy()
+    
+    print("✅ Shovel удален!")
+    return true
+end
+
+-- Функция создания копии питомца в руках
+local function createPetCopyInHands()
+    print("\n🔄 === СОЗДАНИЕ КОПИИ ПИТОМЦА В РУКАХ ===")
+    
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
+        return false
+    end
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    print("✅ Найден питомец: " .. pet.Name)
+    
+    -- Создаем копию питомца
+    local petCopy = pet:Clone()
+    petCopy.Name = "Dragonfly [6.36 KG] [Age 35]"
+    
+    -- Удаляем Shovel
+    local shovel = findShovelInHands()
+    if shovel then
+        shovel:Destroy()
+        print("🗑️ Shovel удален")
+    end
+    
+    wait(0.1)
+    
+    -- Добавляем копию питомца в руки
+    petCopy.Parent = character
+    
+    print("✅ Копия питомца создана в руках!")
+    print("📝 Имя: " .. petCopy.Name)
+    
+    return true
+end
+
+-- Создаем GUI для управления
+local function createShovelHiderGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ShovelHiderGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 400, 0, 350)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
+    frame.BackgroundColor3 = Color3.new(0.2, 0.1, 0.1)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
+    title.BorderSizePixel = 0
+    title.Text = "🔧 SHOVEL HIDER"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 50)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "Возьмите питомца в руки и выберите действие."
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
+    
+    -- Кнопка скрытия Shovel
+    local hideBtn = Instance.new("TextButton")
+    hideBtn.Size = UDim2.new(1, -20, 0, 40)
+    hideBtn.Position = UDim2.new(0, 10, 0, 110)
+    hideBtn.BackgroundColor3 = Color3.new(0.6, 0.3, 0)
+    hideBtn.BorderSizePixel = 0
+    hideBtn.Text = "👻 Скрыть Shovel"
+    hideBtn.TextColor3 = Color3.new(1, 1, 1)
+    hideBtn.TextScaled = true
+    hideBtn.Font = Enum.Font.SourceSansBold
+    hideBtn.Parent = frame
+    
+    -- Кнопка замены Shovel
+    local replaceBtn = Instance.new("TextButton")
+    replaceBtn.Size = UDim2.new(1, -20, 0, 40)
+    replaceBtn.Position = UDim2.new(0, 10, 0, 160)
+    replaceBtn.BackgroundColor3 = Color3.new(0, 0.6, 0.8)
+    replaceBtn.BorderSizePixel = 0
+    replaceBtn.Text = "🔄 Заменить Shovel на питомца"
+    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
+    replaceBtn.TextScaled = true
+    replaceBtn.Font = Enum.Font.SourceSansBold
+    replaceBtn.Parent = frame
+    
+    -- Кнопка удаления Shovel
+    local deleteBtn = Instance.new("TextButton")
+    deleteBtn.Size = UDim2.new(1, -20, 0, 40)
+    deleteBtn.Position = UDim2.new(0, 10, 0, 210)
+    deleteBtn.BackgroundColor3 = Color3.new(0.8, 0, 0)
+    deleteBtn.BorderSizePixel = 0
+    deleteBtn.Text = "🗑️ Удалить Shovel"
+    deleteBtn.TextColor3 = Color3.new(1, 1, 1)
+    deleteBtn.TextScaled = true
+    deleteBtn.Font = Enum.Font.SourceSansBold
+    deleteBtn.Parent = frame
+    
+    -- Кнопка создания копии
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.new(1, -20, 0, 40)
+    copyBtn.Position = UDim2.new(0, 10, 0, 260)
+    copyBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    copyBtn.BorderSizePixel = 0
+    copyBtn.Text = "🐉 Создать копию питомца"
+    copyBtn.TextColor3 = Color3.new(1, 1, 1)
+    copyBtn.TextScaled = true
+    copyBtn.Font = Enum.Font.SourceSansBold
+    copyBtn.Parent = frame
+    
+    -- События кнопок
+    hideBtn.MouseButton1Click:Connect(function()
+        status.Text = "👻 Скрываю Shovel..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = hideShovel()
         
         if success then
-            print("✅ Клик симулирован успешно")
-            return true
+            status.Text = "✅ Shovel скрыт!"
+            status.TextColor3 = Color3.new(0, 1, 0)
         else
-            print("⚠️ Ошибка симуляции клика:", error)
+            status.Text = "❌ Ошибка скрытия Shovel"
+            status.TextColor3 = Color3.new(1, 0, 0)
         end
-    end
-    
-    -- Если это Frame с кликабельными детьми
-    for _, child in pairs(guiElement:GetChildren()) do
-        if child:IsA("GuiButton") then
-            print("🖱️ Найдена кнопка в элементе:", child.Name)
-            return simulateClick(child)
-        end
-    end
-    
-    return false
-end
-
--- Функция удаления текущего питомца из handle
-local function removeCurrentPetFromHandle()
-    local playerChar = player.Character
-    if not playerChar then return false end
-    
-    local handle = playerChar:FindFirstChild("Handle")
-    if not handle then 
-        print("❌ Handle не найден")
-        return false 
-    end
-    
-    -- Удаляем всех питомцев из handle (кроме Dragonfly)
-    local removed = false
-    for _, child in pairs(handle:GetChildren()) do
-        if child:IsA("Model") and not child.Name:lower():find("dragonfly") then
-            print("🗑️ Убираю из handle:", child.Name)
-            child:Destroy()
-            removed = true
-        end
-    end
-    
-    return removed
-end
-
--- Функция проверки появления Dragonfly в handle
-local function checkDragonflyInHandle()
-    local playerChar = player.Character
-    if not playerChar then return false end
-    
-    local handle = playerChar:FindFirstChild("Handle")
-    if not handle then return false end
-    
-    for _, child in pairs(handle:GetChildren()) do
-        if child:IsA("Model") and child.Name:lower():find("dragonfly") then
-            print("✅ Dragonfly найден в handle!")
-            return true
-        end
-    end
-    
-    return false
-end
-
--- Основная функция переключения
-local function switchTodragonfly()
-    statusLabel.Text = "🔍 Ищу Dragonfly..."
-    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
-    
-    -- Шаг 1: Найти Dragonfly в GUI
-    local dragonflyElement = findDragonflyInGui()
-    if not dragonflyElement then
-        statusLabel.Text = "❌ Dragonfly не найден в GUI"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-    
-    -- Шаг 2: Убрать текущего питомца из handle
-    statusLabel.Text = "🗑️ Убираю текущего питомца..."
-    removeCurrentPetFromHandle()
-    wait(0.5)
-    
-    -- Шаг 3: Симулировать клик по Dragonfly
-    statusLabel.Text = "🖱️ Активирую Dragonfly..."
-    local clickSuccess = simulateClick(dragonflyElement)
-    
-    if not clickSuccess then
-        statusLabel.Text = "⚠️ Не удалось активировать Dragonfly"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
-        return
-    end
-    
-    -- Шаг 4: Проверить результат
-    wait(1)
-    statusLabel.Text = "✅ Проверяю результат..."
-    
-    if checkDragonflyInHandle() then
-        statusLabel.Text = "🎉 Dragonfly успешно в руке!"
-        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-    else
-        statusLabel.Text = "❌ Dragonfly не появился в руке"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-    end
-end
-
--- Обработчик кнопки
-switchButton.MouseButton1Click:Connect(function()
-    switchButton.Text = "⏳ Переключаю..."
-    switchButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
-    
-    spawn(function()
-        switchTodragonfly()
-        
-        wait(2)
-        switchButton.Text = "🔄 Переместить Dragonfly в руку"
-        switchButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
     end)
-end)
+    
+    replaceBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Заменяю Shovel на питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = replaceShovelWithPet()
+        
+        if success then
+            status.Text = "✅ Shovel заменен на питомца!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены Shovel"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    deleteBtn.MouseButton1Click:Connect(function()
+        status.Text = "🗑️ Удаляю Shovel..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = deleteShovel()
+        
+        if success then
+            status.Text = "✅ Shovel удален!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка удаления Shovel"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    copyBtn.MouseButton1Click:Connect(function()
+        status.Text = "🐉 Создаю копию питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = createPetCopyInHands()
+        
+        if success then
+            status.Text = "✅ Копия питомца создана!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка создания копии"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+end
 
-print("✅ DragonflySwitcher загружен! Нажмите кнопку для переключения.")
+-- Запускаем
+createShovelHiderGUI()
+print("✅ ShovelHider готов!")
+print("🎮 Возьмите питомца в руки и попробуйте разные методы")
