@@ -1,798 +1,372 @@
--- 🔥 PET SCALER v2.0 - Масштабирование с анимацией
--- Объединяет оригинальный PetScaler + SmartMotorCopier
--- Создает масштабированную копию И сразу включает анимацию
+-- FocusedEggToHandTracker.lua
+-- ФОКУСИРОВАННЫЙ ТРЕКЕР: Отслеживает ТОЛЬКО нужные события
+-- 1. EggExplode - взрыв яйца
+-- 2. Временная модель питомца (dog/bunny/golden lab) в workspace
+-- 3. Tool питомца в руке игрока
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-print("🔥 === PET SCALER v2.0 - С АНИМАЦИЕЙ ===")
+print("🎯 === FOCUSED EGG TO HAND TRACKER ===")
+print("🥚 Отслеживает: EggExplode → Временная модель → Tool в руке")
 print("=" .. string.rep("=", 60))
 
--- Конфигурация (ОСНОВАНА НА ДИАГНОСТИКЕ ОРИГИНАЛЬНОЙ ИГРЫ)
-local CONFIG = {
-    SEARCH_RADIUS = 100,
-    SCALE_FACTOR = 1.184,   -- Точный коэффициент из диагностики!
-    TWEEN_TIME = 3.2,       -- Время как в оригинале (3.22 сек)
-    EASING_STYLE = Enum.EasingStyle.Quad,
-    EASING_DIRECTION = Enum.EasingDirection.Out
+-- 📊 ТРЕКИНГ ДАННЫХ
+local TrackingData = {
+    eggExplodeTime = nil,
+    tempModelTime = nil,
+    toolInHandTime = nil,
+    tempModelName = nil,
+    toolName = nil,
+    isTracking = false
 }
 
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
-end
+-- 🖥️ КОНСОЛЬ
+local TrackerConsole = nil
+local ConsoleLines = {}
+local MaxLines = 50
 
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
-
-local playerPos = hrp.Position
-print("📍 Позиция игрока:", playerPos)
-print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
-print("📐 Масштабирование:", CONFIG.SCALE_FACTOR .. "x (как в оригинальной игре)")
-print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
-print()
-
--- === ФУНКЦИИ ИЗ ОРИГИНАЛЬНОГО PETSCALER ===
-
--- Функция проверки визуальных элементов питомца (УЛУЧШЕННАЯ ВЕРСИЯ)
-local function hasPetVisuals(model)
-    local visualCount = 0
-    local petVisuals = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        local visualData = nil
-        
-        -- Проверяем MeshPart (оригинальная логика)
-        if obj:IsA("MeshPart") then
-            visualCount = visualCount + 1
-            visualData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                type = "MeshPart"
-            }
-        
-        -- Проверяем SpecialMesh (оригинальная логика)
-        elseif obj:IsA("SpecialMesh") then
-            visualCount = visualCount + 1
-            visualData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or "",
-                type = "SpecialMesh"
-            }
-        
-        -- НОВОЕ: Проверяем обычные Part с текстурами/декалями
-        elseif obj:IsA("Part") then
-            -- Ищем Decal или Texture на Part
-            local hasDecal = obj:FindFirstChildOfClass("Decal")
-            local hasTexture = obj:FindFirstChildOfClass("Texture")
-            
-            if hasDecal or hasTexture or obj.Material ~= Enum.Material.Plastic then
-                visualCount = visualCount + 1
-                visualData = {
-                    name = obj.Name,
-                    className = obj.ClassName,
-                    material = obj.Material.Name,
-                    hasDecal = hasDecal ~= nil,
-                    hasTexture = hasTexture ~= nil,
-                    type = "Part"
-                }
-            end
-        
-        -- НОВОЕ: Проверяем UnionOperation (объединенные части)
-        elseif obj:IsA("UnionOperation") then
-            visualCount = visualCount + 1
-            visualData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                type = "UnionOperation"
-            }
-        
-        -- НОВОЕ: Проверяем Attachment с эффектами
-        elseif obj:IsA("Attachment") then
-            local hasEffect = #obj:GetChildren() > 0
-            if hasEffect then
-                visualCount = visualCount + 1
-                visualData = {
-                    name = obj.Name,
-                    className = obj.ClassName,
-                    effectCount = #obj:GetChildren(),
-                    type = "Attachment"
-                }
-            end
-        end
-        
-        -- Добавляем найденные визуальные элементы
-        if visualData then
-            table.insert(petVisuals, visualData)
-        end
-    end
-    
-    -- Дополнительная проверка: если модель содержит BasePart'ы, считаем её потенциальным питомцем
-    if visualCount == 0 then
-        local partCount = 0
-        for _, obj in pairs(model:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                partCount = partCount + 1
-            end
-        end
-        
-        -- Если есть несколько частей, вероятно это питомец
-        if partCount >= 2 then
-            visualCount = partCount
-            table.insert(petVisuals, {
-                name = "BaseParts",
-                className = "Multiple",
-                partCount = partCount,
-                type = "BasePart"
-            })
-            print("  🔍 Найден потенциальный питомец с " .. partCount .. " частями: " .. model.Name)
-        end
-    end
-    
-    return visualCount > 0, petVisuals
-end
-
--- Функция глубокого копирования модели (ОРИГИНАЛЬНАЯ ВЕРСИЯ + ЗАЩИТА)
-local function deepCopyModel(originalModel)
-    -- Проверяем входные параметры
-    if not originalModel then
-        print("❌ deepCopyModel: Оригинальная модель = nil!")
-        return nil
-    end
-    
-    if not originalModel.Parent then
-        print("❌ deepCopyModel: Оригинальная модель не в Workspace!")
-        return nil
-    end
-    
-    print("📋 Создаю глубокую копию модели:", originalModel.Name)
-    
-    local copy = nil
-    local success, errorMsg = pcall(function()
-        copy = originalModel:Clone()
-    end)
-    
-    if not success or not copy then
-        print("❌ Ошибка при клонировании:", errorMsg or "Неизвестная ошибка")
-        return nil
-    end
-    
-    copy.Name = originalModel.Name .. "_SCALED_COPY"
-    copy.Parent = Workspace
-    
-    -- Позиционирование копии (оригинальная логика)
-    if copy.PrimaryPart and originalModel.PrimaryPart then
-        local originalCFrame = originalModel.PrimaryPart.CFrame
-        local offset = Vector3.new(15, 0, 0)
-        
-        local targetPosition = originalCFrame.Position + offset
-        
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {copy, originalModel}
-        
-        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
-        local rayDirection = Vector3.new(0, -200, 0)
-        
-        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        
-        if raycastResult then
-            local groundY = raycastResult.Position.Y
-            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
-            local newCFrame = CFrame.new(finalPosition, originalCFrame.LookVector)
-            copy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на земле")
-        else
-            local newCFrame = originalCFrame + offset
-            copy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на уровне оригинала")
-        end
-    elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
-        local originalPos = originalModel.RootPart.Position
-        local offset = Vector3.new(15, 0, 0)
-        copy.RootPart.Position = originalPos + offset
-        print("📍 Копия размещена через RootPart")
-    else
-        print("⚠️ Не удалось точно позиционировать копию")
-    end
-    
-    -- ВАЖНО: НЕ устанавливаем Anchored здесь - это сделает SmartAnchoredManagement
-    
-    print("✅ Копия создана:", copy.Name)
-    return copy
-end
-
--- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
-
--- Функция получения всех BasePart из модели
-local function getAllParts(model)
-    local parts = {}
-    
-    if not model then
-        print("⚠️ getAllParts: модель = nil")
-        return parts
-    end
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(parts, obj)
-        end
-    end
-    
-    return parts
-end
-
--- Функция умного управления Anchored (из SmartMotorCopier)
-local function smartAnchoredManagement(copyParts)
-    if not copyParts or #copyParts == 0 then
-        print("⚠️ smartAnchoredManagement: нет частей")
-        return nil
-    end
-    
-    print("🧠 Умное управление Anchored...")
-    
-    -- Находим "корневую" часть
-    local rootPart = nil
-    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
-    
-    for _, candidate in ipairs(rootCandidates) do
-        for _, part in ipairs(copyParts) do
-            if part.Name == candidate then
-                rootPart = part
-                break
-            end
-        end
-        if rootPart then break end
-    end
-    
-    if not rootPart then
-        rootPart = copyParts[1]
-        print("  ⚠️ Корневая часть не найдена, использую:", rootPart.Name)
-    else
-        print("  ✅ Корневая часть:", rootPart.Name)
-    end
-    
-    -- Применяем умный Anchored (КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ДЛЯ ПРЕДОТВРАЩЕНИЯ ПАДЕНИЯ!)
-    for _, part in ipairs(copyParts) do
-        if part == rootPart then
-            part.Anchored = true -- Только корень заякорен - это предотвращает падение!
-        else
-            part.Anchored = false -- Остальные могут двигаться
-        end
-    end
-    
-    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
-    return rootPart
-end
-
--- Функция получения всех Motor6D из модели
-local function getMotor6Ds(model)
-    local motors = {}
-    
-    if not model then
-        print("⚠️ getMotor6Ds: модель = nil")
-        return motors
-    end
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            table.insert(motors, obj)
-        end
-    end
-    
-    return motors
-end
-
--- Функция создания карты Motor6D
-local function createMotorMap(motors)
-    local map = {}
-    
-    for _, motor in ipairs(motors) do
-        local key = motor.Name
-        if motor.Part0 then
-            key = key .. "_" .. motor.Part0.Name
-        end
-        if motor.Part1 then
-            key = key .. "_" .. motor.Part1.Name
-        end
-        
-        map[key] = motor
-    end
-    
-    return map
-end
-
--- Функция копирования состояния Motor6D
-local function copyMotorState(originalMotor, copyMotor)
-    if not originalMotor or not copyMotor then
-        return false
-    end
-    
-    copyMotor.Transform = originalMotor.Transform
-    copyMotor.C0 = originalMotor.C0
-    copyMotor.C1 = originalMotor.C1
-    
-    return true
-end
-
--- Функция запуска живого копирования Motor6D
-local function startLiveMotorCopying(original, copy)
-    if not original or not copy then
-        print("⚠️ startLiveMotorCopying: одна из моделей = nil")
-        return nil
-    end
-    
-    print("🔄 Запуск живого копирования Motor6D...")
-    
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
-    
-    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
-    
-    if #originalMotors == 0 or #copyMotors == 0 then
-        print("❌ Недостаточно Motor6D для копирования")
-        return nil
-    end
-    
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
-    
-    local connection = nil
-    local isRunning = true
-    local frameCount = 0
-    
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRunning then
-            connection:Disconnect()
-            return
-        end
-        
-        frameCount = frameCount + 1
-        
-        -- Проверяем существование моделей
-        if not original.Parent or not copy.Parent then
-            print("⚠️ Модель удалена, останавливаю копирование")
-            isRunning = false
-            return
-        end
-        
-        -- Копируем состояния Motor6D
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                copyMotorState(originalMotor, copyMotor)
-            end
-        end
-        
-        -- Статус каждые 3 секунды
-        if frameCount % 180 == 0 then
-            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
-        end
-    end)
-    
-    print("✅ Живое копирование Motor6D запущено!")
-    print("💡 Копия будет повторять движения оригинала")
-    
-    return connection
-end
-
--- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
-
--- Функция получения всех BasePart из модели
-local function getAllParts(model)
-    local parts = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(parts, obj)
-        end
-    end
-    
-    return parts
-end
-
--- Функция получения всех Motor6D из модели
-local function getMotor6Ds(model)
-    local motors = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            table.insert(motors, obj)
-        end
-    end
-    
-    return motors
-end
-
--- Функция создания карты Motor6D
-local function createMotorMap(motors)
-    local map = {}
-    
-    for _, motor in ipairs(motors) do
-        local key = motor.Name
-        if motor.Part0 then
-            key = key .. "_" .. motor.Part0.Name
-        end
-        if motor.Part1 then
-            key = key .. "_" .. motor.Part1.Name
-        end
-        
-        map[key] = motor
-    end
-    
-    return map
-end
-
--- Функция умного управления Anchored (из SmartMotorCopier)
-local function smartAnchoredManagement(copyParts)
-    print("🧠 Умное управление Anchored...")
-    
-    -- Находим "корневую" часть
-    local rootPart = nil
-    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
-    
-    for _, candidate in ipairs(rootCandidates) do
-        for _, part in ipairs(copyParts) do
-            if part.Name == candidate then
-                rootPart = part
-                break
-            end
-        end
-        if rootPart then break end
-    end
-    
-    if not rootPart then
-        rootPart = copyParts[1]
-        print("  ⚠️ Корневая часть не найдена, использую:", rootPart.Name)
-    else
-        print("  ✅ Корневая часть:", rootPart.Name)
-    end
-    
-    -- Применяем умный Anchored
-    for _, part in ipairs(copyParts) do
-        if part == rootPart then
-            part.Anchored = true -- Только корень заякорен
-        else
-            part.Anchored = false -- Остальные могут двигаться
-        end
-    end
-    
-    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
-    return rootPart
-end
-
--- Функция копирования состояния Motor6D
-local function copyMotorState(originalMotor, copyMotor)
-    if not originalMotor or not copyMotor then
-        return false
-    end
-    
-    copyMotor.Transform = originalMotor.Transform
-    copyMotor.C0 = originalMotor.C0
-    copyMotor.C1 = originalMotor.C1
-    
-    return true
-end
-
--- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
-
--- 🔥 УНИФИЦИРОВАННОЕ МАСШТАБИРОВАНИЕ (основано на диагностике оригинальной игры)
-local function scaleModelUnified(model, scaleFactor, tweenTime)
-    print("🔥 Начинаю УНИФИЦИРОВАННОЕ масштабирование:", model.Name)
-    print("📐 Коэффициент:", scaleFactor .. "x (как в оригинальной игре)")
-    
-    local parts = getAllParts(model)
-    print("🧩 Найдено частей:", #parts)
-    
-    if #parts == 0 then
-        print("❌ Нет частей для масштабирования!")
-        return false
-    end
-    
-    -- 🎯 КЛЮЧЕВОЕ ОТЛИЧИЕ: Сохраняем исходные размеры и применяем ОДИНАКОВЫЙ коэффициент
-    local originalSizes = {}
-    for _, part in ipairs(parts) do
-        originalSizes[part] = part.Size
-        -- Закрепляем части для стабильности
-        part.Anchored = true
-    end
-    
-    -- Создаем TweenInfo
-    local tweenInfo = TweenInfo.new(
-        tweenTime,
-        CONFIG.EASING_STYLE,
-        CONFIG.EASING_DIRECTION,
-        0,
-        false,
-        0
-    )
-    
-    -- 🔥 УНИФИЦИРОВАННОЕ масштабирование: ВСЕ части получают ОДИНАКОВЫЙ коэффициент
-    local tweens = {}
-    local completedTweens = 0
-    
-    for _, part in ipairs(parts) do
-        local originalSize = originalSizes[part]
-        local newSize = originalSize * scaleFactor -- Простое умножение на коэффициент!
-        
-        print("📏 Масштабирую", part.Name, ":", originalSize, "->", newSize)
-        
-        -- Создаем tween только для размера (БЕЗ сложных CFrame вычислений!)
-        local tween = TweenService:Create(part, tweenInfo, {
-            Size = newSize
-        })
-        
-        tween.Completed:Connect(function()
-            completedTweens = completedTweens + 1
-            if completedTweens == #parts then
-                -- 🔥 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Освобождаем части после масштабирования!
-                for _, part in ipairs(parts) do
-                    part.Anchored = false -- Освобождаем для анимаций
-                end
-                
-                print("✅ УНИФИЦИРОВАННОЕ масштабирование завершено!")
-                print("🎉 Все", #parts, "частей масштабированы на", scaleFactor .. "x")
-                print("🎭 Части освобождены - анимации теперь должны работать!")
-            end
-        end)
-        
-        table.insert(tweens, tween)
-        tween:Play()
-    end
-    
-    return true
-end
-
--- === ФУНКЦИЯ ЗАПУСКА ЖИВОГО КОПИРОВАНИЯ ===
-
-local function startLiveMotorCopying(original, copy)
-    print("🔄 Запуск живого копирования Motor6D...")
-    
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
-    
-    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
-    
-    if #originalMotors == 0 or #copyMotors == 0 then
-        print("❌ Недостаточно Motor6D для копирования")
-        return nil
-    end
-    
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
-    
-    local connection = nil
-    local isRunning = true
-    local frameCount = 0
-    
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRunning then
-            connection:Disconnect()
-            return
-        end
-        
-        frameCount = frameCount + 1
-        
-        -- Проверяем существование моделей
-        if not original.Parent or not copy.Parent then
-            print("⚠️ Модель удалена, останавливаю копирование")
-            isRunning = false
-            return
-        end
-        
-        -- Копируем состояния Motor6D
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                copyMotorState(originalMotor, copyMotor)
-            end
-        end
-        
-        -- Статус каждые 3 секунды
-        if frameCount % 180 == 0 then
-            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
-        end
-    end)
-    
-    print("✅ Живое копирование Motor6D запущено!")
-    print("💡 Копия будет повторять движения оригинала")
-    
-    return connection
-end
-
--- === ОСНОВНЫЕ ФУНКЦИИ ===
-
--- Функция поиска и масштабирования (из оригинального PetScaler)
-local function findAndScalePet()
-    print("🔍 Поиск UUID моделей питомцев...")
-    
-    local foundPets = {}
-    
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
-                        table.insert(foundPets, {
-                            model = obj,
-                            distance = distance,
-                            meshes = meshes
-                        })
-                    end
-                end
-            end
-        end
-    end
-    
-    if #foundPets == 0 then
-        print("❌ Питомцы не найдены!")
-        return nil
-    end
-    
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец:", targetPet.model.Name)
-    
-    return targetPet.model
-end
-
--- Главная функция v2.0 (ОБНОВЛЕННАЯ ЛОГИКА)
-local function main()
-    print("🚀 PetScaler v2.0 запущен!")
-    
-    -- Шаг 1: Найти питомца
-    local petModel = findAndScalePet()
-    if not petModel then
-        return
-    end
-    
-    -- Шаг 2: Создать копию (ОБНОВЛЕННАЯ ЛОГИКА)
-    print("\n📋 === СОЗДАНИЕ КОПИИ ===")
-    local petCopy = deepCopyModel(petModel)
-    if not petCopy then
-        print("❌ Не удалось создать копию!")
-        return
-    end
-    
-    -- НЕ закрепляем части сразу - это сделает scaleModelUnified во время масштабирования
-    print("📝 Копия создана, Anchored будет настроен во время масштабирования")
-    
-    -- Проверяем, что копия существует и находится в Workspace
-    if not petCopy or not petCopy.Parent then
-        print("❌ Копия недоступна!")
-        return
-    end
-    
-    -- Шаг 3: Сразу запускаем живое копирование анимации (КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!)
-    print("\n🔄 === ЗАПУСК ЖИВОЙ АНИМАЦИИ ===")
-    local animationConnection = nil
-    
-    -- Проверяем, что обе модели существуют
-    if petModel and petModel.Parent and petCopy and petCopy.Parent then
-        animationConnection = startLiveMotorCopying(petModel, petCopy)
-    end
-    
-    if not animationConnection then
-        print("⚠️ Живая анимация не запустилась, но продолжаем...")
-    else
-        print("✅ Живая анимация запущена! Питомец уже двигается!")
-    end
-    
-    -- Шаг 4: Одновременно запускаем анимацию роста
-    print("\n🌱 === АНИМАЦИЯ РОСТА ===")
-    wait(0.3) -- Короткая пауза чтобы увидеть маленького питомца
-    
-    -- Проверяем, что копия все еще существует
-    if not petCopy or not petCopy.Parent then
-        print("❌ Копия исчезла перед анимацией роста!")
-        return
-    end
-    
-    local scaleSuccess = scaleModelUnified(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
-    
-    if not scaleSuccess then
-        print("❌ Унифицированное масштабирование не удалось!")
-        return
-    end
-    
-    -- Завершение
-    print("\n🎉 === УСПЕХ! ===")
-    print("✅ Копия создана с унифицированным масштабированием")
-    print("✅ Живая анимация запущена сразу")
-    print("✅ Масштабирование", CONFIG.SCALE_FACTOR .. "x применено (как в оригинальной игре)")
-    print("💡 БЕЗ разрозненности частей - все масштабируется синхронно!")
-end
-
--- Создание GUI
-local function createGUI()
-    local playerGui = player:WaitForChild("PlayerGui")
-    
-    local oldGui = playerGui:FindFirstChild("PetScalerV2GUI")
-    if oldGui then
-        oldGui:Destroy()
-    end
-    
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetScalerV2GUI"
-    screenGui.Parent = playerGui
+-- Создание консоли
+local function createTrackerConsole()
+    if TrackerConsole then TrackerConsole:Destroy() end
+    
+    TrackerConsole = Instance.new("ScreenGui")
+    TrackerConsole.Name = "FocusedEggToHandTrackerConsole"
+    TrackerConsole.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 250, 0, 80)
-    frame.Position = UDim2.new(0, 50, 0, 150) -- Под оригинальным PetScaler
-    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(0, 255, 0) -- Зеленая рамка
-    frame.Parent = screenGui
+    frame.Size = UDim2.new(0, 600, 0, 400)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.02, 0.02, 0.1)
+    frame.BorderSizePixel = 3
+    frame.BorderColor3 = Color3.new(0.2, 0.8, 0.2)
+    frame.Parent = TrackerConsole
     
-    local button = Instance.new("TextButton")
-    button.Name = "ScaleButton"
-    button.Size = UDim2.new(0, 230, 0, 40)
-    button.Position = UDim2.new(0, 10, 0, 20)
-    button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    button.BorderSizePixel = 0
-    button.Text = "🔥 PetScaler v2.0 + Анимация"
-    button.TextColor3 = Color3.fromRGB(0, 0, 0)
-    button.TextSize = 14
-    button.Font = Enum.Font.SourceSansBold
-    button.Parent = frame
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 35)
+    title.BackgroundColor3 = Color3.new(0.1, 0.8, 0.1)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 FOCUSED EGG TO HAND TRACKER"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
     
-    button.MouseButton1Click:Connect(function()
-        button.Text = "⏳ Создаю с анимацией..."
-        button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-        
-        spawn(function()
-            local success, errorMsg = pcall(function()
-                main()
-            end)
-            
-            if success then
-                wait(3)
-                button.Text = "🔥 PetScaler v2.0 + Анимация"
-                button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-            else
-                print("❌ Ошибка в main():", errorMsg)
-                button.Text = "❌ Ошибка! Попробуйте снова"
-                button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-            end
-        end)
-    end)
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
+    scrollFrame.BackgroundColor3 = Color3.new(0.01, 0.01, 0.05)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 10
+    scrollFrame.Parent = frame
     
-    button.MouseEnter:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(0, 255, 0) then
-            button.BackgroundColor3 = Color3.fromRGB(0, 220, 0)
-        end
-    end)
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -10, 1, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = "🎯 Фокусированный трекер готов..."
+    textLabel.TextColor3 = Color3.new(1, 0.9, 0.9)
+    textLabel.TextSize = 12
+    textLabel.Font = Enum.Font.SourceSans
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Parent = scrollFrame
     
-    button.MouseLeave:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(0, 220, 0) then
-            button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-        end
-    end)
-    
-    print("🖥️ PetScaler v2.0 GUI создан!")
+    return textLabel
 end
 
--- Запуск
-createGUI()
-print("=" .. string.rep("=", 60))
-print("💡 PETSCALER v2.0 - ВСЕ В ОДНОМ:")
-print("   1. Создает масштабированную копию")
-print("   2. Настраивает правильные Anchored состояния")
-print("   3. Автоматически запускает живое копирование анимации")
-print("🎯 Нажмите зеленую кнопку для запуска!")
-print("=" .. string.rep("=", 60))
+-- Функция логирования
+local function trackerLog(category, message, data)
+    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+    local prefixes = {
+        TRACKER = "🎯", EGG = "🥚", MODEL = "🐕", TOOL = "🎮", 
+        SUCCESS = "✅", ERROR = "❌", INFO = "ℹ️", CRITICAL = "🔥"
+    }
+    
+    local logLine = string.format("[%s] %s %s", timestamp, prefixes[category] or "ℹ️", message)
+    
+    if data and next(data) then
+        for key, value in pairs(data) do
+            logLine = logLine .. string.format("\n    %s: %s", key, tostring(value))
+        end
+    end
+    
+    table.insert(ConsoleLines, logLine)
+    
+    if #ConsoleLines > MaxLines then
+        table.remove(ConsoleLines, 1)
+    end
+    
+    -- Обновляем консоль
+    if TrackerConsole then
+        local textLabel = TrackerConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
+        if textLabel then
+            textLabel.Text = table.concat(ConsoleLines, "\n")
+            local scrollFrame = textLabel.Parent
+            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
+            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
+        end
+    end
+    
+    print(logLine)
+end
+
+-- 🥚 МОНИТОРИНГ EGGEXPLODE
+local function monitorEggExplode()
+    trackerLog("EGG", "🥚 Мониторинг EggExplode...")
+    
+    local eggConnection = Workspace.DescendantAdded:Connect(function(obj)
+        if obj.Name == "EggExplode" then
+            TrackingData.eggExplodeTime = tick()
+            trackerLog("EGG", "🥚 EGGEXPLODE ОБНАРУЖЕН!", {
+                Time = string.format("%.3f", TrackingData.eggExplodeTime),
+                Position = obj.Parent and tostring(obj.Parent.Position) or "NIL",
+                Parent = obj.Parent and obj.Parent.Name or "NIL"
+            })
+        end
+    end)
+    
+    return eggConnection
+end
+
+-- 🐕 МОНИТОРИНГ ВРЕМЕННОЙ МОДЕЛИ ПИТОМЦА
+local function monitorTempPetModel()
+    trackerLog("MODEL", "🐕 Мониторинг временной модели питомца...")
+    
+    local modelConnection = Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Model") then
+            local name = obj.Name:lower()
+            -- Проверяем точные имена питомцев
+            if name == "dog" or name == "bunny" or name == "golden lab" or 
+               name == "cat" or name == "rabbit" or name == "puppy" then
+                
+                TrackingData.tempModelTime = tick()
+                TrackingData.tempModelName = obj.Name
+                
+                local timeSinceEgg = TrackingData.eggExplodeTime and 
+                    (TrackingData.tempModelTime - TrackingData.eggExplodeTime) or 0
+                
+                trackerLog("MODEL", "🐕 ВРЕМЕННАЯ МОДЕЛЬ ПИТОМЦА ОБНАРУЖЕНА!", {
+                    Name = obj.Name,
+                    Time = string.format("%.3f", TrackingData.tempModelTime),
+                    TimeSinceEgg = string.format("%.3f сек", timeSinceEgg),
+                    Parent = obj.Parent and obj.Parent.Name or "NIL",
+                    Position = obj.PrimaryPart and tostring(obj.PrimaryPart.Position) or "NIL",
+                    Children = #obj:GetChildren()
+                })
+                
+                -- Анализ структуры модели
+                local structure = {
+                    BaseParts = 0,
+                    MeshParts = 0,
+                    Motor6Ds = 0,
+                    Scripts = 0
+                }
+                
+                for _, child in pairs(obj:GetDescendants()) do
+                    if child:IsA("BasePart") then
+                        structure.BaseParts = structure.BaseParts + 1
+                    elseif child:IsA("MeshPart") then
+                        structure.MeshParts = structure.MeshParts + 1
+                    elseif child:IsA("Motor6D") then
+                        structure.Motor6Ds = structure.Motor6Ds + 1
+                    elseif child:IsA("Script") or child:IsA("LocalScript") then
+                        structure.Scripts = structure.Scripts + 1
+                    end
+                end
+                
+                trackerLog("MODEL", "📊 Структура временной модели:", structure)
+            end
+        end
+    end)
+    
+    return modelConnection
+end
+
+-- 🎮 МОНИТОРИНГ TOOL В РУКЕ
+local function monitorToolInHand()
+    trackerLog("TOOL", "🎮 Мониторинг Tool в руке...")
+    
+    local character = player.Character
+    if not character then
+        trackerLog("ERROR", "❌ Character не найден")
+        return nil
+    end
+    
+    local toolConnection = character.ChildAdded:Connect(function(obj)
+        if obj:IsA("Tool") then
+            local name = obj.Name:lower()
+            -- Проверяем, содержит ли имя Tool название питомца
+            if name:find("dog") or name:find("bunny") or name:find("lab") or 
+               name:find("cat") or name:find("rabbit") or name:find("puppy") then
+                
+                TrackingData.toolInHandTime = tick()
+                TrackingData.toolName = obj.Name
+                
+                local timeSinceEgg = TrackingData.eggExplodeTime and 
+                    (TrackingData.toolInHandTime - TrackingData.eggExplodeTime) or 0
+                local timeSinceModel = TrackingData.tempModelTime and 
+                    (TrackingData.toolInHandTime - TrackingData.tempModelTime) or 0
+                
+                trackerLog("TOOL", "🎮 TOOL ПИТОМЦА В РУКЕ ОБНАРУЖЕН!", {
+                    Name = obj.Name,
+                    Time = string.format("%.3f", TrackingData.toolInHandTime),
+                    TimeSinceEgg = string.format("%.3f сек", timeSinceEgg),
+                    TimeSinceModel = string.format("%.3f сек", timeSinceModel),
+                    Children = #obj:GetChildren()
+                })
+                
+                -- Анализ содержимого Tool
+                local handle = obj:FindFirstChild("Handle")
+                if handle then
+                    trackerLog("TOOL", "🎮 Handle найден!", {
+                        Position = tostring(handle.Position),
+                        Size = tostring(handle.Size),
+                        Material = tostring(handle.Material)
+                    })
+                end
+                
+                for _, child in pairs(obj:GetChildren()) do
+                    trackerLog("TOOL", string.format("📦 Содержимое Tool: %s (%s)", child.Name, child.ClassName))
+                end
+                
+                -- Генерируем итоговый отчет
+                generateFinalReport()
+            end
+        end
+    end)
+    
+    return toolConnection
+end
+
+-- 📊 ГЕНЕРАЦИЯ ИТОГОВОГО ОТЧЕТА
+local function generateFinalReport()
+    trackerLog("CRITICAL", "📊 === ИТОГОВЫЙ ОТЧЕТ ТРЕКИНГА ===")
+    
+    if TrackingData.eggExplodeTime then
+        trackerLog("SUCCESS", string.format("✅ ФАЗА 1: EggExplode (%.3f сек)", TrackingData.eggExplodeTime))
+    else
+        trackerLog("ERROR", "❌ ФАЗА 1: EggExplode НЕ ОБНАРУЖЕН")
+    end
+    
+    if TrackingData.tempModelTime and TrackingData.tempModelName then
+        local delay1 = TrackingData.eggExplodeTime and 
+            (TrackingData.tempModelTime - TrackingData.eggExplodeTime) or 0
+        trackerLog("SUCCESS", string.format("✅ ФАЗА 2: Временная модель '%s' (+%.3f сек)", 
+            TrackingData.tempModelName, delay1))
+    else
+        trackerLog("ERROR", "❌ ФАЗА 2: Временная модель НЕ ОБНАРУЖЕНА")
+    end
+    
+    if TrackingData.toolInHandTime and TrackingData.toolName then
+        local delay2 = TrackingData.tempModelTime and 
+            (TrackingData.toolInHandTime - TrackingData.tempModelTime) or 0
+        trackerLog("SUCCESS", string.format("✅ ФАЗА 3: Tool в руке '%s' (+%.3f сек)", 
+            TrackingData.toolName, delay2))
+    else
+        trackerLog("ERROR", "❌ ФАЗА 3: Tool в руке НЕ ОБНАРУЖЕН")
+    end
+    
+    local totalTime = (TrackingData.toolInHandTime and TrackingData.eggExplodeTime) and 
+        (TrackingData.toolInHandTime - TrackingData.eggExplodeTime) or 0
+    
+    if totalTime > 0 then
+        trackerLog("CRITICAL", string.format("⏱️ ОБЩЕЕ ВРЕМЯ: %.3f секунд", totalTime))
+        trackerLog("CRITICAL", "🎯 ВСЕ ФАЗЫ УСПЕШНО ОТСЛЕЖЕНЫ!")
+    else
+        trackerLog("ERROR", "❌ НЕ ВСЕ ФАЗЫ БЫЛИ ОБНАРУЖЕНЫ")
+    end
+end
+
+-- 🚀 ГЛАВНАЯ ФУНКЦИЯ ТРЕКИНГА
+local function startFocusedTracking()
+    trackerLog("TRACKER", "🚀 ЗАПУСК ФОКУСИРОВАННОГО ТРЕКИНГА")
+    trackerLog("TRACKER", "🎯 Отслеживаем: EggExplode → Модель → Tool")
+    
+    TrackingData.isTracking = true
+    
+    -- Запускаем все мониторы
+    local eggConnection = monitorEggExplode()
+    local modelConnection = monitorTempPetModel()
+    local toolConnection = monitorToolInHand()
+    
+    trackerLog("TRACKER", "✅ Все мониторы активны!")
+    trackerLog("TRACKER", "🥚 ОТКРОЙТЕ ЯЙЦО СЕЙЧАС!")
+    
+    -- Автоостановка через 2 минуты
+    wait(120)
+    
+    if eggConnection then eggConnection:Disconnect() end
+    if modelConnection then modelConnection:Disconnect() end
+    if toolConnection then toolConnection:Disconnect() end
+    
+    trackerLog("TRACKER", "⏰ Трекинг завершен по таймауту")
+    generateFinalReport()
+end
+
+-- Создаем GUI
+local function createTrackerGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "FocusedEggToHandTrackerGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 300, 0, 120)
+    frame.Position = UDim2.new(1, -320, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.05, 0.1, 0.05)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundColor3 = Color3.new(0.1, 0.8, 0.1)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 FOCUSED TRACKER"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(1, -20, 0, 40)
+    startBtn.Position = UDim2.new(0, 10, 0, 40)
+    startBtn.BackgroundColor3 = Color3.new(0.2, 0.8, 0.2)
+    startBtn.BorderSizePixel = 0
+    startBtn.Text = "🚀 НАЧАТЬ ТРЕКИНГ"
+    startBtn.TextColor3 = Color3.new(1, 1, 1)
+    startBtn.TextScaled = true
+    startBtn.Font = Enum.Font.SourceSansBold
+    startBtn.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 30)
+    status.Position = UDim2.new(0, 10, 0, 90)
+    status.BackgroundTransparency = 1
+    status.Text = "Готов отслеживать яйцо"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.Parent = frame
+    
+    startBtn.MouseButton1Click:Connect(function()
+        status.Text = "🎯 Трекинг активен!"
+        status.TextColor3 = Color3.new(0.2, 1, 0.2)
+        startBtn.Text = "✅ ТРЕКИНГ АКТИВЕН"
+        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
+        startBtn.Active = false
+        
+        startFocusedTracking()
+    end)
+end
+
+-- Запускаем
+local consoleTextLabel = createTrackerConsole()
+createTrackerGUI()
+
+trackerLog("TRACKER", "✅ FocusedEggToHandTracker готов!")
+trackerLog("TRACKER", "🎯 Фокусированное отслеживание яйца → модель → Tool")
+trackerLog("TRACKER", "🚀 Нажмите 'НАЧАТЬ ТРЕКИНГ' и откройте яйцо!")
