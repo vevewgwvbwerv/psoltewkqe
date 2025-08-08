@@ -884,21 +884,30 @@ local function startWorkspaceScanning()
             return
         end
         
+        -- ОПТИМИЗАЦИЯ: Сканируем только каждые 0.5 секунд вместо каждого кадра
+        if elapsed % 0.5 > 0.1 then
+            return
+        end
+        
         -- ОТЛАДКА: Показываем все модели в workspace для диагностики
         if math.floor(elapsed) % 5 == 0 and elapsed > 1 then -- Каждые 5 секунд
             print("\n🔍 === ОТЛАДКА АВТОЗАМЕНЫ (" .. string.format("%.1f сек", elapsed) .. ") ===")
             
-            -- Проверяем workspace.visuals
-            local visuals = Workspace:FindFirstChild("visuals")
-            if visuals then
-                print("📁 workspace.visuals найден, содержит:")
-                for _, child in pairs(visuals:GetChildren()) do
-                    if child:IsA("Model") then
-                        print("  🐾 Модель:", child.Name, "- Тип:", child.ClassName)
+            -- Проверяем ВЕСЬ WORKSPACE (ИЩЕМ ПРОСТЫЕ ИМЕНА!)
+            print("📁 Сканируем весь Workspace на наличие питомцев:")
+            local petCount = 0
+            for _, child in pairs(Workspace:GetDescendants()) do
+                if child:IsA("Model") and child ~= player.Character then
+                    local childName = child.Name:lower()
+                    local isPet = childName == "golden lab" or childName == "bunny" or childName == "dog" or childName == "cat" or childName == "rabbit"
+                    if isPet then
+                        petCount = petCount + 1
+                        print("  🐾 ПИТОМЕЦ:", child.Name, "- Родитель:", child.Parent and child.Parent.Name or "nil")
                     end
                 end
-            else
-                print("❌ workspace.visuals НЕ найден!")
+            end
+            if petCount == 0 then
+                print("❌ Питомцы с простыми именами НЕ найдены в Workspace!")
             end
             
             -- Проверяем UUID модели
@@ -918,48 +927,53 @@ local function startWorkspaceScanning()
         local foundPet = nil
         local foundVisualsPet = nil
         
-        -- Шаг 1: Ищем питомца в workspace.visuals
-        local visuals = Workspace:FindFirstChild("visuals")
-        if visuals then
-            for _, visualObj in pairs(visuals:GetChildren()) do
-                if visualObj:IsA("Model") and not processedPetNames[visualObj.Name] then
-                    -- Проверяем, что это питомец (простые критерии)
-                    local objNameLower = visualObj.Name:lower()
-                    if objNameLower:find("dog") or objNameLower:find("bunny") or objNameLower:find("lab") or 
-                       objNameLower:find("cat") or objNameLower:find("rabbit") then
-                        foundVisualsPet = visualObj
-                        print("🎭 Найден визуальный питомец:", visualObj.Name)
-                        break
-                    end
+        -- Шаг 1: ОПТИМИЗИРОВАННОЕ СКАНИРОВАНИЕ - ограничиваем количество проверок
+        local checkedModels = 0
+        local maxModelsToCheck = 50 -- Максимум 50 моделей за раз для предотвращения лагов
+        
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if checkedModels >= maxModelsToCheck then
+                break -- Прерываем цикл для предотвращения лагов
+            end
+            
+            if obj:IsA("Model") and obj ~= player.Character and not processedPetNames[obj.Name] then
+                checkedModels = checkedModels + 1
+                
+                -- КРИТИЧНО: У визуального питомца ПРОСТОЕ ИМЯ (НЕ UUID!)
+                local objName = obj.Name:lower()
+                if objName == "golden lab" or objName == "bunny" or objName == "dog" or 
+                   objName == "cat" or objName == "rabbit" or objName:find("lab") then
+                    foundVisualsPet = obj
+                    print("🎭 НАЙДЕН визуальный питомец в Workspace:", obj.Name, "- Родитель:", obj.Parent and obj.Parent.Name or "nil")
+                    break
                 end
             end
         end
         
-        -- Шаг 2: Ищем соответствующего UUID питомца
+        -- Шаг 2: ИЩЕМ UUID ПИТОМЦА ПО РАССТОЯНИЮ (КАК В РУЧНОЙ КОПИИ!)
         if foundVisualsPet then
-            local visualName = foundVisualsPet.Name:lower()
+            print("🔍 Ищем UUID питомца рядом с игроком (как в findAndScalePet)...")
             
+            -- ТОЧНО КОПИРУЕМ ЛОГИКУ ИЗ findAndScalePet()!
             for _, obj in pairs(Workspace:GetDescendants()) do
                 if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-                    local uuidName = obj.Name:lower()
-                    
-                    -- Простое соответствие по ключевым словам
-                    if (visualName:find("dog") and uuidName:find("dog")) or
-                       (visualName:find("bunny") and uuidName:find("bunny")) or
-                       (visualName:find("lab") and uuidName:find("lab")) or
-                       (visualName:find("cat") and uuidName:find("cat")) then
-                        
-                        -- Проверяем расстояние
-                        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-                        if success then
-                            local playerChar = player.Character
-                            if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-                                local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
-                                if distance <= CONFIG.SEARCH_RADIUS then
-                                    foundPet = obj
-                                    print("🔑 Найден соответствующий UUID питомец:", obj.Name)
-                                    break
+                    local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+                    if success then
+                        local playerChar = player.Character
+                        if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                            if distance <= CONFIG.SEARCH_RADIUS then
+                                -- Проверяем меши (как в ручной копии)
+                                local meshes = 0
+                                for _, part in pairs(obj:GetDescendants()) do
+                                    if part:IsA("MeshPart") or part:IsA("SpecialMesh") then
+                                        meshes = meshes + 1
+                                    end
                                 end
+                                
+                                foundPet = obj
+                                print("🔑 НАЙДЕН UUID питомец по расстоянию:", obj.Name, "(Расстояние:", math.floor(distance), ", Мешей:", meshes, ")")
+                                break
                             end
                         end
                     end
@@ -989,28 +1003,101 @@ local function startWorkspaceScanning()
             if visualPosition then
                 print("📍 Позиция для замены:", visualPosition)
                 
+                -- МГНОВЕННО СКРЫВАЕМ ВИЗУАЛЬНОГО ПИТОМЦА!
+                print("⚡ МГНОВЕННО скрываю визуального питомца:", foundVisualsPet.Name)
+                
+                -- Метод 1: Мгновенно делаем невидимым
+                for _, part in pairs(foundVisualsPet:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.Transparency = 1
+                        part.CanCollide = false
+                    elseif part:IsA("Decal") or part:IsA("Texture") then
+                        part.Transparency = 1
+                    end
+                end
+                
+                -- Метод 2: Перемещаем под землю
+                if foundVisualsPet.PrimaryPart then
+                    foundVisualsPet.PrimaryPart.Position = foundVisualsPet.PrimaryPart.Position - Vector3.new(0, 1000, 0)
+                elseif foundVisualsPet:FindFirstChild("RootPart") then
+                    foundVisualsPet.RootPart.Position = foundVisualsPet.RootPart.Position - Vector3.new(0, 1000, 0)
+                end
+                
                 -- Создаем копию UUID питомца на месте визуального
                 local animatedCopy = createAnimatedCopyAtPosition(foundPet, visualPosition)
                     
-                    if animatedCopy then
-                        -- Увеличиваем счетчик копий
-                        createdCopiesCount = createdCopiesCount + 1
-                        
-                        -- КРИТИЧНО: Скрываем ВИЗУАЛЬНОГО питомца (не UUID!)
-                        print("🙈 Скрываю визуального питомца:", visualsPet.Name)
-                        
-                        -- Делаем визуального питомца невидимым
-                        for _, part in pairs(visualsPet:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                part.Transparency = 1
-                            elseif part:IsA("Decal") or part:IsA("Texture") then
-                                part.Transparency = 1
-                            end
+                if animatedCopy then
+                    -- Увеличиваем счетчик копий
+                    createdCopiesCount = createdCopiesCount + 1
+                    
+                    -- СИНХРОНИЗИРУЕМ ВРЕМЯ ЖИЗНИ КОПИИ С ОРИГИНАЛОМ
+                    print("⏰ Настраиваю синхронизацию времени жизни...")
+                    
+                    -- Отслеживаем удаление визуального питомца и заменяем питомца в handle
+                    spawn(function()
+                        while foundVisualsPet and foundVisualsPet.Parent do
+                            wait(0.2) -- Проверяем каждые 0.2 секунды (оптимизация)
                         end
                         
+                        -- Когда визуальный питомец исчез, удаляем копию
+                        if animatedCopy and animatedCopy.Parent then
+                            print("✨ Оригинал исчез - удаляю копию")
+                            animatedCopy:Destroy()
+                        end
+                        
+                        -- НОВОЕ: Заменяем питомца в handle на Dragonfly из инвентаря
+                        print("🔄 Ищу питомца в handle для замены...")
+                        
+                        local playerChar = player.Character
+                        if playerChar then
+                            local handle = playerChar:FindFirstChild("Handle")
+                            if handle then
+                                -- Ищем текущего питомца в handle
+                                for _, obj in pairs(handle:GetChildren()) do
+                                    if obj:IsA("Model") and obj.Name ~= "Dragonfly" then
+                                        print("🗑️ Убираю временного питомца из handle:", obj.Name)
+                                        obj:Destroy() -- Удаляем временного питомца
+                                        break
+                                    end
+                                end
+                                
+                                -- Ищем Dragonfly в инвентаре игрока
+                                print("🔍 Ищу Dragonfly в инвентаре...")
+                                
+                                -- Проверяем разные возможные места хранения питомцев
+                                local inventoryLocations = {
+                                    player:FindFirstChild("Backpack"),
+                                    player:FindFirstChild("PlayerGui"),
+                                    playerChar:FindFirstChild("Backpack")
+                                }
+                                
+                                for _, location in pairs(inventoryLocations) do
+                                    if location then
+                                        for _, item in pairs(location:GetDescendants()) do
+                                            if item:IsA("Model") and item.Name:lower():find("dragonfly") then
+                                                print("🐉 Найден Dragonfly в инвентаре - перемещаю в handle")
+                                                
+                                                -- Клонируем Dragonfly и помещаем в handle
+                                                local dragonflyClone = item:Clone()
+                                                dragonflyClone.Parent = handle
+                                                
+                                                print("✅ Dragonfly успешно помещен в handle!")
+                                                return
+                                            end
+                                        end
+                                    end
+                                end
+                                
+                                print("⚠️ Dragonfly не найден в инвентаре")
+                            else
+                                print("⚠️ Handle не найден у игрока")
+                            end
+                        end
+                    end)
+                        
                         -- Перемещаем визуального питомца под землю
-                        if visualsPet.PrimaryPart then
-                            visualsPet:SetPrimaryPartCFrame(visualsPet.PrimaryPart.CFrame - Vector3.new(0, 1000, 0))
+                        if foundVisualsPet.PrimaryPart then
+                            foundVisualsPet:SetPrimaryPartCFrame(foundVisualsPet.PrimaryPart.CFrame - Vector3.new(0, 1000, 0))
                         end
                         
                         print("✅ Визуальный питомец скрыт!")
@@ -1019,7 +1106,7 @@ local function startWorkspaceScanning()
                         
                         -- Добавляем в список найденных
                         table.insert(foundPetModels, {
-                            name = obj.Name .. " -> " .. visualsPet.Name,
+                            name = foundPet.Name .. " -> " .. foundVisualsPet.Name,
                             foundTime = elapsed,
                             animatedCopy = animatedCopy
                         })
@@ -1033,10 +1120,15 @@ local function startWorkspaceScanning()
                 print("⚠️ Не найден соответствующий визуальный питомец для замены")
             end
         end
+    ) -- Закрывающая скобка для RunService.Heartbeat:Connect(function()
         
-        -- Статистика каждые 10 секунд
-        if math.floor(elapsed) % 10 == 0 and math.floor(elapsed) > 0 then
-            print("📊 Статистика сканирования:", string.format("%.1f сек", elapsed), "- найдено питомцев:", #foundPetModels)
+    -- Статистика каждые 10 секунд (ВНЕ функции)
+    spawn(function()
+        while true do
+            wait(10)
+            if #foundPetModels > 0 then
+                print("📊 Статистика сканирования: найдено питомцев:", #foundPetModels)
+            end
         end
     end)
     
