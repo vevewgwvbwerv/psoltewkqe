@@ -1,330 +1,382 @@
--- InventorySystemAnalyzer.lua
--- Анализатор системы инвентарей: основной (10 слотов) и расширенный (все питомцы)
+-- DragonflyTransfer.lua
+-- Автоматический перенос Dragonfly из расширенного инвентаря в основной
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local player = Players.LocalPlayer
 
 -- Создаем компактный GUI
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "InventorySystemAnalyzer"
+screenGui.Name = "DragonflyTransfer"
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 -- Главный фрейм
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0.9, 0, 0.8, 0)
-mainFrame.Position = UDim2.new(0.05, 0, 0.1, 0)
+mainFrame.Size = UDim2.new(0.8, 0, 0.4, 0)
+mainFrame.Position = UDim2.new(0.1, 0, 0.3, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
 
 -- Заголовок
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.1, 0)
+titleLabel.Size = UDim2.new(1, 0, 0.2, 0)
 titleLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 titleLabel.BorderSizePixel = 0
-titleLabel.Text = "📦 Анализатор Системы Инвентарей"
+titleLabel.Text = "🐉 Dragonfly Transfer System"
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextScaled = true
 titleLabel.Font = Enum.Font.SourceSansBold
 titleLabel.Parent = mainFrame
 
--- Скролл фрейм для логов
-local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -20, 0.7, 0)
-scrollFrame.Position = UDim2.new(0, 10, 0.1, 0)
-scrollFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-scrollFrame.BorderSizePixel = 0
-scrollFrame.ScrollBarThickness = 8
-scrollFrame.Parent = mainFrame
+-- Кнопка переноса
+local transferButton = Instance.new("TextButton")
+transferButton.Size = UDim2.new(0.8, 0, 0.3, 0)
+transferButton.Position = UDim2.new(0.1, 0, 0.3, 0)
+transferButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+transferButton.BorderSizePixel = 0
+transferButton.Text = "🔄 Перенести Dragonfly в основной инвентарь"
+transferButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+transferButton.TextScaled = true
+transferButton.Font = Enum.Font.SourceSansBold
+transferButton.Parent = mainFrame
 
--- Текст для логов
-local logText = Instance.new("TextLabel")
-logText.Size = UDim2.new(1, -10, 1, 0)
-logText.Position = UDim2.new(0, 5, 0, 0)
-logText.BackgroundTransparency = 1
-logText.Text = "Нажмите кнопки для анализа инвентарей..."
-logText.TextColor3 = Color3.fromRGB(255, 255, 255)
-logText.TextXAlignment = Enum.TextXAlignment.Left
-logText.TextYAlignment = Enum.TextYAlignment.Top
-logText.TextWrapped = true
-logText.Font = Enum.Font.SourceSans
-logText.TextSize = 12
-logText.Parent = scrollFrame
+-- Статус лейбл
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0.5, 0)
+statusLabel.Position = UDim2.new(0, 0, 0.5, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Готов к переносу Dragonfly\nИз расширенного инвентаря в основной (слот 1 или 2)"
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.TextWrapped = true
+statusLabel.Parent = mainFrame
 
--- Кнопки
-local buttonFrame = Instance.new("Frame")
-buttonFrame.Size = UDim2.new(1, 0, 0.2, 0)
-buttonFrame.Position = UDim2.new(0, 0, 0.8, 0)
-buttonFrame.BackgroundTransparency = 1
-buttonFrame.Parent = mainFrame
-
--- Кнопка анализа основного инвентаря
-local mainInvButton = Instance.new("TextButton")
-mainInvButton.Size = UDim2.new(0.3, -5, 0.4, 0)
-mainInvButton.Position = UDim2.new(0, 5, 0.1, 0)
-mainInvButton.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
-mainInvButton.BorderSizePixel = 0
-mainInvButton.Text = "📋 Основной Инвентарь"
-mainInvButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-mainInvButton.TextScaled = true
-mainInvButton.Font = Enum.Font.SourceSansBold
-mainInvButton.Parent = buttonFrame
-
--- Кнопка анализа расширенного инвентаря
-local extInvButton = Instance.new("TextButton")
-extInvButton.Size = UDim2.new(0.3, -5, 0.4, 0)
-extInvButton.Position = UDim2.new(0.33, 5, 0.1, 0)
-extInvButton.BackgroundColor3 = Color3.fromRGB(200, 120, 0)
-extInvButton.BorderSizePixel = 0
-extInvButton.Text = "🗂️ Расширенный Инвентарь"
-extInvButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-extInvButton.TextScaled = true
-extInvButton.Font = Enum.Font.SourceSansBold
-extInvButton.Parent = buttonFrame
-
--- Кнопка поиска кнопки открытия
-local findOpenButton = Instance.new("TextButton")
-findOpenButton.Size = UDim2.new(0.3, -5, 0.4, 0)
-findOpenButton.Position = UDim2.new(0.66, 5, 0.1, 0)
-findOpenButton.BackgroundColor3 = Color3.fromRGB(120, 0, 200)
-findOpenButton.BorderSizePixel = 0
-findOpenButton.Text = "🔍 Найти Кнопку Открытия"
-findOpenButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-findOpenButton.TextScaled = true
-findOpenButton.Font = Enum.Font.SourceSansBold
-findOpenButton.Parent = buttonFrame
-
--- Кнопка очистки
-local clearButton = Instance.new("TextButton")
-clearButton.Size = UDim2.new(0.3, -5, 0.4, 0)
-clearButton.Position = UDim2.new(0.35, 0, 0.55, 0)
-clearButton.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-clearButton.BorderSizePixel = 0
-clearButton.Text = "🗑️ Очистить"
-clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-clearButton.TextScaled = true
-clearButton.Font = Enum.Font.SourceSansBold
-clearButton.Parent = buttonFrame
-
--- Переменные
-local logs = {}
-
--- Функция добавления лога
-local function addLog(message)
-    table.insert(logs, os.date("[%H:%M:%S] ") .. message)
-    if #logs > 200 then
-        table.remove(logs, 1)
-    end
-    
-    logText.Text = table.concat(logs, "\n")
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, logText.TextBounds.Y + 20)
-    scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
-end
-
--- Функция анализа основного инвентаря (10 слотов)
-local function analyzeMainInventory()
-    addLog("📋 === АНАЛИЗ ОСНОВНОГО ИНВЕНТАРЯ (10 СЛОТОВ) ===")
-    
+-- Функция поиска основного инвентаря (Hotbar)
+local function findMainInventory()
     local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then
-        addLog("❌ PlayerGui не найден")
-        return
+    if not playerGui then 
+        print("❌ PlayerGui не найден")
+        return nil 
     end
     
-    -- Ищем GUI основного инвентаря
-    local mainInventoryGuis = {}
-    
-    for _, gui in pairs(playerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") then
-            -- Ищем элементы, которые могут быть основным инвентарем
-            for _, frame in pairs(gui:GetDescendants()) do
-                if frame:IsA("Frame") or frame:IsA("ScrollingFrame") then
-                    local slotCount = 0
-                    local petCount = 0
-                    
-                    -- Считаем слоты и питомцев
-                    for _, child in pairs(frame:GetChildren()) do
-                        if child:IsA("Frame") or child:IsA("ImageButton") then
-                            -- Проверяем, похоже ли на слот инвентаря
-                            if child.Size.X.Scale > 0.05 and child.Size.Y.Scale > 0.05 then
-                                slotCount = slotCount + 1
-                                
-                                -- Проверяем наличие питомца в слоте
-                                for _, desc in pairs(child:GetDescendants()) do
-                                    if desc:IsA("TextLabel") and (
-                                        desc.Text:lower():find("kg") or 
-                                        desc.Text:lower():find("age") or
-                                        desc.Text:lower():find("dog") or
-                                        desc.Text:lower():find("bunny") or
-                                        desc.Text:lower():find("golden")
-                                    ) then
-                                        petCount = petCount + 1
-                                        addLog("🐾 Слот " .. slotCount .. ": " .. desc.Text)
-                                        break
-                                    end
-                                end
-                            end
-                        end
-                    end
-                    
-                    -- Если найдено около 10 слотов, это может быть основной инвентарь
-                    if slotCount >= 8 and slotCount <= 12 then
-                        table.insert(mainInventoryGuis, {
-                            gui = gui.Name,
-                            frame = frame.Name,
-                            slots = slotCount,
-                            pets = petCount
-                        })
-                        
-                        addLog("📦 Возможный основной инвентарь:")
-                        addLog("   📱 GUI: " .. gui.Name)
-                        addLog("   📋 Фрейм: " .. frame.Name)
-                        addLog("   🎯 Слотов: " .. slotCount)
-                        addLog("   🐾 Питомцев: " .. petCount)
-                    end
-                end
-            end
-        end
-    end
-    
-    if #mainInventoryGuis == 0 then
-        addLog("❌ Основной инвентарь не найден")
-    else
-        addLog("📊 Найдено возможных основных инвентарей: " .. #mainInventoryGuis)
-    end
-end
-
--- Функция анализа расширенного инвентаря
-local function analyzeExtendedInventory()
-    addLog("🗂️ === АНАЛИЗ РАСШИРЕННОГО ИНВЕНТАРЯ (ВСЕ ПИТОМЦЫ) ===")
-    
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then
-        addLog("❌ PlayerGui не найден")
-        return
-    end
-    
-    -- Ищем BackpackGui (где мы нашли Dragonfly)
     local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if backpackGui then
-        addLog("📱 Найден BackpackGui - анализирую структуру...")
-        
-        local totalPets = 0
-        local dragonflyFound = false
-        
-        for _, desc in pairs(backpackGui:GetDescendants()) do
-            if desc:IsA("TextLabel") and (
-                desc.Text:lower():find("kg") or 
-                desc.Text:lower():find("age")
-            ) then
-                totalPets = totalPets + 1
-                
-                if desc.Text:lower():find("dragonfly") then
-                    dragonflyFound = true
-                    addLog("🐉 DRAGONFLY найден: " .. desc.Text)
-                    addLog("   📦 Родитель: " .. desc.Parent.Name .. " (" .. desc.Parent.ClassName .. ")")
-                    
-                    -- Анализируем структуру элемента Dragonfly
-                    local parent = desc.Parent
-                    addLog("   🔍 Дочерние элементы:")
-                    for _, child in pairs(parent:GetChildren()) do
-                        addLog("     - " .. child.Name .. " (" .. child.ClassName .. ")")
-                    end
+    if not backpackGui then 
+        print("❌ BackpackGui не найден")
+        return nil 
+    end
+    
+    print("📱 BackpackGui найден, ищу Hotbar...")
+    
+    -- Сначала ищем Hotbar напрямую в BackpackGui
+    local hotbar = backpackGui:FindFirstChild("Hotbar")
+    if hotbar then
+        print("✅ Найден основной инвентарь (Hotbar) с 10 слотами")
+        return hotbar
+    end
+    
+    -- Если не найден, ищем через Backpack фрейм
+    local backpack = backpackGui:FindFirstChild("Backpack")
+    if backpack then
+        print("🔍 Найден Backpack, ищу Hotbar внутри...")
+        hotbar = backpack:FindFirstChild("Hotbar")
+        if hotbar then
+            print("✅ Найден основной инвентарь (Backpack/Hotbar) с 10 слотами")
+            return hotbar
+        end
+    end
+    
+    -- Если все еще не найден, ищем любой фрейм с 10 кнопками
+    print("🔍 Ищу альтернативный инвентарь с 10 кнопками...")
+    for _, child in pairs(backpackGui:GetDescendants()) do
+        if child:IsA("Frame") and child.Name:lower():find("hotbar") then
+            print("✅ Найден Hotbar через поиск:", child.Name)
+            return child
+        end
+    end
+    
+    print("❌ Hotbar не найден нигде в BackpackGui")
+    return nil
+end
+
+-- Функция поиска расширенного инвентаря с Dragonfly
+local function findDragonflyInExtended()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then 
+        print("❌ PlayerGui не найден для поиска Dragonfly")
+        return nil 
+    end
+    
+    local backpackGui = playerGui:FindFirstChild("BackpackGui")
+    if not backpackGui then 
+        print("❌ BackpackGui не найден для поиска Dragonfly")
+        return nil 
+    end
+    
+    -- Ищем CategoryFrame в расширенном инвентаре (точный путь из анализа)
+    local inventory = backpackGui:FindFirstChild("Inventory")
+    if not inventory then
+        print("❌ Inventory не найден в BackpackGui")
+        return nil
+    end
+    
+    local categoryFrame = inventory:FindFirstChild("CategoryFrame")
+    if not categoryFrame then
+        print("❌ CategoryFrame не найден в Inventory")
+        return nil
+    end
+    
+    print("🔍 Ищу Dragonfly в CategoryFrame...")
+    
+    -- Ищем кнопку с Dragonfly в CategoryFrame
+    for _, child in pairs(categoryFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            -- Проверяем содержимое кнопки
+            for _, desc in pairs(child:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Text:lower():find("dragonfly") then
+                    print("✅ Найден Dragonfly в расширенном инвентаре:", desc.Text)
+                    print("   📍 Кнопка:", child.Name, "в CategoryFrame")
+                    return child
                 end
             end
         end
+    end
+    
+    print("❌ Dragonfly не найден в CategoryFrame")
+    return nil
+end
+
+-- Функция поиска пустого слота в основном инвентаре
+local function findEmptySlotInMain(hotbar)
+    if not hotbar then 
+        print("❌ Hotbar не передан")
+        return nil 
+    end
+    
+    print("🔍 Ищу слоты для замены в Hotbar...")
+    
+    -- Ищем слоты 1 и 2 (обычно содержат предметы, не питомцев)
+    for _, child in pairs(hotbar:GetChildren()) do
+        if child:IsA("TextButton") and (child.Name == "1" or child.Name == "2") then
+            -- Проверяем содержимое слота
+            local itemText = ""
+            local hasPet = false
+            
+            for _, desc in pairs(child:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Text ~= "" then
+                    itemText = desc.Text
+                    -- Проверяем, это питомец или предмет
+                    if desc.Text:lower():find("kg") and desc.Text:lower():find("age") then
+                        hasPet = true
+                    end
+                    break
+                end
+            end
+            
+            if not hasPet and itemText ~= "" then
+                print("✅ Найден слот с предметом для замены:", child.Name, "(" .. itemText .. ")")
+                return child
+            end
+        end
+    end
+    
+    print("❌ Подходящие слоты (1 или 2) не найдены")
+    return nil
+end
+
+-- Функция симуляции drag-and-drop
+local function simulateDragAndDrop(source, target)
+    if not source or not target then return false end
+    
+    print("🖱️ Симулирую drag-and-drop:")
+    print("   📤 Источник:", source.Name, "в", source.Parent.Name)
+    print("   📥 Цель:", target.Name, "в", target.Parent.Name)
+    
+    -- Получаем позиции элементов
+    local sourcePos = source.AbsolutePosition
+    local sourceSize = source.AbsoluteSize
+    local targetPos = target.AbsolutePosition
+    local targetSize = target.AbsoluteSize
+    
+    -- Вычисляем центры элементов
+    local sourceCenterX = sourcePos.X + sourceSize.X / 2
+    local sourceCenterY = sourcePos.Y + sourceSize.Y / 2
+    local targetCenterX = targetPos.X + targetSize.X / 2
+    local targetCenterY = targetPos.Y + targetSize.Y / 2
+    
+    print("   📍 Источник центр:", sourceCenterX, sourceCenterY)
+    print("   📍 Цель центр:", targetCenterX, targetCenterY)
+    
+    -- Симулируем drag-and-drop
+    local success, error = pcall(function()
+        -- Начинаем перетаскивание
+        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 0, true, game, 1)
+        wait(0.1)
         
-        addLog("📊 Всего питомцев в расширенном инвентаре: " .. totalPets)
-        addLog("🐉 Dragonfly найден: " .. (dragonflyFound and "ДА" or "НЕТ"))
+        -- Перемещаем к цели
+        VirtualInputManager:SendMouseMoveEvent(targetCenterX, targetCenterY, game)
+        wait(0.2)
+        
+        -- Отпускаем
+        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, false, game, 1)
+        wait(0.1)
+    end)
+    
+    if success then
+        print("✅ Drag-and-drop симулирован успешно")
+        return true
     else
-        addLog("❌ BackpackGui не найден")
+        print("⚠️ Ошибка симуляции drag-and-drop:", error)
+        return false
     end
 end
 
--- Функция поиска кнопки открытия расширенного инвентаря
-local function findOpenButton()
-    addLog("🔍 === ПОИСК КНОПКИ ОТКРЫТИЯ РАСШИРЕННОГО ИНВЕНТАРЯ ===")
+-- Функция альтернативного метода через клики
+local function alternativeTransferMethod(dragonflyButton, targetSlot)
+    print("🎯 Пробую альтернативный метод через клики...")
     
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then
-        addLog("❌ PlayerGui не найден")
+    -- Метод 1: Двойной клик по Dragonfly
+    local success1, error1 = pcall(function()
+        local pos = dragonflyButton.AbsolutePosition
+        local size = dragonflyButton.AbsoluteSize
+        local centerX = pos.X + size.X / 2
+        local centerY = pos.Y + size.Y / 2
+        
+        -- Двойной клик
+        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
+        wait(0.1)
+        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
+    end)
+    
+    if success1 then
+        print("✅ Двойной клик по Dragonfly выполнен")
+        return true
+    end
+    
+    -- Метод 2: Правый клик + левый клик на цель
+    local success2, error2 = pcall(function()
+        local sourcePos = dragonflyButton.AbsolutePosition
+        local sourceSize = dragonflyButton.AbsoluteSize
+        local sourceCenterX = sourcePos.X + sourceSize.X / 2
+        local sourceCenterY = sourcePos.Y + sourceSize.Y / 2
+        
+        -- Правый клик на источник
+        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 1, true, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 1, false, game, 1)
+        wait(0.2)
+        
+        -- Левый клик на цель
+        local targetPos = targetSlot.AbsolutePosition
+        local targetSize = targetSlot.AbsoluteSize
+        local targetCenterX = targetPos.X + targetSize.X / 2
+        local targetCenterY = targetPos.Y + targetSize.Y / 2
+        
+        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, true, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, false, game, 1)
+    end)
+    
+    if success2 then
+        print("✅ Правый клик + левый клик выполнен")
+        return true
+    end
+    
+    return false
+end
+
+-- Функция проверки успешности переноса
+local function checkTransferSuccess()
+    wait(1)
+    
+    local hotbar = findMainInventory()
+    if not hotbar then return false end
+    
+    -- Проверяем слоты 1 и 2 на наличие Dragonfly
+    for _, child in pairs(hotbar:GetChildren()) do
+        if child:IsA("TextButton") and (child.Name == "1" or child.Name == "2") then
+            for _, desc in pairs(child:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Text:lower():find("dragonfly") then
+                    print("🎉 Dragonfly успешно перенесен в слот:", child.Name)
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Основная функция переноса
+local function transferDragonfly()
+    statusLabel.Text = "🔍 Поиск инвентарей..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+    
+    -- Шаг 1: Найти основной инвентарь
+    local hotbar = findMainInventory()
+    if not hotbar then
+        statusLabel.Text = "❌ Основной инвентарь не найден"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
     
-    -- Ищем кнопки, которые могут открывать инвентарь
-    local possibleButtons = {}
-    
-    for _, gui in pairs(playerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") then
-            for _, desc in pairs(gui:GetDescendants()) do
-                if desc:IsA("TextButton") or desc:IsA("ImageButton") then
-                    -- Ищем кнопки с текстом, связанным с инвентарем
-                    local buttonText = ""
-                    for _, textLabel in pairs(desc:GetDescendants()) do
-                        if textLabel:IsA("TextLabel") then
-                            buttonText = buttonText .. textLabel.Text:lower() .. " "
-                        end
-                    end
-                    
-                    if buttonText:find("inventory") or 
-                       buttonText:find("backpack") or 
-                       buttonText:find("pets") or 
-                       buttonText:find("bag") or
-                       desc.Name:lower():find("inventory") or
-                       desc.Name:lower():find("backpack") or
-                       desc.Name:lower():find("pets") then
-                        
-                        table.insert(possibleButtons, {
-                            button = desc,
-                            gui = gui.Name,
-                            name = desc.Name,
-                            text = buttonText:sub(1, 50)
-                        })
-                        
-                        addLog("🔘 Возможная кнопка открытия:")
-                        addLog("   📱 GUI: " .. gui.Name)
-                        addLog("   🔘 Кнопка: " .. desc.Name)
-                        addLog("   📝 Текст: " .. buttonText:sub(1, 50))
-                        addLog("   📍 Позиция: " .. desc.AbsolutePosition.X .. ", " .. desc.AbsolutePosition.Y)
-                    end
-                end
-            end
-        end
+    -- Шаг 2: Найти Dragonfly в расширенном инвентаре
+    statusLabel.Text = "🐉 Поиск Dragonfly..."
+    local dragonflyButton = findDragonflyInExtended()
+    if not dragonflyButton then
+        statusLabel.Text = "❌ Dragonfly не найден в расширенном инвентаре"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
     end
     
-    if #possibleButtons == 0 then
-        addLog("❌ Кнопки открытия инвентаря не найдены")
-        addLog("💡 Попробуйте открыть расширенный инвентарь вручную, затем повторите анализ")
+    -- Шаг 3: Найти пустой слот в основном инвентаре
+    statusLabel.Text = "📦 Поиск пустого слота..."
+    local emptySlot = findEmptySlotInMain(hotbar)
+    if not emptySlot then
+        statusLabel.Text = "❌ Пустые слоты не найдены"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+    
+    -- Шаг 4: Выполнить перенос
+    statusLabel.Text = "🔄 Переношу Dragonfly..."
+    
+    -- Пробуем drag-and-drop
+    local dragSuccess = simulateDragAndDrop(dragonflyButton, emptySlot)
+    
+    if not dragSuccess then
+        -- Пробуем альтернативные методы
+        statusLabel.Text = "🎯 Пробую альтернативные методы..."
+        alternativeTransferMethod(dragonflyButton, emptySlot)
+    end
+    
+    -- Шаг 5: Проверить результат
+    statusLabel.Text = "✅ Проверяю результат..."
+    
+    if checkTransferSuccess() then
+        statusLabel.Text = "🎉 Dragonfly успешно перенесен в основной инвентарь!\nТеперь его можно выбрать в руку."
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
     else
-        addLog("📊 Найдено возможных кнопок: " .. #possibleButtons)
+        statusLabel.Text = "❌ Перенос не удался\nПопробуйте перенести Dragonfly вручную"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
     end
 end
 
--- Обработчики кнопок
-mainInvButton.MouseButton1Click:Connect(function()
-    analyzeMainInventory()
+-- Обработчик кнопки
+transferButton.MouseButton1Click:Connect(function()
+    transferButton.Text = "⏳ Переношу..."
+    transferButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
+    
+    spawn(function()
+        transferDragonfly()
+        
+        wait(2)
+        transferButton.Text = "🔄 Перенести Dragonfly в основной инвентарь"
+        transferButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    end)
 end)
 
-extInvButton.MouseButton1Click:Connect(function()
-    analyzeExtendedInventory()
-end)
-
-findOpenButton.MouseButton1Click:Connect(function()
-    findOpenButton()
-end)
-
-clearButton.MouseButton1Click:Connect(function()
-    logs = {}
-    logText.Text = "Логи очищены..."
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-end)
-
--- Начальное сообщение
-addLog("🚀 Анализатор системы инвентарей запущен!")
-addLog("📋 Нажмите 'Основной Инвентарь' для анализа 10-слотового инвентаря")
-addLog("🗂️ Нажмите 'Расширенный Инвентарь' для анализа BackpackGui")
-addLog("🔍 Нажмите 'Найти Кнопку Открытия' для поиска кнопки расширенного инвентаря")
-
-print("✅ InventorySystemAnalyzer загружен! Анализируйте структуру инвентарей.")
+print("✅ DragonflyTransfer загружен! Перенесет Dragonfly в основной инвентарь.")
