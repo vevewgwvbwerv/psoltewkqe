@@ -1,398 +1,498 @@
--- DirectShovelFix.lua
--- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
+-- DeepModelOriginDetective.lua
+-- ДЕТЕКТИВНЫЙ АНАЛИЗАТОР: Глубокое исследование происхождения модели питомца
+-- Отслеживает ВСЮ цепочку создания: ReplicatedStorage → Scripts → Events → Model
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
+
 local player = Players.LocalPlayer
 
-print("=== DIRECT SHOVEL FIX ===")
+print("🕵️ === DEEP MODEL ORIGIN DETECTIVE ===")
+print("🎯 Цель: Найти ОТКУДА и КАК создается модель питомца")
+print("=" .. string.rep("=", 60))
 
--- Глобальные переменные
-local petTool = nil
+-- 📊 КОНФИГУРАЦИЯ ДЕТЕКТИВНОГО АНАЛИЗА
+local CONFIG = {
+    SEARCH_RADIUS = 300,
+    MONITOR_DURATION = 120,
+    DEEP_SCAN_INTERVAL = 0.02,
+    TRACK_ALL_INSTANCES = true,
+    ANALYZE_SCRIPTS = true,
+    MONITOR_EVENTS = true
+}
 
--- Поиск питомца в руках
-local function findPetInHands()
-    local character = player.Character
-    if not character then return nil end
+-- 🔍 ДЕТЕКТИВНЫЕ ДАННЫЕ
+local DetectiveData = {
+    -- Источники моделей
+    modelSources = {},
     
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
-            return tool
-        end
-    end
-    return nil
-end
+    -- Скрипты и события
+    activeScripts = {},
+    detectedEvents = {},
+    
+    -- Цепочка создания
+    creationChain = {},
+    
+    -- Снимки состояния
+    beforeSnapshot = {},
+    afterSnapshot = {},
+    
+    -- Временная линия
+    timeline = {}
+}
 
--- Поиск Shovel в руках
-local function findShovelInHands()
-    local character = player.Character
-    if not character then return nil end
-    
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            return tool
-        end
-    end
-    return nil
-end
+-- 🖥️ ДЕТЕКТИВНАЯ КОНСОЛЬ
+local DetectiveConsole = nil
+local ConsoleLines = {}
+local MaxLines = 100
 
--- СОХРАНИТЬ питомца
-local function savePet()
-    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
+-- Создание детективной консоли
+local function createDetectiveConsole()
+    if DetectiveConsole then DetectiveConsole:Destroy() end
     
-    local pet = findPetInHands()
-    if not pet then
-        print("❌ Питомец в руках не найден!")
-        return false
-    end
-    
-    print("✅ Найден питомец: " .. pet.Name)
-    
-    -- Сохраняем ссылку на питомца
-    petTool = pet
-    
-    print("✅ Питомец сохранен!")
-    return true
-end
-
--- ПРЯМАЯ ЗАМЕНА содержимого
-local function directReplace()
-    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
-    
-    if not petTool then
-        print("❌ Сначала сохраните питомца!")
-        return false
-    end
-    
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
-    
-    -- Шаг 1: Меняем имя
-    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("📝 Имя изменено: " .. shovel.Name)
-    
-    -- Шаг 2: Копируем свойства Tool
-    shovel.RequiresHandle = petTool.RequiresHandle
-    shovel.CanBeDropped = petTool.CanBeDropped
-    shovel.ManualActivationOnly = petTool.ManualActivationOnly
-    print("🔧 Свойства Tool скопированы")
-    
-    -- Шаг 3: Удаляем все содержимое Shovel
-    print("🗑️ Очищаю содержимое Shovel...")
-    for _, child in pairs(shovel:GetChildren()) do
-        child:Destroy()
-    end
-    
-    wait(0.1)
-    
-    -- Шаг 4: Копируем все содержимое питомца
-    print("📋 Копирую содержимое питомца...")
-    for _, child in pairs(petTool:GetChildren()) do
-        local copy = child:Clone()
-        copy.Parent = shovel
-        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
-    end
-    
-    print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
-    print("📝 Новое имя: " .. shovel.Name)
-    print("🎮 В руках должен быть питомец с именем Dragonfly!")
-    
-    return true
-end
-
--- АЛЬТЕРНАТИВА С CFRAME АНИМАЦИЕЙ: Создание с анимацией питомца
-local function alternativeReplace()
-    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА С АНИМАЦИЕЙ ===")
-    
-    if not petTool then
-        print("❌ Сначала сохраните питомца!")
-        return false
-    end
-    
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    local character = player.Character
-    if not character then
-        print("❌ Character не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🎬 Альтернативная замена с CFrame анимацией...")
-    
-    -- Создаем новый Tool на основе питомца (БЕЗ изменения CFrame)
-    local newTool = Instance.new("Tool")
-    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
-    newTool.RequiresHandle = true
-    newTool.CanBeDropped = true
-    newTool.ManualActivationOnly = false
-    
-    print("🔧 Копирую содержимое питомца...")
-    
-    -- Копируем содержимое питомца
-    for _, child in pairs(petTool:GetChildren()) do
-        local copy = child:Clone()
-        copy.Parent = newTool
-        print("   ✅ Скопировано: " .. child.Name)
-    end
-    
-    -- Удаляем Shovel
-    print("🗑️ Удаляю Shovel...")
-    shovel:Destroy()
-    
-    wait(0.2)
-    
-    -- Добавляем новый Tool в Backpack сначала
-    print("📦 Добавляю в Backpack...")
-    local backpack = character:FindFirstChild("Backpack")
-    if not backpack then
-        backpack = Instance.new("Backpack")
-        backpack.Parent = character
-    end
-    
-    newTool.Parent = backpack
-    
-    wait(0.1)
-    
-    -- Затем перемещаем в руки
-    print("🎮 Перемещаю в руки...")
-    newTool.Parent = character
-    
-    wait(0.3)
-    
-    -- Добавляем CFrame анимацию питомца
-    print("🎬 Запускаю CFrame анимацию питомца...")
-    startPetAnimation(newTool)
-    
-    print("✅ Альтернативная замена с анимацией завершена!")
-    print("🎭 Копия должна анимироваться как питомец!")
-    return true
-end
-
--- ФУНКЦИЯ CFRAME АНИМАЦИИ питомца
-local animationConnection = nil
-
-local function startPetAnimation(tool)
-    if not tool then return end
-    
-    print("🎬 === ЗАПУСК CFRAME АНИМАЦИИ ===")
-    
-    -- Останавливаем предыдущую анимацию
-    if animationConnection then
-        animationConnection:Disconnect()
-        animationConnection = nil
-        print("⏹️ Остановлена предыдущая анимация")
-    end
-    
-    -- Находим все части питомца
-    local petParts = {}
-    local partCount = 0
-    for _, child in pairs(tool:GetDescendants()) do
-        if child:IsA("BasePart") and child.Name ~= "Handle" then
-            petParts[child.Name] = {
-                part = child,
-                originalCFrame = child.CFrame,
-                time = math.random() * 10 -- Случайное начальное время для разнообразия
-            }
-            partCount = partCount + 1
-        end
-    end
-    
-    print(string.format("🎭 Найдено %d частей для анимации", partCount))
-    
-    -- Запускаем анимацию
-    local RunService = game:GetService("RunService")
-    animationConnection = RunService.Heartbeat:Connect(function()
-        local time = tick()
-        
-        for partName, data in pairs(petParts) do
-            if data.part and data.part.Parent then
-                -- Проверяем что часть все еще существует
-                local success, err = pcall(function()
-                    -- Простая idle анимация (покачивание)
-                    local offsetY = math.sin(time * 2 + data.time) * 0.1
-                    local offsetX = math.cos(time * 1.5 + data.time) * 0.05
-                    
-                    -- Применяем анимацию без нарушения физики
-                    local newCFrame = data.originalCFrame * CFrame.new(offsetX, offsetY, 0)
-                    data.part.CFrame = newCFrame
-                end)
-                
-                if not success then
-                    print("⚠️ Ошибка анимации части " .. partName .. ": " .. tostring(err))
-                end
-                
-                -- Обновляем базовое положение периодически
-                data.time = data.time + 0.01
-            end
-        end
-    end)
-    
-    print("✅ CFrame анимация запущена!")
-    print("🎭 Питомец должен покачиваться (idle анимация)")
-end
-
--- ФУНКЦИЯ ОСТАНОВКИ АНИМАЦИИ
-local function stopPetAnimation()
-    if animationConnection then
-        animationConnection:Disconnect()
-        animationConnection = nil
-        print("⏹️ CFrame анимация остановлена")
-        return true
-    end
-    return false
-end
-
--- Создаем GUI
-local function createDirectFixGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "DirectShovelFixGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+    DetectiveConsole = Instance.new("ScreenGui")
+    DetectiveConsole.Name = "DeepModelOriginDetectiveConsole"
+    DetectiveConsole.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 400, 0, 350)
-    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
-    frame.BorderSizePixel = 0
-    frame.Parent = screenGui
+    frame.Size = UDim2.new(0, 700, 0, 500)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.02, 0.02, 0.1)
+    frame.BorderSizePixel = 3
+    frame.BorderColor3 = Color3.new(0.8, 0.2, 0.2)
+    frame.Parent = DetectiveConsole
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.Size = UDim2.new(1, 0, 0, 35)
+    title.BackgroundColor3 = Color3.new(0.8, 0.1, 0.1)
     title.BorderSizePixel = 0
-    title.Text = "🎯 DIRECT SHOVEL FIX"
+    title.Text = "🕵️ DEEP MODEL ORIGIN DETECTIVE"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
+    scrollFrame.BackgroundColor3 = Color3.new(0.01, 0.01, 0.05)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 10
+    scrollFrame.Parent = frame
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -10, 1, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = "🕵️ Детективный анализатор готов..."
+    textLabel.TextColor3 = Color3.new(1, 0.9, 0.9)
+    textLabel.TextSize = 11
+    textLabel.Font = Enum.Font.SourceSans
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Parent = scrollFrame
+    
+    return textLabel
+end
+
+-- Функция детективного логирования
+local function detectiveLog(category, message, data)
+    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+    local prefixes = {
+        DETECTIVE = "🕵️", SOURCE = "📦", SCRIPT = "📜", EVENT = "⚡",
+        CREATION = "🏗️", CHAIN = "🔗", TIMELINE = "⏱️", CRITICAL = "🔥",
+        FOUND = "🎯", ANALYSIS = "🔬", MYSTERY = "❓", SOLVED = "✅"
+    }
+    
+    local logLine = string.format("[%s] %s %s", timestamp, prefixes[category] or "ℹ️", message)
+    
+    if data and next(data) then
+        for key, value in pairs(data) do
+            logLine = logLine .. string.format("\n    %s: %s", key, tostring(value))
+        end
+    end
+    
+    table.insert(ConsoleLines, logLine)
+    
+    if #ConsoleLines > MaxLines then
+        table.remove(ConsoleLines, 1)
+    end
+    
+    -- Обновляем консоль
+    if DetectiveConsole then
+        local textLabel = DetectiveConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
+        if textLabel then
+            textLabel.Text = table.concat(ConsoleLines, "\n")
+            local scrollFrame = textLabel.Parent
+            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
+            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
+        end
+    end
+    
+    print(logLine)
+end
+
+-- 🔍 ФАЗА 1: ГЛУБОКОЕ СКАНИРОВАНИЕ ИСТОЧНИКОВ
+local function scanAllModelSources()
+    detectiveLog("DETECTIVE", "🔍 НАЧАЛО ГЛУБОКОГО СКАНИРОВАНИЯ ИСТОЧНИКОВ")
+    
+    -- Сканирование ReplicatedStorage
+    detectiveLog("SOURCE", "📦 Сканирование ReplicatedStorage...")
+    local replicatedModels = 0
+    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("Tool") then
+            local name = obj.Name:lower()
+            if name:find("bunny") or name:find("dog") or name:find("pet") or name:find("animal") then
+                replicatedModels = replicatedModels + 1
+                DetectiveData.modelSources[obj:GetFullName()] = {
+                    object = obj,
+                    location = "ReplicatedStorage",
+                    path = obj:GetFullName(),
+                    children = #obj:GetChildren(),
+                    className = obj.ClassName
+                }
+                
+                detectiveLog("FOUND", "🎯 НАЙДЕН ИСТОЧНИК В REPLICATEDSTORAGE!", {
+                    Name = obj.Name,
+                    Path = obj:GetFullName(),
+                    ClassName = obj.ClassName,
+                    Children = #obj:GetChildren()
+                })
+            end
+        end
+    end
+    
+    -- Сканирование ReplicatedFirst
+    detectiveLog("SOURCE", "📦 Сканирование ReplicatedFirst...")
+    for _, obj in pairs(ReplicatedFirst:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("Tool") then
+            local name = obj.Name:lower()
+            if name:find("bunny") or name:find("dog") or name:find("pet") or name:find("animal") then
+                DetectiveData.modelSources[obj:GetFullName()] = {
+                    object = obj,
+                    location = "ReplicatedFirst",
+                    path = obj:GetFullName(),
+                    children = #obj:GetChildren(),
+                    className = obj.ClassName
+                }
+                
+                detectiveLog("FOUND", "🎯 НАЙДЕН ИСТОЧНИК В REPLICATEDFIRST!", {
+                    Name = obj.Name,
+                    Path = obj:GetFullName()
+                })
+            end
+        end
+    end
+    
+    detectiveLog("SOURCE", string.format("📊 Найдено %d потенциальных источников", replicatedModels))
+end
+
+-- 📜 ФАЗА 2: АНАЛИЗ СКРИПТОВ
+local function analyzeActiveScripts()
+    detectiveLog("SCRIPT", "📜 АНАЛИЗ АКТИВНЫХ СКРИПТОВ...")
+    
+    -- Поиск скриптов в workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") then
+            local scriptName = obj.Name:lower()
+            if scriptName:find("pet") or scriptName:find("egg") or scriptName:find("tool") or 
+               scriptName:find("model") or scriptName:find("spawn") or scriptName:find("create") then
+                
+                DetectiveData.activeScripts[obj:GetFullName()] = {
+                    script = obj,
+                    name = obj.Name,
+                    path = obj:GetFullName(),
+                    parent = obj.Parent and obj.Parent.Name or "NIL",
+                    className = obj.ClassName
+                }
+                
+                detectiveLog("SCRIPT", "📜 НАЙДЕН ПОДОЗРИТЕЛЬНЫЙ СКРИПТ!", {
+                    Name = obj.Name,
+                    Path = obj:GetFullName(),
+                    Parent = obj.Parent and obj.Parent.Name or "NIL"
+                })
+            end
+        end
+    end
+    
+    -- Поиск скриптов в ReplicatedStorage
+    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+            local scriptName = obj.Name:lower()
+            if scriptName:find("pet") or scriptName:find("egg") or scriptName:find("tool") then
+                detectiveLog("SCRIPT", "📜 СКРИПТ В REPLICATEDSTORAGE!", {
+                    Name = obj.Name,
+                    Path = obj:GetFullName(),
+                    Type = obj.ClassName
+                })
+            end
+        end
+    end
+end
+
+-- ⚡ ФАЗА 3: МОНИТОРИНГ СОБЫТИЙ И ИЗМЕНЕНИЙ
+local function monitorCreationEvents()
+    detectiveLog("EVENT", "⚡ МОНИТОРИНГ СОБЫТИЙ СОЗДАНИЯ...")
+    
+    -- Мониторинг добавления новых объектов в workspace
+    local workspaceConnection = Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Model") or obj:IsA("Tool") then
+            local name = obj.Name:lower()
+            if name:find("bunny") or name:find("dog") or name:find("pet") or name:find("animal") then
+                local creationTime = tick()
+                
+                DetectiveData.creationChain[obj:GetFullName()] = {
+                    object = obj,
+                    createdAt = creationTime,
+                    parent = obj.Parent and obj.Parent.Name or "NIL",
+                    location = "Workspace"
+                }
+                
+                detectiveLog("CREATION", "🏗️ НОВАЯ МОДЕЛЬ СОЗДАНА В WORKSPACE!", {
+                    Name = obj.Name,
+                    Parent = obj.Parent and obj.Parent.Name or "NIL",
+                    ClassName = obj.ClassName,
+                    Time = string.format("%.3f", creationTime)
+                })
+                
+                -- Глубокий анализ новой модели
+                analyzeNewModel(obj)
+            end
+        end
+    end)
+    
+    -- Мониторинг добавления в character
+    local character = player.Character
+    if character then
+        local characterConnection = character.ChildAdded:Connect(function(obj)
+            if obj:IsA("Tool") then
+                local name = obj.Name:lower()
+                if name:find("bunny") or name:find("dog") or name:find("pet") or name:find("animal") then
+                    detectiveLog("CREATION", "🎮 TOOL ДОБАВЛЕН В CHARACTER!", {
+                        Name = obj.Name,
+                        ClassName = obj.ClassName,
+                        Children = #obj:GetChildren()
+                    })
+                    
+                    -- Анализ происхождения Tool
+                    analyzeToolOrigin(obj)
+                end
+            end
+        end)
+    end
+    
+    return workspaceConnection
+end
+
+-- 🔬 ГЛУБОКИЙ АНАЛИЗ НОВОЙ МОДЕЛИ
+local function analyzeNewModel(model)
+    detectiveLog("ANALYSIS", "🔬 ГЛУБОКИЙ АНАЛИЗ НОВОЙ МОДЕЛИ: " .. model.Name)
+    
+    -- Анализ структуры
+    local structure = {
+        baseParts = 0,
+        meshParts = 0,
+        motor6ds = 0,
+        welds = 0,
+        scripts = 0,
+        animators = 0,
+        handles = 0
+    }
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            structure.baseParts = structure.baseParts + 1
+            if obj.Name == "Handle" then
+                structure.handles = structure.handles + 1
+            end
+        elseif obj:IsA("MeshPart") then
+            structure.meshParts = structure.meshParts + 1
+        elseif obj:IsA("Motor6D") then
+            structure.motor6ds = structure.motor6ds + 1
+        elseif obj:IsA("Weld") then
+            structure.welds = structure.welds + 1
+        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+            structure.scripts = structure.scripts + 1
+            detectiveLog("SCRIPT", "📜 СКРИПТ В МОДЕЛИ: " .. obj.Name)
+        elseif obj:IsA("Animator") then
+            structure.animators = structure.animators + 1
+        end
+    end
+    
+    detectiveLog("ANALYSIS", "📊 Структура модели:", structure)
+    
+    -- Поиск похожих моделей в источниках
+    for sourcePath, sourceData in pairs(DetectiveData.modelSources) do
+        if sourceData.object.Name == model.Name or 
+           sourceData.object.Name:lower():find(model.Name:lower()) then
+            detectiveLog("CHAIN", "🔗 ВОЗМОЖНАЯ СВЯЗЬ С ИСТОЧНИКОМ!", {
+                Source = sourcePath,
+                Model = model.Name,
+                Match = "Name similarity"
+            })
+        end
+    end
+end
+
+-- 🎯 АНАЛИЗ ПРОИСХОЖДЕНИЯ TOOL
+local function analyzeToolOrigin(tool)
+    detectiveLog("ANALYSIS", "🎯 АНАЛИЗ ПРОИСХОЖДЕНИЯ TOOL: " .. tool.Name)
+    
+    -- Проверяем Handle
+    local handle = tool:FindFirstChild("Handle")
+    if handle then
+        detectiveLog("ANALYSIS", "🎮 Handle найден!", {
+            Position = tostring(handle.Position),
+            Size = tostring(handle.Size),
+            Material = tostring(handle.Material)
+        })
+    end
+    
+    -- Анализ содержимого
+    for _, child in pairs(tool:GetChildren()) do
+        detectiveLog("ANALYSIS", string.format("📦 Содержимое Tool: %s (%s)", child.Name, child.ClassName))
+        
+        if child:IsA("Model") then
+            detectiveLog("ANALYSIS", "🎯 МОДЕЛЬ ВНУТРИ TOOL!", {
+                ModelName = child.Name,
+                Children = #child:GetChildren()
+            })
+            
+            -- Сравниваем с источниками
+            for sourcePath, sourceData in pairs(DetectiveData.modelSources) do
+                if sourceData.object.Name == child.Name then
+                    detectiveLog("SOLVED", "✅ НАЙДЕНО СООТВЕТСТВИЕ С ИСТОЧНИКОМ!", {
+                        ToolModel = child.Name,
+                        SourcePath = sourcePath,
+                        SourceLocation = sourceData.location
+                    })
+                end
+            end
+        end
+    end
+end
+
+-- 📊 ГЕНЕРАЦИЯ ДЕТЕКТИВНОГО ОТЧЕТА
+local function generateDetectiveReport()
+    detectiveLog("CRITICAL", "📊 === ДЕТЕКТИВНЫЙ ОТЧЕТ ===")
+    
+    -- Источники моделей
+    detectiveLog("SOURCE", string.format("📦 Найдено %d источников моделей:", #DetectiveData.modelSources))
+    for path, data in pairs(DetectiveData.modelSources) do
+        detectiveLog("SOURCE", string.format("  • %s (%s)", data.object.Name, data.location))
+    end
+    
+    -- Активные скрипты
+    detectiveLog("SCRIPT", string.format("📜 Найдено %d подозрительных скриптов:", #DetectiveData.activeScripts))
+    for path, data in pairs(DetectiveData.activeScripts) do
+        detectiveLog("SCRIPT", string.format("  • %s", data.name))
+    end
+    
+    -- Цепочка создания
+    detectiveLog("CREATION", string.format("🏗️ Отслежено %d событий создания:", #DetectiveData.creationChain))
+    for path, data in pairs(DetectiveData.creationChain) do
+        detectiveLog("CREATION", string.format("  • %s в %s", data.object.Name, data.location))
+    end
+    
+    detectiveLog("CRITICAL", "🕵️ ДЕТЕКТИВНОЕ РАССЛЕДОВАНИЕ ЗАВЕРШЕНО!")
+end
+
+-- 🚀 ГЛАВНАЯ ФУНКЦИЯ ДЕТЕКТИВНОГО АНАЛИЗА
+local function startDetectiveInvestigation()
+    detectiveLog("DETECTIVE", "🚀 ЗАПУСК ДЕТЕКТИВНОГО РАССЛЕДОВАНИЯ")
+    detectiveLog("DETECTIVE", "🎯 Цель: Найти ОТКУДА и КАК создается модель питомца")
+    
+    -- Фаза 1: Сканирование источников
+    scanAllModelSources()
+    
+    -- Фаза 2: Анализ скриптов
+    analyzeActiveScripts()
+    
+    -- Фаза 3: Мониторинг событий
+    local workspaceConnection = monitorCreationEvents()
+    
+    -- Основной цикл расследования
+    local startTime = tick()
+    local mainConnection
+    mainConnection = RunService.Heartbeat:Connect(function()
+        local elapsed = tick() - startTime
+        
+        if elapsed > CONFIG.MONITOR_DURATION then
+            detectiveLog("DETECTIVE", "⏰ Расследование завершено по таймауту")
+            mainConnection:Disconnect()
+            if workspaceConnection then workspaceConnection:Disconnect() end
+            generateDetectiveReport()
+        end
+    end)
+    
+    detectiveLog("DETECTIVE", "🕵️ ДЕТЕКТИВНОЕ РАССЛЕДОВАНИЕ АКТИВНО!")
+    detectiveLog("DETECTIVE", "🥚 ОТКРОЙТЕ ЯЙЦО ДЛЯ НАЧАЛА РАССЛЕДОВАНИЯ!")
+end
+
+-- Создаем GUI
+local function createDetectiveGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "DeepModelOriginDetectiveGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 350, 0, 150)
+    frame.Position = UDim2.new(1, -370, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.05, 0.05)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.8, 0.1, 0.1)
+    title.BorderSizePixel = 0
+    title.Text = "🕵️ MODEL ORIGIN DETECTIVE"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(1, -20, 0, 50)
+    startBtn.Position = UDim2.new(0, 10, 0, 50)
+    startBtn.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
+    startBtn.BorderSizePixel = 0
+    startBtn.Text = "🚀 НАЧАТЬ РАССЛЕДОВАНИЕ"
+    startBtn.TextColor3 = Color3.new(1, 1, 1)
+    startBtn.TextScaled = true
+    startBtn.Font = Enum.Font.SourceSansBold
+    startBtn.Parent = frame
+    
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 80)
-    status.Position = UDim2.new(0, 10, 0, 50)
+    status.Size = UDim2.new(1, -20, 0, 40)
+    status.Position = UDim2.new(0, 10, 0, 110)
     status.BackgroundTransparency = 1
-    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
+    status.Text = "Готов к расследованию.\nОткройте яйцо после запуска."
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
     status.TextWrapped = true
     status.Parent = frame
     
-    -- Кнопка сохранения
-    local saveBtn = Instance.new("TextButton")
-    saveBtn.Size = UDim2.new(1, -20, 0, 50)
-    saveBtn.Position = UDim2.new(0, 10, 0, 140)
-    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
-    saveBtn.BorderSizePixel = 0
-    saveBtn.Text = "💾 Сохранить питомца"
-    saveBtn.TextColor3 = Color3.new(1, 1, 1)
-    saveBtn.TextScaled = true
-    saveBtn.Font = Enum.Font.SourceSansBold
-    saveBtn.Parent = frame
-    
-    -- Кнопка прямой замены
-    local directBtn = Instance.new("TextButton")
-    directBtn.Size = UDim2.new(1, -20, 0, 50)
-    directBtn.Position = UDim2.new(0, 10, 0, 200)
-    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    directBtn.BorderSizePixel = 0
-    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
-    directBtn.TextColor3 = Color3.new(1, 1, 1)
-    directBtn.TextScaled = true
-    directBtn.Font = Enum.Font.SourceSansBold
-    directBtn.Visible = false
-    directBtn.Parent = frame
-    
-    -- Кнопка альтернативы с анимацией
-    local altBtn = Instance.new("TextButton")
-    altBtn.Size = UDim2.new(1, -20, 0, 50)
-    altBtn.Position = UDim2.new(0, 10, 0, 260)
-    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
-    altBtn.BorderSizePixel = 0
-    altBtn.Text = "🎬 АЛЬТЕРНАТИВА + АНИМАЦИЯ"
-    altBtn.TextColor3 = Color3.new(1, 1, 1)
-    altBtn.TextScaled = true
-    altBtn.Font = Enum.Font.SourceSansBold
-    altBtn.Visible = false
-    altBtn.Parent = frame
-    
-    -- Кнопка закрытия
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(1, -20, 0, 30)
-    closeBtn.Position = UDim2.new(0, 10, 0, 310)
-    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
-    closeBtn.BorderSizePixel = 0
-    closeBtn.Text = "❌ Закрыть"
-    closeBtn.TextColor3 = Color3.new(1, 1, 1)
-    closeBtn.TextScaled = true
-    closeBtn.Font = Enum.Font.SourceSansBold
-    closeBtn.Parent = frame
-    
-    -- События
-    saveBtn.MouseButton1Click:Connect(function()
-        status.Text = "💾 Сохраняю питомца..."
-        status.TextColor3 = Color3.new(1, 1, 0)
+    startBtn.MouseButton1Click:Connect(function()
+        status.Text = "🕵️ Расследование активно!\nОткройте яйцо сейчас!"
+        status.TextColor3 = Color3.new(1, 0.2, 0.2)
+        startBtn.Text = "✅ РАССЛЕДОВАНИЕ АКТИВНО"
+        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
+        startBtn.Active = false
         
-        local success = savePet()
-        
-        if success then
-            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel и замените!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-            directBtn.Visible = true
-            altBtn.Visible = true
-        else
-            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    directBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Прямая замена содержимого..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = directReplace()
-        
-        if success then
-            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    altBtn.MouseButton1Click:Connect(function()
-        status.Text = "🎬 Альтернативная замена + анимация...\nСоздаю копию с CFrame анимацией..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = alternativeReplace()
-        
-        if success then
-            status.Text = "✅ АЛЬТЕРНАТИВА + АНИМАЦИЯ ЗАВЕРШЕНА!\nКопия анимируется как питомец!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка альтернативы с анимацией!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    closeBtn.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
+        startDetectiveInvestigation()
     end)
 end
 
 -- Запускаем
-createDirectFixGUI()
-print("✅ DirectShovelFix готов!")
-print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
-print("💾 1. Сохранить питомца")
-print("🔄 2. Заменить Shovel")
+local consoleTextLabel = createDetectiveConsole()
+createDetectiveGUI()
+
+detectiveLog("DETECTIVE", "✅ DeepModelOriginDetective готов!")
+detectiveLog("DETECTIVE", "🕵️ Детективное расследование происхождения модели")
+detectiveLog("DETECTIVE", "🚀 Нажмите 'НАЧАТЬ РАССЛЕДОВАНИЕ' и откройте яйцо!")
