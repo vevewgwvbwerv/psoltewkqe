@@ -67,20 +67,20 @@ local function smartAnchoredManagement(copyParts)
         return
     end
     
-    -- Устанавливаем Anchored состояния
+    -- ИСПРАВЛЕНО: Правильная логика из PetScaler_v3.226
     local anchoredCount = 0
     local unanchoredCount = 0
     
     for _, part in ipairs(copyParts) do
         if part == rootPart then
-            -- Корневая часть НЕ заякорена (может двигаться)
-            part.Anchored = false
-            unanchoredCount = unanchoredCount + 1
-            print("  🔓 Корневая часть разъякорена:", part.Name)
-        else
-            -- Остальные части заякорены (стабильность)
+            -- ИСПРАВЛЕНО: Корневая часть ЗАЯКОРЕНА (стабильность)
             part.Anchored = true
             anchoredCount = anchoredCount + 1
+            print("  🔒 Корневая часть заякорена:", part.Name)
+        else
+            -- ИСПРАВЛЕНО: Остальные части НЕ заякорены (могут двигаться)
+            part.Anchored = false
+            unanchoredCount = unanchoredCount + 1
         end
     end
     
@@ -88,6 +88,20 @@ local function smartAnchoredManagement(copyParts)
 end
 
 -- Функция получения всех BasePart (из PetScaler_v3.221)
+local function getAllParts(model)
+    if not model then return {} end
+    
+    local parts = {}
+    for _, descendant in ipairs(model:GetDescendants()) do
+        if descendant:IsA("BasePart") then
+            table.insert(parts, descendant)
+        end
+    end
+    
+    return parts
+end
+
+-- Функция получения всех BasePart (ОТСУТСТВОВАЛА!)
 local function getAllParts(model)
     if not model then return {} end
     
@@ -139,66 +153,61 @@ local function finalReplace()
     end
     
     print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Финальная замена с логикой PetScaler...")
+    print("🔧 ИСПРАВЛЕННАЯ замена - меняем содержимое Shovel...")
     
-    -- Создаем новый Tool как ТОЧНУЮ копию питомца
-    local newTool = savedPetTool:Clone()
-    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
-    
-    print("📋 Создана точная копия питомца")
-    
-    -- КРИТИЧЕСКОЕ: Применяем smartAnchoredManagement
-    local copyParts = getAllParts(newTool)
-    print(string.format("📦 Найдено %d частей в копии", #copyParts))
-    
-    if #copyParts > 0 then
-        smartAnchoredManagement(copyParts)
-    else
-        print("⚠️ Части не найдены - пропускаю Anchored управление")
+    -- ШАГ 1: Сохраняем позицию Shovel Handle
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local shovelPosition = nil
+    if shovelHandle then
+        shovelPosition = shovelHandle.CFrame
+        print("📍 Сохранена позиция Shovel Handle")
     end
     
-    -- Устанавливаем правильную позицию (из PetScaler)
-    if newTool.PrimaryPart then
-        local hrp = character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local offset = Vector3.new(5, 3, 0)  -- Смещение от игрока
-            newTool.PrimaryPart.CFrame = hrp.CFrame + offset
-            print("📍 Установлена позиция копии рядом с игроком")
+    -- ШАГ 2: Очищаем содержимое Shovel (кроме Handle)
+    print("🧹 Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        if child.Name ~= "Handle" then
+            child:Destroy()
+            print("   🗑️ Удален:", child.Name)
         end
     end
     
-    -- Удаляем Shovel
-    print("🗑️ Удаляю Shovel...")
-    shovel:Destroy()
+    wait(0.1)
+    
+    -- ШАГ 3: Копируем содержимое питомца В ТОТ ЖЕ Shovel
+    print("📋 Копирую содержимое питомца в Shovel...")
+    for _, child in pairs(savedPetTool:GetChildren()) do
+        if child.Name ~= "Handle" then
+            local copy = child:Clone()
+            copy.Parent = shovel
+            print("   ✅ Скопирован:", child.Name)
+        end
+    end
+    
+    -- ШАГ 4: Меняем имя Shovel
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("✅ Имя изменено на:", shovel.Name)
+    
+    -- ШАГ 5: Восстанавливаем позицию Handle
+    if shovelPosition and shovelHandle then
+        shovelHandle.CFrame = shovelPosition
+        print("📍 Позиция Handle восстановлена")
+    end
+    
+    -- ШАГ 6: Настраиваем Anchored для анимации
+    print("🔧 Настраиваю Anchored для анимации...")
+    for _, obj in pairs(shovel:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name ~= "Handle" then
+            obj.Anchored = false  -- Все части свободны для анимации
+            print("   🔓 Разъякорен:", obj.Name)
+        end
+    end
     
     wait(0.3)
     
-    -- КРИТИЧЕСКОЕ: Добавляем в Workspace сначала (как в PetScaler)
-    print("🌍 Добавляю в Workspace...")
-    newTool.Parent = game.Workspace
-    
-    wait(0.2)
-    
-    -- Затем в Backpack
-    print("📦 Перемещаю в Backpack...")
-    local backpack = character:FindFirstChild("Backpack")
-    if not backpack then
-        backpack = Instance.new("Backpack")
-        backpack.Parent = character
-    end
-    newTool.Parent = backpack
-    
-    wait(0.1)
-    
-    -- Наконец в руки
-    print("🎮 Перемещаю в руки...")
-    newTool.Parent = character
-    
-    wait(0.5)
-    
-    -- Запускаем анимацию
+    -- ШАГ 7: Запускаем анимацию
     print("🎬 Запускаю анимацию...")
-    startFinalAnimation(newTool)
+    startFinalAnimation(shovel)  -- Анимируем ТОТ ЖЕ Tool!
     
     print("✅ Финальная замена завершена!")
     return true
