@@ -1,30 +1,20 @@
--- AdvancedTextReplacer.lua
--- Замена текста + анализ и замена полной структуры Tool в руке
+-- ProperShovelReplacer.lua
+-- ПРАВИЛЬНАЯ замена Shovel на питомца с корректным CFrame
+-- Основано на логике из PetScaler_v3.226
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
-print("=== ADVANCED TEXT REPLACER ===")
+print("=== PROPER SHOVEL REPLACER ===")
 
 -- Глобальные переменные
-local currentHandTool = nil
-local analyzedToolData = nil
-local diagnosticConnection = nil
+local savedPetTool = nil
+local savedPetCFrame = nil
+local animationConnection = nil
 
--- Данные для анализа
-local animationData = {
-    animators = {},
-    animationTracks = {},
-    scripts = {},
-    motor6ds = {},
-    cframes = {},
-    lastUpdate = 0
-}
-
--- Функция поиска питомца в руке
-local function findHandPetTool()
+-- Поиск питомца в руках
+local function findPetInHands()
     local character = player.Character
     if not character then return nil end
     
@@ -36,513 +26,332 @@ local function findHandPetTool()
     return nil
 end
 
--- Функция поиска и замены текста в Hotbar
-local function replaceTextInHotbar(slotNumber, newText)
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
-    
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then return false end
-    
-    local backpack = backpackGui:FindFirstChild("Backpack")
-    if not backpack then return false end
-    
-    local hotbar = backpack:FindFirstChild("Hotbar")
-    if not hotbar then return false end
-    
-    local targetSlot = hotbar:FindFirstChild(tostring(slotNumber))
-    if not targetSlot then return false end
-    
-    -- Ищем TextLabel в слоте
-    for _, desc in pairs(targetSlot:GetDescendants()) do
-        if desc:IsA("TextLabel") and desc.Text ~= "" then
-            local oldText = desc.Text
-            desc.Text = newText
-            print("✅ Текст заменен: " .. oldText .. " → " .. newText)
-            return true
-        end
-    end
-    
-    return false
-end
-
--- Функция глубокого копирования Tool
-local function deepCopyTool(originalTool)
-    if not originalTool then return nil end
-    
-    print("🔄 Создаю глубокую копию Tool: " .. originalTool.Name)
-    
-    local function copyInstance(instance)
-        local copy = Instance.new(instance.ClassName)
-        
-        -- Копируем основные свойства
-        local basicProperties = {"Name", "Archivable"}
-        for _, property in pairs(basicProperties) do
-            local success, value = pcall(function()
-                return instance[property]
-            end)
-            if success then
-                pcall(function()
-                    copy[property] = value
-                end)
-            end
-        end
-        
-        -- Специальные свойства для Tool
-        if instance:IsA("Tool") then
-            pcall(function() copy.RequiresHandle = instance.RequiresHandle end)
-            pcall(function() copy.ManualActivationOnly = instance.ManualActivationOnly end)
-            pcall(function() copy.CanBeDropped = instance.CanBeDropped end)
-            pcall(function() copy.Enabled = instance.Enabled end)
-            pcall(function() copy.ToolTip = instance.ToolTip end)
-            print("🔧 Tool свойства скопированы")
-            
-        -- Специальные свойства для BasePart
-        elseif instance:IsA("BasePart") then
-            pcall(function() copy.Size = instance.Size end)
-            pcall(function() copy.CFrame = instance.CFrame end)
-            pcall(function() copy.Material = instance.Material end)
-            pcall(function() copy.BrickColor = instance.BrickColor end)
-            pcall(function() copy.Color = instance.Color end)
-            pcall(function() copy.Transparency = instance.Transparency end)
-            pcall(function() copy.Reflectance = instance.Reflectance end)
-            pcall(function() copy.CanCollide = instance.CanCollide end)
-            pcall(function() copy.Anchored = instance.Anchored end)
-            pcall(function() copy.Shape = instance.Shape end)
-            pcall(function() copy.TopSurface = instance.TopSurface end)
-            pcall(function() copy.BottomSurface = instance.BottomSurface end)
-            print("🧱 Part свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для SpecialMesh
-        elseif instance:IsA("SpecialMesh") then
-            pcall(function() copy.MeshType = instance.MeshType end)
-            pcall(function() copy.MeshId = instance.MeshId end)
-            pcall(function() copy.TextureId = instance.TextureId end)
-            pcall(function() copy.Scale = instance.Scale end)
-            pcall(function() copy.Offset = instance.Offset end)
-            pcall(function() copy.VertexColor = instance.VertexColor end)
-            print("🎨 Mesh свойства скопированы")
-            
-        -- Специальные свойства для Motor6D
-        elseif instance:IsA("Motor6D") then
-            pcall(function() copy.C0 = instance.C0 end)
-            pcall(function() copy.C1 = instance.C1 end)
-            -- Part0 и Part1 установим после создания всех частей
-            print("⚙️ Motor6D свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для Weld
-        elseif instance:IsA("Weld") then
-            pcall(function() copy.C0 = instance.C0 end)
-            pcall(function() copy.C1 = instance.C1 end)
-            print("🔗 Weld свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для LocalScript/Script
-        elseif instance:IsA("LocalScript") or instance:IsA("Script") then
-            pcall(function() copy.Enabled = instance.Enabled end)
-            pcall(function() copy.Source = instance.Source end)
-            print("📜 Script свойства скопированы: " .. instance.Name)
-        end
-        
-        return copy
-    end
-    
-    -- Создаем копию с детьми
-    local toolCopy = copyInstance(originalTool)
-    
-    -- Рекурсивно копируем всех детей
-    local function copyChildren(original, copy)
-        for _, child in pairs(original:GetChildren()) do
-            local childCopy = copyInstance(child)
-            childCopy.Parent = copy
-            copyChildren(child, childCopy) -- Рекурсивно копируем детей детей
-        end
-    end
-    
-    copyChildren(originalTool, toolCopy)
-    
-    -- Восстанавливаем связи Motor6D и Weld
-    local function restoreConnections(original, copy)
-        for _, originalChild in pairs(original:GetDescendants()) do
-            if originalChild:IsA("Motor6D") or originalChild:IsA("Weld") then
-                -- Находим соответствующую копию
-                local copyChild = copy:FindFirstChild(originalChild.Name, true)
-                if copyChild and (copyChild:IsA("Motor6D") or copyChild:IsA("Weld")) then
-                    -- Восстанавливаем Part0 и Part1 только для BasePart
-                    if originalChild.Part0 and originalChild.Part0:IsA("BasePart") then
-                        local part0Copy = copy:FindFirstChild(originalChild.Part0.Name, true)
-                        if part0Copy and part0Copy:IsA("BasePart") then
-                            pcall(function()
-                                copyChild.Part0 = part0Copy
-                                print("🔗 Part0 восстановлен: " .. originalChild.Name .. " -> " .. part0Copy.Name)
-                            end)
-                        else
-                            print("⚠️ Part0 не найден или не BasePart: " .. originalChild.Name)
-                        end
-                    end
-                    if originalChild.Part1 and originalChild.Part1:IsA("BasePart") then
-                        local part1Copy = copy:FindFirstChild(originalChild.Part1.Name, true)
-                        if part1Copy and part1Copy:IsA("BasePart") then
-                            pcall(function()
-                                copyChild.Part1 = part1Copy
-                                print("🔗 Part1 восстановлен: " .. originalChild.Name .. " -> " .. part1Copy.Name)
-                            end)
-                        else
-                            print("⚠️ Part1 не найден или не BasePart: " .. originalChild.Name)
-                        end
-                    end
-                else
-                    print("⚠️ Копия Motor6D/Weld не найдена: " .. originalChild.Name)
-                end
-            end
-        end
-    end
-    
-    restoreConnections(originalTool, toolCopy)
-    
-    print("✅ Глубокая копия Tool создана успешно!")
-    return toolCopy
-end
-
--- Функция анализа Tool
-local function analyzeTool(tool)
-    if not tool then return nil end
-    
-    print("\n🔍 === АНАЛИЗ TOOL: " .. tool.Name .. " ===")
-    
-    local toolData = {
-        name = tool.Name,
-        className = tool.ClassName,
-        parts = {},
-        motor6ds = {},
-        welds = {},
-        meshes = {},
-        scripts = {},
-        animators = {},
-        totalChildren = 0
-    }
-    
-    -- Анализируем все компоненты
-    for _, obj in pairs(tool:GetDescendants()) do
-        toolData.totalChildren = toolData.totalChildren + 1
-        
-        if obj:IsA("BasePart") then
-            table.insert(toolData.parts, {
-                name = obj.Name,
-                size = obj.Size,
-                cframe = obj.CFrame,
-                material = obj.Material.Name,
-                transparency = obj.Transparency
-            })
-            print("🧱 Part: " .. obj.Name .. " | Size: " .. tostring(obj.Size))
-            
-        elseif obj:IsA("Motor6D") then
-            table.insert(toolData.motor6ds, {
-                name = obj.Name,
-                part0 = obj.Part0 and obj.Part0.Name or "NIL",
-                part1 = obj.Part1 and obj.Part1.Name or "NIL",
-                c0 = obj.C0,
-                c1 = obj.C1
-            })
-            print("⚙️ Motor6D: " .. obj.Name .. " | " .. (obj.Part0 and obj.Part0.Name or "NIL") .. " → " .. (obj.Part1 and obj.Part1.Name or "NIL"))
-            
-        elseif obj:IsA("Weld") then
-            table.insert(toolData.welds, {
-                name = obj.Name,
-                part0 = obj.Part0 and obj.Part0.Name or "NIL",
-                part1 = obj.Part1 and obj.Part1.Name or "NIL",
-                c0 = obj.C0,
-                c1 = obj.C1
-            })
-            print("🔗 Weld: " .. obj.Name)
-            
-        elseif obj:IsA("SpecialMesh") then
-            table.insert(toolData.meshes, {
-                name = obj.Name,
-                meshType = obj.MeshType.Name,
-                meshId = obj.MeshId,
-                textureId = obj.TextureId,
-                scale = obj.Scale
-            })
-            print("🎨 Mesh: " .. obj.Name .. " | Type: " .. obj.MeshType.Name)
-            
-        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
-            table.insert(toolData.scripts, {
-                name = obj.Name,
-                className = obj.ClassName,
-                enabled = obj.Enabled
-            })
-            print("📜 Script: " .. obj.Name .. " (" .. obj.ClassName .. ")")
-            
-        elseif obj:IsA("Animator") then
-            table.insert(toolData.animators, {
-                name = obj.Name,
-                parent = obj.Parent.Name
-            })
-            print("🎭 Animator: " .. obj.Name .. " в " .. obj.Parent.Name)
-        end
-    end
-    
-    print("📊 Анализ завершен:")
-    print("   🧱 Частей: " .. #toolData.parts)
-    print("   ⚙️ Motor6D: " .. #toolData.motor6ds)
-    print("   🔗 Weld: " .. #toolData.welds)
-    print("   🎨 Мешей: " .. #toolData.meshes)
-    print("   📜 Скриптов: " .. #toolData.scripts)
-    print("   🎭 Аниматоров: " .. #toolData.animators)
-    print("   📦 Всего объектов: " .. toolData.totalChildren)
-    
-    return toolData
-end
-
--- Функция замены Shovel на копию проанализированного питомца
-local function replaceToolInHand(analyzedToolData)
+-- Поиск Shovel в руках
+local function findShovelInHands()
     local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден")
-        return false
-    end
+    if not character then return nil end
     
-    -- Находим проанализированный питомец в руке
-    local sourceTool = findHandPetTool()
-    if not sourceTool then
-        print("❌ Проанализированный питомец в руке не найден")
-        return false
-    end
-    
-    print("🔄 Заменяю Shovel на копию питомца: " .. sourceTool.Name)
-    
-    -- Ищем Shovel в инвентаре персонажа (по реальному имени Tool, не по GUI тексту)
-    local shovelTool = nil
-    
-    -- Сначала ищем в руке персонажа
     for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy Plants")) then
-            shovelTool = tool
-            print("🔍 Найден Shovel в руке: " .. tool.Name)
-            break
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
         end
     end
+    return nil
+end
+
+-- СОХРАНИТЬ питомца с правильным CFrame
+local function savePetWithCFrame()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА С CFRAME ===")
     
-    -- Если Shovel не в руке, ищем в Backpack
-    if not shovelTool then
-        local backpack = character:FindFirstChild("Backpack")
-        if backpack then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy Plants")) then
-                    shovelTool = tool
-                    print("🔍 Найден Shovel в Backpack: " .. tool.Name)
-                    break
-                end
-            end
-        end
-    end
-    
-    -- Если все еще не найден, ищем любой Tool, который не питомец
-    if not shovelTool then
-        print("🔍 Ищем любой не-питомец Tool для замены...")
-        for _, tool in pairs(character:GetChildren()) do
-            if tool:IsA("Tool") and not (string.find(tool.Name, "KG%]") and string.find(tool.Name, "%[")) then
-                shovelTool = tool
-                print("🔍 Найден Tool для замены: " .. tool.Name)
-                break
-            end
-        end
-        
-        if not shovelTool then
-            local backpack = character:FindFirstChild("Backpack")
-            if backpack then
-                for _, tool in pairs(backpack:GetChildren()) do
-                    if tool:IsA("Tool") and not (string.find(tool.Name, "KG%]") and string.find(tool.Name, "%[")) then
-                        shovelTool = tool
-                        print("🔍 Найден Tool в Backpack для замены: " .. tool.Name)
-                        break
-                    end
-                end
-            end
-        end
-    end
-    
-    if not shovelTool then
-        print("❌ Shovel не найден в инвентаре")
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
         return false
     end
     
-    print("✅ Найден Shovel: " .. shovelTool.Name)
-    print("🔄 Создаю копию питомца для замены Shovel...")
+    print("✅ Найден питомец: " .. pet.Name)
     
-    -- Создаем копию питомца с именем Dragonfly
-    local petCopy = deepCopyTool(sourceTool)
-    if not petCopy then
-        print("❌ Не удалось создать копию питомца")
-        return false
+    -- Сохраняем ссылку на питомца
+    savedPetTool = pet
+    
+    -- Сохраняем CFrame PrimaryPart питомца (КЛЮЧЕВОЕ!)
+    if pet.PrimaryPart then
+        savedPetCFrame = pet.PrimaryPart.CFrame
+        print("💾 Сохранен CFrame PrimaryPart:")
+        print("   Position:", savedPetCFrame.Position)
+        print("   UpVector:", savedPetCFrame.UpVector)
+        print("   LookVector:", savedPetCFrame.LookVector)
+    else
+        -- Если нет PrimaryPart, ищем Handle
+        local handle = pet:FindFirstChild("Handle")
+        if handle then
+            savedPetCFrame = handle.CFrame
+            print("💾 Сохранен CFrame Handle:")
+            print("   Position:", savedPetCFrame.Position)
+            print("   UpVector:", savedPetCFrame.UpVector)
+        else
+            print("❌ Не найден ни PrimaryPart, ни Handle!")
+            return false
+        end
     end
     
-    -- Меняем имя копии на Dragonfly
-    petCopy.Name = "Dragonfly [6.36 KG] [Age 35]"
-    
-    -- Сохраняем родителя Shovel
-    local shovelParent = shovelTool.Parent
-    
-    -- Удаляем Shovel и заменяем на копию питомца
-    shovelTool:Destroy()
-    wait(0.1)
-    petCopy.Parent = shovelParent
-    
-    print("📝 Структура замененного Tool:")
-    print("   🧱 Частей: " .. #analyzedToolData.parts)
-    print("   ⚙️ Motor6D: " .. #analyzedToolData.motor6ds)
-    print("   🔗 Weld: " .. #analyzedToolData.welds)
-    print("   🎨 Мешей: " .. #analyzedToolData.meshes)
-    print("   📜 Скриптов: " .. #analyzedToolData.scripts)
-    
-    print("✅ Shovel успешно заменен на копию питомца Dragonfly!")
-    print("✅ Теперь у вас есть Dragonfly вместо Shovel!")
+    print("✅ Питомец и его CFrame сохранены!")
     return true
 end
 
--- Функция создания GUI
-local function createControlGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "AdvancedTextReplacerGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+-- ПРАВИЛЬНАЯ ЗАМЕНА с копированием CFrame из PetScaler_v3.226
+local function properReplace()
+    print("\n🔄 === ПРАВИЛЬНАЯ ЗАМЕНА С CFRAME ===")
     
-    -- Главное окно
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 500, 0, 400)
-    mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
-    mainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
+    if not savedPetTool or not savedPetCFrame then
+        print("❌ Сначала сохраните питомца с CFrame!")
+        return false
+    end
     
-    -- Заголовок
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Size = UDim2.new(1, 0, 0, 40)
-    titleLabel.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    titleLabel.BorderSizePixel = 0
-    titleLabel.Text = "🔧 Продвинутая замена Tool"
-    titleLabel.TextColor3 = Color3.new(1, 1, 1)
-    titleLabel.TextScaled = true
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.Parent = mainFrame
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
     
-    -- Статус
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(1, -20, 0, 60)
-    statusLabel.Position = UDim2.new(0, 10, 0, 50)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Готов к работе. Возьмите питомца в руки для анализа."
-    statusLabel.TextColor3 = Color3.new(1, 1, 1)
-    statusLabel.TextScaled = true
-    statusLabel.Font = Enum.Font.SourceSans
-    statusLabel.TextWrapped = true
-    statusLabel.Parent = mainFrame
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
     
-    -- Кнопка замены текста
-    local replaceTextButton = Instance.new("TextButton")
-    replaceTextButton.Size = UDim2.new(1, -20, 0, 40)
-    replaceTextButton.Position = UDim2.new(0, 10, 0, 120)
-    replaceTextButton.BackgroundColor3 = Color3.new(0, 0.6, 0)
-    replaceTextButton.BorderSizePixel = 0
-    replaceTextButton.Text = "📝 Заменить текст слота 1"
-    replaceTextButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceTextButton.TextScaled = true
-    replaceTextButton.Font = Enum.Font.SourceSansBold
-    replaceTextButton.Parent = mainFrame
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Правильная замена с копированием CFrame...")
     
-    -- Кнопка анализа Tool
-    local analyzeButton = Instance.new("TextButton")
-    analyzeButton.Size = UDim2.new(1, -20, 0, 40)
-    analyzeButton.Position = UDim2.new(0, 10, 0, 170)
-    analyzeButton.BackgroundColor3 = Color3.new(0, 0.4, 0.8)
-    analyzeButton.BorderSizePixel = 0
-    analyzeButton.Text = "🔍 Анализировать питомца в руке"
-    analyzeButton.TextColor3 = Color3.new(1, 1, 1)
-    analyzeButton.TextScaled = true
-    analyzeButton.Font = Enum.Font.SourceSansBold
-    analyzeButton.Parent = mainFrame
+    -- Создаем новый Tool на основе питомца
+    local newTool = Instance.new("Tool")
+    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    newTool.RequiresHandle = true
+    newTool.CanBeDropped = true
+    newTool.ManualActivationOnly = false
     
-    -- Кнопка замены Tool
-    local replaceToolButton = Instance.new("TextButton")
-    replaceToolButton.Size = UDim2.new(1, -20, 0, 40)
-    replaceToolButton.Position = UDim2.new(0, 10, 0, 220)
-    replaceToolButton.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    replaceToolButton.BorderSizePixel = 0
-    replaceToolButton.Text = "🔧 Заменить Tool + текст"
-    replaceToolButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceToolButton.TextScaled = true
-    replaceToolButton.Font = Enum.Font.SourceSansBold
-    replaceToolButton.Visible = false
-    replaceToolButton.Parent = mainFrame
+    print("🔧 Копирую содержимое питомца...")
     
-    -- Кнопка закрытия
-    local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(1, -20, 0, 40)
-    closeButton.Position = UDim2.new(0, 10, 0, 320)
-    closeButton.BackgroundColor3 = Color3.new(0.8, 0, 0)
-    closeButton.BorderSizePixel = 0
-    closeButton.Text = "❌ Закрыть"
-    closeButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceToolButton.TextScaled = true
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.Parent = mainFrame
+    -- Копируем содержимое питомца
+    for _, child in pairs(savedPetTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = newTool
+        print("   ✅ Скопировано: " .. child.Name)
+    end
     
-    -- Подключаем события
-    replaceTextButton.MouseButton1Click:Connect(function()
-        local success = replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-        if success then
-            statusLabel.Text = "✅ Текст в слоте 1 заменен на Dragonfly!"
-            statusLabel.TextColor3 = Color3.new(0, 1, 0)
-        else
-            statusLabel.Text = "❌ Не удалось заменить текст"
-            statusLabel.TextColor3 = Color3.new(1, 0, 0)
+    -- КЛЮЧЕВАЯ ЧАСТЬ: Устанавливаем правильный CFrame
+    print("🎯 Устанавливаю правильный CFrame...")
+    
+    -- Находим PrimaryPart или Handle в новом Tool
+    local targetPart = newTool.PrimaryPart or newTool:FindFirstChild("Handle")
+    if targetPart then
+        print("📍 Найдена целевая часть: " .. targetPart.Name)
+        
+        -- ИСПОЛЬЗУЕМ ЛОГИКУ ИЗ PetScaler_v3.226
+        local currentPos = targetPart.Position
+        
+        -- ЭТАП 1: ПОДНИМАЕМ НА ПРАВИЛЬНУЮ ВЫСОТУ (как в PetScaler)
+        local correctedPosition = Vector3.new(
+            currentPos.X,
+            currentPos.Y + 1.33,  -- Поднимаем как Roblox
+            currentPos.Z
+        )
+        
+        -- ЭТАП 2: КОПИРУЕМ ТОЧНУЮ ОРИЕНТАЦИЮ СОХРАНЕННОГО ПИТОМЦА
+        local exactCFrame = CFrame.lookAt(
+            correctedPosition,
+            correctedPosition + savedPetCFrame.LookVector,  -- Точный LookVector
+            savedPetCFrame.UpVector  -- Точный UpVector
+        )
+        
+        -- Применяем точное копирование
+        targetPart.CFrame = exactCFrame
+        
+        print("✅ ПРИМЕНЕНО ТОЧНОЕ КОПИРОВАНИЕ CFrame!")
+        print("📊 Поднято на +1.33 стада")
+        print("🦴 Скопирована ориентация сохраненного питомца")
+        
+        -- Проверка после применения
+        wait(0.1)
+        local immediateCheck = targetPart.CFrame
+        print("\n🔍 ПРОВЕРКА ПОСЛЕ ПРИМЕНЕНИЯ:")
+        print("   Копия UpVector:", immediateCheck.UpVector)
+        print("   Оригинал UpVector:", savedPetCFrame.UpVector)
+        print("   Копия позиция:", immediateCheck.Position)
+    else
+        print("❌ Не найдена целевая часть для установки CFrame!")
+    end
+    
+    -- Удаляем Shovel
+    print("🗑️ Удаляю Shovel...")
+    shovel:Destroy()
+    
+    wait(0.2)
+    
+    -- Добавляем новый Tool
+    print("🎮 Добавляю новый Tool в руки...")
+    newTool.Parent = character
+    
+    wait(0.3)
+    
+    -- Запускаем правильную анимацию (БЕЗ изменения CFrame!)
+    print("🎬 Запускаю правильную анимацию...")
+    startProperAnimation(newTool)
+    
+    print("✅ Правильная замена завершена!")
+    print("🎭 Копия должна быть в правильной позе и анимироваться!")
+    return true
+end
+
+-- ПРАВИЛЬНАЯ АНИМАЦИЯ (основана на логике из PetScaler_v3.226)
+local function startProperAnimation(tool)
+    if not tool then return end
+    
+    print("🎬 === ЗАПУСК ПРАВИЛЬНОЙ АНИМАЦИИ ===")
+    
+    -- Останавливаем предыдущую анимацию
+    if animationConnection then
+        animationConnection:Disconnect()
+        animationConnection = nil
+    end
+    
+    -- Находим все Motor6D в Tool
+    local motors = {}
+    for _, obj in pairs(tool:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            motors[obj.Name] = {
+                motor = obj,
+                originalC0 = obj.C0,
+                originalC1 = obj.C1,
+                time = math.random() * 10
+            }
+            print("   🔗 Найден Motor6D: " .. obj.Name)
         end
-    end)
+    end
     
-    analyzeButton.MouseButton1Click:Connect(function()
-        local tool = findHandPetTool()
-        if tool then
-            statusLabel.Text = "🔍 Анализирую Tool: " .. tool.Name
-            statusLabel.TextColor3 = Color3.new(0, 1, 1)
-            
-            analyzedToolData = analyzeTool(tool)
-            
-            -- Заменяем текст слота 1 при анализе
-            replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-            
-            statusLabel.Text = "✅ Анализ завершен! Tool готов к замене."
-            statusLabel.TextColor3 = Color3.new(0, 1, 0)
-            replaceToolButton.Visible = true
-        else
-            statusLabel.Text = "❌ Питомец в руке не найден!"
-            statusLabel.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
+    print(string.format("🎭 Найдено %d Motor6D для анимации", #motors))
     
-    replaceToolButton.MouseButton1Click:Connect(function()
-        if analyzedToolData then
-            local success = replaceToolInHand(analyzedToolData)
-            if success then
-                -- Также заменяем текст
-                replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-                statusLabel.Text = "✅ Tool и текст успешно заменены!"
-                statusLabel.TextColor3 = Color3.new(0, 1, 0)
-            else
-                statusLabel.Text = "❌ Не удалось заменить Tool"
-                statusLabel.TextColor3 = Color3.new(1, 0, 0)
+    if #motors == 0 then
+        print("⚠️ Motor6D не найдены - анимация недоступна")
+        return
+    end
+    
+    -- Запускаем анимацию Motor6D (НЕ CFrame!)
+    animationConnection = RunService.Heartbeat:Connect(function()
+        local time = tick()
+        
+        for motorName, data in pairs(motors) do
+            if data.motor and data.motor.Parent then
+                -- Простая idle анимация через Motor6D
+                local offsetY = math.sin(time * 2 + data.time) * 0.02
+                local offsetX = math.cos(time * 1.5 + data.time) * 0.01
+                
+                -- Применяем анимацию к C0 (безопасно)
+                data.motor.C0 = data.originalC0 * CFrame.new(offsetX, offsetY, 0)
+                
+                data.time = data.time + 0.01
             end
         end
     end)
     
-    closeButton.MouseButton1Click:Connect(function()
-        if diagnosticConnection then
-            diagnosticConnection:Disconnect()
+    print("✅ Правильная анимация запущена!")
+    print("🎭 Питомец анимируется через Motor6D (безопасно)")
+end
+
+-- Создаем GUI
+local function createProperGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ProperShovelReplacerGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 450, 0, 300)
+    frame.Position = UDim2.new(0.5, -225, 0.5, -150)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 PROPER SHOVEL REPLACER"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 80)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "ПРАВИЛЬНОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить с CFrame\n2. Возьмите Shovel → Правильная замена\nОснована на PetScaler_v3.226!"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
+    
+    -- Кнопка сохранения с CFrame
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить с CFrame"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
+    
+    -- Кнопка правильной замены
+    local replaceBtn = Instance.new("TextButton")
+    replaceBtn.Size = UDim2.new(1, -20, 0, 50)
+    replaceBtn.Position = UDim2.new(0, 10, 0, 200)
+    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    replaceBtn.BorderSizePixel = 0
+    replaceBtn.Text = "🎯 ПРАВИЛЬНАЯ ЗАМЕНА"
+    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
+    replaceBtn.TextScaled = true
+    replaceBtn.Font = Enum.Font.SourceSansBold
+    replaceBtn.Visible = false
+    replaceBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 260)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
+    
+    -- События
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца с CFrame...\nАнализирую позицию и ориентацию..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = savePetWithCFrame()
+        
+        if success then
+            status.Text = "✅ Питомец с CFrame сохранен!\nТеперь возьмите Shovel!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            replaceBtn.Visible = true
+        else
+            status.Text = "❌ Ошибка сохранения!\nВозьмите питомца в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    replaceBtn.MouseButton1Click:Connect(function()
+        status.Text = "🎯 Правильная замена...\nКопирую CFrame из PetScaler_v3.226..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = properReplace()
+        
+        if success then
+            status.Text = "✅ ПРАВИЛЬНАЯ ЗАМЕНА ЗАВЕРШЕНА!\nПитомец в правильной позе!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        if animationConnection then
+            animationConnection:Disconnect()
         end
         screenGui:Destroy()
     end)
 end
 
--- Создаем GUI
-createControlGUI()
-
-print("✅ AdvancedTextReplacer готов!")
-print("🎮 Используйте GUI для замены текста и анализа Tool")
+-- Запускаем
+createProperGUI()
+print("✅ ProperShovelReplacer готов!")
+print("🎯 ОСНОВАН НА ЛОГИКЕ PetScaler_v3.226!")
+print("💾 1. Сохранить питомца с CFrame")
+print("🔄 2. Правильная замена с копированием ориентации")
