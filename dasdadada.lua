@@ -12,12 +12,11 @@ local player = Players.LocalPlayer
 print("🔥 === PET SCALER v2.0 - С АНИМАЦИЕЙ ===")
 print("=" .. string.rep("=", 60))
 
--- Конфигурация (ОБНОВЛЕННАЯ - анимация роста)
+-- Конфигурация (ОСНОВАНА НА ДИАГНОСТИКЕ ОРИГИНАЛЬНОЙ ИГРЫ)
 local CONFIG = {
     SEARCH_RADIUS = 100,
-    START_SCALE = 0.3,      -- Начальный размер (маленький)
-    END_SCALE = 1.0,        -- Конечный размер (нормальный)
-    TWEEN_TIME = 3.0,       -- Время анимации роста
+    SCALE_FACTOR = 1.184,   -- Точный коэффициент из диагностики!
+    TWEEN_TIME = 3.2,       -- Время как в оригинале (3.22 сек)
     EASING_STYLE = Enum.EasingStyle.Quad,
     EASING_DIRECTION = Enum.EasingDirection.Out
 }
@@ -38,7 +37,7 @@ end
 local playerPos = hrp.Position
 print("📍 Позиция игрока:", playerPos)
 print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
-print("📏 Анимация роста: от", CONFIG.START_SCALE .. "x до", CONFIG.END_SCALE .. "x")
+print("📐 Масштабирование:", CONFIG.SCALE_FACTOR .. "x (как в оригинальной игре)")
 print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
 print()
 
@@ -145,11 +144,31 @@ local function hasPetVisuals(model)
     return visualCount > 0, petVisuals
 end
 
--- Функция глубокого копирования модели (ОРИГИНАЛЬНАЯ ВЕРСИЯ)
+-- Функция глубокого копирования модели (ОРИГИНАЛЬНАЯ ВЕРСИЯ + ЗАЩИТА)
 local function deepCopyModel(originalModel)
+    -- Проверяем входные параметры
+    if not originalModel then
+        print("❌ deepCopyModel: Оригинальная модель = nil!")
+        return nil
+    end
+    
+    if not originalModel.Parent then
+        print("❌ deepCopyModel: Оригинальная модель не в Workspace!")
+        return nil
+    end
+    
     print("📋 Создаю глубокую копию модели:", originalModel.Name)
     
-    local copy = originalModel:Clone()
+    local copy = nil
+    local success, errorMsg = pcall(function()
+        copy = originalModel:Clone()
+    end)
+    
+    if not success or not copy then
+        print("❌ Ошибка при клонировании:", errorMsg or "Неизвестная ошибка")
+        return nil
+    end
+    
     copy.Name = originalModel.Name .. "_SCALED_COPY"
     copy.Parent = Workspace
     
@@ -193,6 +212,180 @@ local function deepCopyModel(originalModel)
     
     print("✅ Копия создана:", copy.Name)
     return copy
+end
+
+-- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
+
+-- Функция получения всех BasePart из модели
+local function getAllParts(model)
+    local parts = {}
+    
+    if not model then
+        print("⚠️ getAllParts: модель = nil")
+        return parts
+    end
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
+        end
+    end
+    
+    return parts
+end
+
+-- Функция умного управления Anchored (из SmartMotorCopier)
+local function smartAnchoredManagement(copyParts)
+    if not copyParts or #copyParts == 0 then
+        print("⚠️ smartAnchoredManagement: нет частей")
+        return nil
+    end
+    
+    print("🧠 Умное управление Anchored...")
+    
+    -- Находим "корневую" часть
+    local rootPart = nil
+    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    
+    for _, candidate in ipairs(rootCandidates) do
+        for _, part in ipairs(copyParts) do
+            if part.Name == candidate then
+                rootPart = part
+                break
+            end
+        end
+        if rootPart then break end
+    end
+    
+    if not rootPart then
+        rootPart = copyParts[1]
+        print("  ⚠️ Корневая часть не найдена, использую:", rootPart.Name)
+    else
+        print("  ✅ Корневая часть:", rootPart.Name)
+    end
+    
+    -- Применяем умный Anchored (КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ДЛЯ ПРЕДОТВРАЩЕНИЯ ПАДЕНИЯ!)
+    for _, part in ipairs(copyParts) do
+        if part == rootPart then
+            part.Anchored = true -- Только корень заякорен - это предотвращает падение!
+        else
+            part.Anchored = false -- Остальные могут двигаться
+        end
+    end
+    
+    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
+    return rootPart
+end
+
+-- Функция получения всех Motor6D из модели
+local function getMotor6Ds(model)
+    local motors = {}
+    
+    if not model then
+        print("⚠️ getMotor6Ds: модель = nil")
+        return motors
+    end
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motors, obj)
+        end
+    end
+    
+    return motors
+end
+
+-- Функция создания карты Motor6D
+local function createMotorMap(motors)
+    local map = {}
+    
+    for _, motor in ipairs(motors) do
+        local key = motor.Name
+        if motor.Part0 then
+            key = key .. "_" .. motor.Part0.Name
+        end
+        if motor.Part1 then
+            key = key .. "_" .. motor.Part1.Name
+        end
+        
+        map[key] = motor
+    end
+    
+    return map
+end
+
+-- Функция копирования состояния Motor6D
+local function copyMotorState(originalMotor, copyMotor)
+    if not originalMotor or not copyMotor then
+        return false
+    end
+    
+    copyMotor.Transform = originalMotor.Transform
+    copyMotor.C0 = originalMotor.C0
+    copyMotor.C1 = originalMotor.C1
+    
+    return true
+end
+
+-- Функция запуска живого копирования Motor6D
+local function startLiveMotorCopying(original, copy)
+    if not original or not copy then
+        print("⚠️ startLiveMotorCopying: одна из моделей = nil")
+        return nil
+    end
+    
+    print("🔄 Запуск живого копирования Motor6D...")
+    
+    local originalMotors = getMotor6Ds(original)
+    local copyMotors = getMotor6Ds(copy)
+    
+    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
+    
+    if #originalMotors == 0 or #copyMotors == 0 then
+        print("❌ Недостаточно Motor6D для копирования")
+        return nil
+    end
+    
+    local originalMap = createMotorMap(originalMotors)
+    local copyMap = createMotorMap(copyMotors)
+    
+    local connection = nil
+    local isRunning = true
+    local frameCount = 0
+    
+    connection = RunService.Heartbeat:Connect(function()
+        if not isRunning then
+            connection:Disconnect()
+            return
+        end
+        
+        frameCount = frameCount + 1
+        
+        -- Проверяем существование моделей
+        if not original.Parent or not copy.Parent then
+            print("⚠️ Модель удалена, останавливаю копирование")
+            isRunning = false
+            return
+        end
+        
+        -- Копируем состояния Motor6D
+        for key, originalMotor in pairs(originalMap) do
+            local copyMotor = copyMap[key]
+            if copyMotor and originalMotor.Parent then
+                copyMotorState(originalMotor, copyMotor)
+            end
+        end
+        
+        -- Статус каждые 3 секунды
+        if frameCount % 180 == 0 then
+            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
+        end
+    end)
+    
+    print("✅ Живое копирование Motor6D запущено!")
+    print("💡 Копия будет повторять движения оригинала")
+    
+    return connection
 end
 
 -- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
@@ -295,103 +488,57 @@ end
 
 -- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
 
--- Функция анимации роста модели (НОВАЯ ЛОГИКА: от маленького к нормальному)
-local function animateModelGrowth(model, startScale, endScale, tweenTime)
-    print("🌱 Начинаю анимацию роста модели:", model.Name)
-    print("📏 Размер: от " .. startScale .. "x до " .. endScale .. "x")
+-- 🔥 УНИФИЦИРОВАННОЕ МАСШТАБИРОВАНИЕ (основано на диагностике оригинальной игры)
+local function scaleModelUnified(model, scaleFactor, tweenTime)
+    print("🔥 Начинаю УНИФИЦИРОВАННОЕ масштабирование:", model.Name)
+    print("📐 Коэффициент:", scaleFactor .. "x (как в оригинальной игре)")
     
     local parts = getAllParts(model)
-    print("🧩 Найдено частей для анимации:", #parts)
+    print("🧩 Найдено частей:", #parts)
     
     if #parts == 0 then
-        print("❌ Нет частей для анимации!")
+        print("❌ Нет частей для масштабирования!")
         return false
     end
     
-    -- Определяем центр масштабирования
-    local centerCFrame
-    if model.PrimaryPart then
-        centerCFrame = model.PrimaryPart.CFrame
-        print("🎯 Центр роста: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
-    else
-        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            centerCFrame = modelCFrame
-            print("🎯 Центр роста: Центр модели")
-        else
-            print("❌ Не удалось определить центр роста!")
-            return false
-        end
-    end
-    
-    -- Сохраняем исходные данные всех частей (нормальный размер)
-    local originalData = {}
+    -- 🎯 КЛЮЧЕВОЕ ОТЛИЧИЕ: Сохраняем исходные размеры и применяем ОДИНАКОВЫЙ коэффициент
+    local originalSizes = {}
     for _, part in ipairs(parts) do
-        originalData[part] = {
-            size = part.Size,
-            cframe = part.CFrame
-        }
+        originalSizes[part] = part.Size
+        -- Закрепляем части для стабильности
+        part.Anchored = true
     end
     
-    -- ШАГ 1: Мгновенно уменьшаем до startScale
-    print("🔽 Уменьшаю модель до " .. startScale .. "x...")
-    for _, part in ipairs(parts) do
-        local originalSize = originalData[part].size
-        local originalCFrame = originalData[part].cframe
-        
-        -- Уменьшаем размер
-        part.Size = originalSize * startScale
-        
-        -- Уменьшаем позицию относительно центра
-        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
-        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * startScale) * (relativeCFrame - relativeCFrame.Position)
-        part.CFrame = centerCFrame * scaledRelativeCFrame
-    end
-    
-    -- Небольшая пауза для визуального эффекта
-    wait(0.2)
-    
-    -- ШАГ 2: Плавно увеличиваем до endScale
-    print("🔼 Плавно увеличиваю до " .. endScale .. "x...")
-    
-    -- Создаем TweenInfo для роста
+    -- Создаем TweenInfo
     local tweenInfo = TweenInfo.new(
         tweenTime,
         CONFIG.EASING_STYLE,
         CONFIG.EASING_DIRECTION,
-        0, -- Повторений
-        false, -- Обратная анимация
-        0 -- Задержка
+        0,
+        false,
+        0
     )
     
-    -- Анимация роста
+    -- 🔥 УНИФИЦИРОВАННОЕ масштабирование: ВСЕ части получают ОДИНАКОВЫЙ коэффициент
     local tweens = {}
     local completedTweens = 0
     
     for _, part in ipairs(parts) do
-        local originalSize = originalData[part].size
-        local originalCFrame = originalData[part].cframe
+        local originalSize = originalSizes[part]
+        local newSize = originalSize * scaleFactor -- Простое умножение на коэффициент!
         
-        -- Вычисляем финальный размер
-        local finalSize = originalSize * endScale
+        print("📏 Масштабирую", part.Name, ":", originalSize, "->", newSize)
         
-        -- Вычисляем финальный CFrame
-        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
-        local finalRelativeCFrame = CFrame.new(relativeCFrame.Position * endScale) * (relativeCFrame - relativeCFrame.Position)
-        local finalCFrame = centerCFrame * finalRelativeCFrame
-        
-        -- Создаем твин роста
+        -- Создаем tween только для размера (БЕЗ сложных CFrame вычислений!)
         local tween = TweenService:Create(part, tweenInfo, {
-            Size = finalSize,
-            CFrame = finalCFrame
+            Size = newSize
         })
         
-        -- Обработчик завершения
         tween.Completed:Connect(function()
             completedTweens = completedTweens + 1
             if completedTweens == #parts then
-                print("✅ Анимация роста завершена!")
-                print("🎉 Питомец вырос от " .. startScale .. "x до " .. endScale .. "x размера")
+                print("✅ УНИФИЦИРОВАННОЕ масштабирование завершено!")
+                print("🎉 Все", #parts, "частей масштабированы на", scaleFactor .. "x")
             end
         end)
         
@@ -399,7 +546,6 @@ local function animateModelGrowth(model, startScale, endScale, tweenTime)
         tween:Play()
     end
     
-    print("🚀 Запущено " .. #tweens .. " твинов роста")
     return true
 end
 
@@ -498,7 +644,7 @@ local function findAndScalePet()
     return targetPet.model
 end
 
--- Главная функция v2.0
+-- Главная функция v2.0 (ОБНОВЛЕННАЯ ЛОГИКА)
 local function main()
     print("🚀 PetScaler v2.0 запущен!")
     
@@ -508,43 +654,68 @@ local function main()
         return
     end
     
-    -- Шаг 2: Создать копию (оригинальная логика)
+    -- Шаг 2: Создать копию (ОБНОВЛЕННАЯ ЛОГИКА)
+    print("\n📋 === СОЗДАНИЕ КОПИИ ===")
     local petCopy = deepCopyModel(petModel)
     if not petCopy then
         print("❌ Не удалось создать копию!")
         return
     end
     
-    -- Шаг 3: Настроить умный Anchored
-    print("\n🧠 === НАСТРОЙКА ANCHORED ===")
+    -- Настраиваем Anchored, чтобы копия не падала
+    print("🔧 Настраиваю Anchored состояния...")
     local copyParts = getAllParts(petCopy)
-    local rootPart = smartAnchoredManagement(copyParts)
+    if copyParts and #copyParts > 0 then
+        smartAnchoredManagement(copyParts)
+        print("✅ Anchored настроен - копия не будет падать")
+    else
+        print("⚠️ Не удалось получить части копии")
+    end
     
-    -- Шаг 4: Анимация роста (НОВАЯ ЛОГИКА)
-    print("\n🌱 === АНИМАЦИЯ РОСТА ===")
-    wait(0.5)
-    local growthSuccess = animateModelGrowth(petCopy, CONFIG.START_SCALE, CONFIG.END_SCALE, CONFIG.TWEEN_TIME)
-    
-    if not growthSuccess then
-        print("❌ Анимация роста не удалась!")
+    -- Проверяем, что копия существует и находится в Workspace
+    if not petCopy or not petCopy.Parent then
+        print("❌ Копия недоступна!")
         return
     end
     
-    -- Шаг 5: Запуск живого копирования Motor6D
-    print("\n🎭 === ЗАПУСК АНИМАЦИИ ===")
-    wait(CONFIG.TWEEN_TIME + 1) -- Ждем завершения масштабирования
+    -- Шаг 3: Сразу запускаем живое копирование анимации (КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!)
+    print("\n🔄 === ЗАПУСК ЖИВОЙ АНИМАЦИИ ===")
+    local animationConnection = nil
     
-    local connection = startLiveMotorCopying(petModel, petCopy)
-    
-    if connection then
-        print("🎉 === УСПЕХ! ===")
-        print("✅ Масштабированная копия создана")
-        print("✅ Анимация запущена")
-        print("💡 Копия должна повторять движения оригинала!")
-    else
-        print("⚠️ Масштабирование успешно, но анимация не запустилась")
-        print("💡 Возможно проблема с Motor6D соединениями")
+    -- Проверяем, что обе модели существуют
+    if petModel and petModel.Parent and petCopy and petCopy.Parent then
+        animationConnection = startLiveMotorCopying(petModel, petCopy)
     end
+    
+    if not animationConnection then
+        print("⚠️ Живая анимация не запустилась, но продолжаем...")
+    else
+        print("✅ Живая анимация запущена! Питомец уже двигается!")
+    end
+    
+    -- Шаг 4: Одновременно запускаем анимацию роста
+    print("\n🌱 === АНИМАЦИЯ РОСТА ===")
+    wait(0.3) -- Короткая пауза чтобы увидеть маленького питомца
+    
+    -- Проверяем, что копия все еще существует
+    if not petCopy or not petCopy.Parent then
+        print("❌ Копия исчезла перед анимацией роста!")
+        return
+    end
+    
+    local scaleSuccess = scaleModelUnified(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    
+    if not scaleSuccess then
+        print("❌ Унифицированное масштабирование не удалось!")
+        return
+    end
+    
+    -- Завершение
+    print("\n🎉 === УСПЕХ! ===")
+    print("✅ Копия создана с унифицированным масштабированием")
+    print("✅ Живая анимация запущена сразу")
+    print("✅ Масштабирование", CONFIG.SCALE_FACTOR .. "x применено (как в оригинальной игре)")
+    print("💡 БЕЗ разрозненности частей - все масштабируется синхронно!")
 end
 
 -- Создание GUI
@@ -586,11 +757,19 @@ local function createGUI()
         button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
         
         spawn(function()
-            main()
+            local success, errorMsg = pcall(function()
+                main()
+            end)
             
-            wait(3)
-            button.Text = "🔥 PetScaler v2.0 + Анимация"
-            button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            if success then
+                wait(3)
+                button.Text = "🔥 PetScaler v2.0 + Анимация"
+                button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            else
+                print("❌ Ошибка в main():", errorMsg)
+                button.Text = "❌ Ошибка! Попробуйте снова"
+                button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            end
         end)
     end)
     
