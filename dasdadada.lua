@@ -789,34 +789,46 @@ local function createAnimatedCopyAtPosition(originalPet, targetPosition)
     end
 end
 
--- Функция проверки модели питомца (из ComprehensiveEggPetAnimationAnalyzer)
+-- Функция строгой проверки модели питомца (ИСПРАВЛЕНО)
 local function isPetModel(model)
     -- 1. Должна быть Model
     if not model:IsA("Model") then return false end
     
-    -- 2. Исключения
-    local EXCLUDED_NAMES = {
-        "EggExplode", "CraftingTables", "EventCraftingWorkBench", "Fruit", "Tree", 
-        "Bush", "Platform", "Stand", "Bench", "Table", "Chair", "Decoration"
-    }
-    
-    for _, excluded in pairs(EXCLUDED_NAMES) do
-        if model.Name:find(excluded) then return false end
-    end
-    
-    -- 3. Исключаем модели инвентаря игроков
-    if model.Name:find("%[") and model.Name:find("KG") and model.Name:find("Age") then
+    -- 2. КРИТИЧНО: Исключаем ВСЕ КОПИИ (с _COPY, _SCALED, UUID, фигурными скобками)
+    local modelName = model.Name
+    if modelName:find("_COPY") or modelName:find("_SCALED") or modelName:find("SCALED_COPY") or 
+       modelName:find("ANIMATED_COPY") or modelName:find("{") or modelName:find("}") or
+       modelName:find("-") and #modelName > 10 then -- UUID обычно длинные с тире
         return false
     end
     
-    -- 4. Исключаем игроков
+    -- 3. КРИТИЧНО: Исключаем игроков (включая меня)
     for _, p in pairs(Players:GetPlayers()) do
-        if model.Name == p.Name or model.Name:find(p.Name) then
+        if modelName == p.Name or modelName:find(p.Name) then
             return false
         end
     end
     
-    -- 5. Проверяем наличие мешей
+    -- 4. Исключаем обычные объекты
+    local EXCLUDED_NAMES = {
+        "EggExplode", "CraftingTables", "EventCraftingWorkBench", "Fruit", "Tree", 
+        "Bush", "Platform", "Stand", "Bench", "Table", "Chair", "Decoration",
+        "Egg", "Tool", "Handle", "Part", "Union", "Accessory", "Hat"
+    }
+    
+    for _, excluded in pairs(EXCLUDED_NAMES) do
+        if modelName:find(excluded) then return false end
+    end
+    
+    -- 5. Исключаем модели инвентаря игроков
+    if modelName:find("%[") and modelName:find("KG") and modelName:find("Age") then
+        return false
+    end
+    
+    -- 6. КРИТИЧНО: Проверяем, что это НАСТОЯЩИЙ питомец (только короткие имена)
+    if #modelName > 15 then return false end -- Питомцы обычно имеют короткие имена
+    
+    -- 7. Проверяем наличие мешей
     local meshCount = 0
     for _, obj in pairs(model:GetDescendants()) do
         if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
@@ -826,10 +838,10 @@ local function isPetModel(model)
     
     if meshCount < 1 then return false end
     
-    -- 6. Проверяем количество детей
+    -- 8. Проверяем количество детей
     if #model:GetChildren() < 5 then return false end
     
-    -- 7. Проверяем расстояние до игрока
+    -- 9. Проверяем расстояние до игрока
     local playerChar = player.Character
     if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
         local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
@@ -842,19 +854,17 @@ local function isPetModel(model)
     return true
 end
 
--- Функция полного сканирования Workspace (как в ComprehensiveEggPetAnimationAnalyzer)
+-- Функция автозамены питомцев (ИСПРАВЛЕНО - КАК РУЧНАЯ КОПИЯ)
 local function startWorkspaceScanning()
-    print("\n🔍 === ЗАПУСК ПОЛНОГО СКАНИРОВАНИЯ WORKSPACE ===")
-    print("💡 Используется метод из ComprehensiveEggPetAnimationAnalyzer")
+    print("\n🔍 === ЗАПУСК АВТОЗАМЕНЫ ПИТОМЦЕВ (КАК РУЧНАЯ КОПИЯ) ===")
+    print("💡 Теперь ищем питомца В ФИГУРНЫХ СКОБКАХ, как при ручном создании!")
     
     local processedModels = {}
     local foundPetModels = {}
+    local createdCopiesCount = 0 -- Счетчик созданных копий
+    local MAX_COPIES = 3 -- Максимум копий за сессию
+    local processedPetNames = {} -- Отслеживание по именам
     local scanStartTime = tick()
-    
-    -- Ключевые слова питомцев
-    local PET_KEYWORDS = {
-        "dog", "bunny", "golden lab", "cat", "rabbit", "pet", "animal", "golden", "lab"
-    }
     
     local connection
     connection = RunService.Heartbeat:Connect(function()
@@ -867,86 +877,160 @@ local function startWorkspaceScanning()
             return
         end
         
-        -- Сканируем все модели в Workspace
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj ~= player.Character and not processedModels[obj] then
-                processedModels[obj] = true
-                
-                if isPetModel(obj) then
-                    -- Проверяем на ключевые слова питомцев
-                    local isPotentialPet = false
-                    local objNameLower = obj.Name:lower()
-                    for _, keyword in pairs(PET_KEYWORDS) do
-                        if objNameLower:find(keyword) then
-                            isPotentialPet = true
-                            break
-                        end
+        -- КРИТИЧНО: Проверяем лимит копий
+        if createdCopiesCount >= MAX_COPIES then
+            print("⚠️ Достигнут лимит копий (" .. MAX_COPIES .. "). Останавливаю сканирование.")
+            connection:Disconnect()
+            return
+        end
+        
+        -- ОТЛАДКА: Показываем все модели в workspace для диагностики
+        if math.floor(elapsed) % 5 == 0 and elapsed > 1 then -- Каждые 5 секунд
+            print("\n🔍 === ОТЛАДКА АВТОЗАМЕНЫ (" .. string.format("%.1f сек", elapsed) .. ") ===")
+            
+            -- Проверяем workspace.visuals
+            local visuals = Workspace:FindFirstChild("visuals")
+            if visuals then
+                print("📁 workspace.visuals найден, содержит:")
+                for _, child in pairs(visuals:GetChildren()) do
+                    if child:IsA("Model") then
+                        print("  🐾 Модель:", child.Name, "- Тип:", child.ClassName)
                     end
-                    
-                    -- Дополнительная проверка: исключаем только EggExplode
-                    if obj.Name == "EggExplode" then
-                        isPotentialPet = false
+                end
+            else
+                print("❌ workspace.visuals НЕ найден!")
+            end
+            
+            -- Проверяем UUID модели
+            local uuidCount = 0
+            for _, obj in pairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+                    uuidCount = uuidCount + 1
+                    if uuidCount <= 3 then -- Показываем только первые 3
+                        print("  🔑 UUID модель:", obj.Name)
                     end
+                end
+            end
+            print("📊 Всего UUID моделей:", uuidCount)
+        end
+        
+        -- УПРОЩЕННАЯ ЛОГИКА: Ищем питомца из яйца (сначала в visuals, потом UUID)
+        local foundPet = nil
+        local foundVisualsPet = nil
+        
+        -- Шаг 1: Ищем питомца в workspace.visuals
+        local visuals = Workspace:FindFirstChild("visuals")
+        if visuals then
+            for _, visualObj in pairs(visuals:GetChildren()) do
+                if visualObj:IsA("Model") and not processedPetNames[visualObj.Name] then
+                    -- Проверяем, что это питомец (простые критерии)
+                    local objNameLower = visualObj.Name:lower()
+                    if objNameLower:find("dog") or objNameLower:find("bunny") or objNameLower:find("lab") or 
+                       objNameLower:find("cat") or objNameLower:find("rabbit") then
+                        foundVisualsPet = visualObj
+                        print("🎭 Найден визуальный питомец:", visualObj.Name)
+                        break
+                    end
+                end
+            end
+        end
+        
+        -- Шаг 2: Ищем соответствующего UUID питомца
+        if foundVisualsPet then
+            local visualName = foundVisualsPet.Name:lower()
+            
+            for _, obj in pairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+                    local uuidName = obj.Name:lower()
                     
-                    if isPotentialPet then
-                        print("\n🥚 === ОБНАРУЖЕН НОВЫЙ ПИТОМЕЦ ===")
-                        print("🐾 Имя питомца:", obj.Name)
-                        print("📍 Время обнаружения:", string.format("%.1f сек", elapsed))
+                    -- Простое соответствие по ключевым словам
+                    if (visualName:find("dog") and uuidName:find("dog")) or
+                       (visualName:find("bunny") and uuidName:find("bunny")) or
+                       (visualName:find("lab") and uuidName:find("lab")) or
+                       (visualName:find("cat") and uuidName:find("cat")) then
                         
-                        -- Получаем позицию оригинального питомца
-                        local originalPosition
-                        if obj.PrimaryPart then
-                            originalPosition = obj.PrimaryPart.Position
-                        elseif obj:FindFirstChild("RootPart") then
-                            originalPosition = obj.RootPart.Position
-                        else
-                            local firstPart = obj:FindFirstChildOfClass("BasePart")
-                            if firstPart then
-                                originalPosition = firstPart.Position
-                            end
-                        end
-                        
-                        if originalPosition then
-                            print("📍 Позиция оригинального питомца:", originalPosition)
-                            
-                            -- Создаем анимированную копию на том же месте
-                            local animatedCopy = createAnimatedCopyAtPosition(obj, originalPosition)
-                            
-                            if animatedCopy then
-                                -- Скрываем/удаляем оригинальный питомец
-                                print("🙈 Скрываю оригинального питомца...")
-                                
-                                -- Вариант 1: Делаем невидимым
-                                for _, part in pairs(obj:GetDescendants()) do
-                                    if part:IsA("BasePart") then
-                                        part.Transparency = 1
-                                    elseif part:IsA("Decal") or part:IsA("Texture") then
-                                        part.Transparency = 1
-                                    end
+                        -- Проверяем расстояние
+                        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+                        if success then
+                            local playerChar = player.Character
+                            if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                                local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                                if distance <= CONFIG.SEARCH_RADIUS then
+                                    foundPet = obj
+                                    print("🔑 Найден соответствующий UUID питомец:", obj.Name)
+                                    break
                                 end
-                                
-                                -- Вариант 2: Перемещаем под землю
-                                if obj.PrimaryPart then
-                                    obj:SetPrimaryPartCFrame(obj.PrimaryPart.CFrame - Vector3.new(0, 1000, 0))
-                                end
-                                
-                                print("✅ Оригинальный питомец скрыт!")
-                                print("🎉 Замена завершена - теперь показывается анимированная копия!")
-                                
-                                -- Добавляем в список найденных
-                                table.insert(foundPetModels, {
-                                    name = obj.Name,
-                                    foundTime = elapsed,
-                                    animatedCopy = animatedCopy
-                                })
-                            else
-                                print("❌ Не удалось создать анимированную копию")
                             end
-                        else
-                            print("❌ Не удалось определить позицию оригинального питомца")
                         end
                     end
                 end
+            end
+        end
+        
+        -- Шаг 3: Если найдены оба питомца, обрабатываем их
+        if foundPet and foundVisualsPet then
+            -- Отмечаем как обработанных
+            processedPetNames[foundPet.Name] = true
+            processedPetNames[foundVisualsPet.Name] = true
+            
+            print("\n🎉 === НАЙДЕНА ПАРА ПИТОМЦЕВ ДЛЯ АВТОЗАМЕНЫ ===")
+            print("🔑 UUID питомец:", foundPet.Name)
+            print("🎭 Визуальный питомец:", foundVisualsPet.Name)
+            
+            -- Получаем позицию визуального питомца
+            local visualPosition = nil
+            local success, visualCFrame = pcall(function() return foundVisualsPet:GetModelCFrame() end)
+            if success then
+                visualPosition = visualCFrame.Position
+            elseif foundVisualsPet.PrimaryPart then
+                visualPosition = foundVisualsPet.PrimaryPart.Position
+            end
+            
+            if visualPosition then
+                print("📍 Позиция для замены:", visualPosition)
+                
+                -- Создаем копию UUID питомца на месте визуального
+                local animatedCopy = createAnimatedCopyAtPosition(foundPet, visualPosition)
+                    
+                    if animatedCopy then
+                        -- Увеличиваем счетчик копий
+                        createdCopiesCount = createdCopiesCount + 1
+                        
+                        -- КРИТИЧНО: Скрываем ВИЗУАЛЬНОГО питомца (не UUID!)
+                        print("🙈 Скрываю визуального питомца:", visualsPet.Name)
+                        
+                        -- Делаем визуального питомца невидимым
+                        for _, part in pairs(visualsPet:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.Transparency = 1
+                            elseif part:IsA("Decal") or part:IsA("Texture") then
+                                part.Transparency = 1
+                            end
+                        end
+                        
+                        -- Перемещаем визуального питомца под землю
+                        if visualsPet.PrimaryPart then
+                            visualsPet:SetPrimaryPartCFrame(visualsPet.PrimaryPart.CFrame - Vector3.new(0, 1000, 0))
+                        end
+                        
+                        print("✅ Визуальный питомец скрыт!")
+                        print("🎉 Автозамена завершена - UUID питомец скопирован на место визуального!")
+                        print("📊 Создано копий: " .. createdCopiesCount .. "/" .. MAX_COPIES)
+                        
+                        -- Добавляем в список найденных
+                        table.insert(foundPetModels, {
+                            name = obj.Name .. " -> " .. visualsPet.Name,
+                            foundTime = elapsed,
+                            animatedCopy = animatedCopy
+                        })
+                    else
+                        print("❌ Не удалось создать анимированную копию UUID питомца")
+                    end
+                else
+                    print("❌ Не удалось определить позицию визуального питомца")
+                end
+            else
+                print("⚠️ Не найден соответствующий визуальный питомец для замены")
             end
         end
         
@@ -963,18 +1047,20 @@ local function startWorkspaceScanning()
     return connection
 end
 
--- Создание GUI
+-- Создание GUI (С ЗАЩИТОЙ ОТ ОШИБОК)
 local function createGUI()
-    local playerGui = player:WaitForChild("PlayerGui")
-    
-    local oldGui = playerGui:FindFirstChild("PetScalerV2GUI")
-    if oldGui then
-        oldGui:Destroy()
-    end
-    
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetScalerV2GUI"
-    screenGui.Parent = playerGui
+    local success, errorMsg = pcall(function()
+        local playerGui = player:WaitForChild("PlayerGui")
+        
+        local oldGui = playerGui:FindFirstChild("PetScalerV2GUI")
+        if oldGui then
+            oldGui:Destroy()
+            wait(0.1) -- Небольшая пауза после удаления
+        end
+        
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "PetScalerV2GUI"
+        screenGui.Parent = playerGui
     
     local frame = Instance.new("Frame")
     frame.Name = "MainFrame"
@@ -1096,25 +1182,48 @@ local function createGUI()
         end
     end)
     
-    print("💻 PetScaler v2.0 GUI с автозаменой создан!")
+        print("💻 PetScaler v2.0 GUI с автозаменой создан!")
+    end)
+    
+    if not success then
+        print("❌ Ошибка при создании GUI:", errorMsg)
+        print("📝 Попробуйте перезапустить скрипт")
+        return false
+    end
+    
+    return true
 end
 
--- Запуск
-createGUI()
-print("=" .. string.rep("=", 70))
-print("💡 PETSCALER v2.0 + АВТОЗАМЕНА - ПОЛНОЕ РЕШЕНИЕ:")
-print("   🔥 РУЧНОЕ СОЗДАНИЕ:")
-print("     1. Создает масштабированную копию")
-print("     2. Настраивает правильные Anchored состояния")
-print("     3. Автоматически запускает живое копирование анимации")
-print("")
-print("   🥚 НОВОЕ! АВТОЗАМЕНА ПИТОМЦЕВ:")
-print("     1. Мониторит workspace.visuals")
-print("     2. Автоматически скрывает оригинальных питомцев")
-print("     3. Создает анимированные копии на том же месте")
-print("     4. Никаких статичных копий - только живая анимация!")
-print("")
-print("🎯 ИСПОЛЬЗОВАНИЕ:")
-print("   🔥 Зеленая кнопка - Ручное создание копии")
-print("   🥚 Оранжевая кнопка - Вкл/Откл автозамену питомцев")
-print("=" .. string.rep("=", 70))
+-- Запуск с защитой от ошибок
+local initSuccess, initError = pcall(function()
+    local guiSuccess = createGUI()
+    if not guiSuccess then
+        error("Не удалось создать GUI")
+    end
+end)
+
+if initSuccess then
+    print("=" .. string.rep("=", 70))
+    print("💡 PETSCALER v2.0 + АВТОЗАМЕНА - ПОЛНОЕ РЕШЕНИЕ:")
+    print("   🔥 РУЧНОЕ СОЗДАНИЕ:")
+    print("     1. Создает масштабированную копию")
+    print("     2. Настраивает правильные Anchored состояния")
+    print("     3. Автоматически запускает живое копирование анимации")
+    print("")
+    print("   🥚 НОВОЕ! АВТОЗАМЕНА ПИТОМЦЕВ:")
+    print("     1. Ищет питомца В ФИГУРНЫХ СКОБКАХ (как ручная копия)")
+    print("     2. Автоматически скрывает визуального питомца")
+    print("     3. Создает анимированные копии на том же месте")
+    print("     4. Никаких статичных копий - только живая анимация!")
+    print("")
+    print("🎯 ИСПОЛЬЗОВАНИЕ:")
+    print("   🔥 Зеленая кнопка - Ручное создание копии")
+    print("   🥚 Оранжевая кнопка - Вкл/Откл автозамену питомцев")
+    print("=" .. string.rep("=", 70))
+    print("✅ PetScaler v2.0 успешно запущен!")
+else
+    print("❌ КРИТИЧЕСКАЯ ОШИБКА при запуске PetScaler v2.0:")
+    print("📝 Ошибка:", initError)
+    print("🔄 Попробуйте перезапустить скрипт")
+    print("💡 Если проблема повторяется, проверьте права доступа к GUI")
+end
