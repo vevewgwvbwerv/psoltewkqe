@@ -1,306 +1,319 @@
--- DragonflyTransfer.lua
--- Автоматический перенос Dragonfly из расширенного инвентаря в основной
+-- ShovelAnalyzer.lua
+-- Анализ структуры Shovel для понимания как его заменить
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-
 local player = Players.LocalPlayer
 
--- Создаем компактный GUI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DragonflyTransfer"
-screenGui.Parent = player:WaitForChild("PlayerGui")
+print("=== SHOVEL ANALYZER ===")
 
--- Главный фрейм
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0.8, 0, 0.4, 0)
-mainFrame.Position = UDim2.new(0.1, 0, 0.3, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
--- Заголовок
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.2, 0)
-titleLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-titleLabel.BorderSizePixel = 0
-titleLabel.Text = "🐉 Dragonfly Transfer System"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextScaled = true
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.Parent = mainFrame
-
--- Кнопка переноса
-local transferButton = Instance.new("TextButton")
-transferButton.Size = UDim2.new(0.8, 0, 0.3, 0)
-transferButton.Position = UDim2.new(0.1, 0, 0.3, 0)
-transferButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-transferButton.BorderSizePixel = 0
-transferButton.Text = "🔄 Перенести Dragonfly в основной инвентарь"
-transferButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-transferButton.TextScaled = true
-transferButton.Font = Enum.Font.SourceSansBold
-transferButton.Parent = mainFrame
-
--- Статус лейбл
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, 0, 0.5, 0)
-statusLabel.Position = UDim2.new(0, 0, 0.5, 0)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Готов к переносу Dragonfly\nИз расширенного инвентаря в основной (слот 1 или 2)"
-statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.SourceSans
-statusLabel.TextWrapped = true
-statusLabel.Parent = mainFrame
-
--- Функция поиска основного инвентаря (Hotbar)
-local function findMainInventory()
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return nil end
+-- Функция поиска Shovel в руке
+local function findShovelInHand()
+    local character = player.Character
+    if not character then return nil end
     
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then return nil end
-    
-    local hotbar = backpackGui:FindFirstChild("Hotbar")
-    if not hotbar then return nil end
-    
-    print("✅ Найден основной инвентарь (Hotbar)")
-    return hotbar
-end
-
--- Функция поиска расширенного инвентаря с Dragonfly
-local function findDragonflyInExtended()
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return nil end
-    
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then return nil end
-    
-    -- Ищем элемент "23" с Dragonfly (из предыдущего анализа)
-    for _, desc in pairs(backpackGui:GetDescendants()) do
-        if desc:IsA("TextButton") and desc.Name == "23" then
-            -- Проверяем, что это действительно Dragonfly
-            for _, child in pairs(desc:GetDescendants()) do
-                if child:IsA("TextLabel") and child.Text:lower():find("dragonfly") then
-                    print("✅ Найден Dragonfly в расширенном инвентаре:", child.Text)
-                    return desc
-                end
-            end
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
         end
     end
-    
-    print("❌ Dragonfly не найден в расширенном инвентаре")
     return nil
 end
 
--- Функция поиска пустого слота в основном инвентаре
-local function findEmptySlotInMain(hotbar)
-    if not hotbar then return nil end
+-- Функция поиска питомца в руке
+local function findPetInHand()
+    local character = player.Character
+    if not character then return nil end
     
-    -- Ищем слоты 1 и 2 (где Shovel и Egg)
-    for _, child in pairs(hotbar:GetChildren()) do
-        if child:IsA("TextButton") and (child.Name == "1" or child.Name == "2") then
-            print("✅ Найден слот для замены:", child.Name)
-            return child
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
         end
     end
-    
-    print("❌ Пустые слоты не найдены")
     return nil
 end
 
--- Функция симуляции drag-and-drop
-local function simulateDragAndDrop(source, target)
-    if not source or not target then return false end
+-- Функция анализа Tool
+local function analyzeTool(tool, toolType)
+    if not tool then return end
     
-    print("🖱️ Симулирую drag-and-drop:")
-    print("   📤 Источник:", source.Name, "в", source.Parent.Name)
-    print("   📥 Цель:", target.Name, "в", target.Parent.Name)
+    print("\n🔍 === АНАЛИЗ " .. toolType .. ": " .. tool.Name .. " ===")
     
-    -- Получаем позиции элементов
-    local sourcePos = source.AbsolutePosition
-    local sourceSize = source.AbsoluteSize
-    local targetPos = target.AbsolutePosition
-    local targetSize = target.AbsoluteSize
+    local structure = {
+        name = tool.Name,
+        className = tool.ClassName,
+        parts = {},
+        meshes = {},
+        scripts = {},
+        motor6ds = {},
+        welds = {},
+        totalChildren = 0
+    }
     
-    -- Вычисляем центры элементов
-    local sourceCenterX = sourcePos.X + sourceSize.X / 2
-    local sourceCenterY = sourcePos.Y + sourceSize.Y / 2
-    local targetCenterX = targetPos.X + targetSize.X / 2
-    local targetCenterY = targetPos.Y + targetSize.Y / 2
-    
-    print("   📍 Источник центр:", sourceCenterX, sourceCenterY)
-    print("   📍 Цель центр:", targetCenterX, targetCenterY)
-    
-    -- Симулируем drag-and-drop
-    local success, error = pcall(function()
-        -- Начинаем перетаскивание
-        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 0, true, game, 1)
-        wait(0.1)
+    -- Анализируем все компоненты
+    for _, obj in pairs(tool:GetDescendants()) do
+        structure.totalChildren = structure.totalChildren + 1
         
-        -- Перемещаем к цели
-        VirtualInputManager:SendMouseMoveEvent(targetCenterX, targetCenterY, game)
-        wait(0.2)
-        
-        -- Отпускаем
-        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, false, game, 1)
-        wait(0.1)
-    end)
+        if obj:IsA("BasePart") then
+            table.insert(structure.parts, {
+                name = obj.Name,
+                className = obj.ClassName,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                transparency = obj.Transparency,
+                canCollide = obj.CanCollide,
+                anchored = obj.Anchored
+            })
+            print("🧱 Part: " .. obj.Name .. " (" .. obj.ClassName .. ") | Size: " .. tostring(obj.Size))
+            
+        elseif obj:IsA("SpecialMesh") then
+            table.insert(structure.meshes, {
+                name = obj.Name,
+                meshType = obj.MeshType.Name,
+                meshId = obj.MeshId,
+                textureId = obj.TextureId,
+                scale = obj.Scale
+            })
+            print("🎨 Mesh: " .. obj.Name .. " | Type: " .. obj.MeshType.Name .. " | MeshId: " .. obj.MeshId)
+            
+        elseif obj:IsA("Motor6D") then
+            table.insert(structure.motor6ds, {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "NIL",
+                part1 = obj.Part1 and obj.Part1.Name or "NIL"
+            })
+            print("⚙️ Motor6D: " .. obj.Name .. " | " .. (obj.Part0 and obj.Part0.Name or "NIL") .. " → " .. (obj.Part1 and obj.Part1.Name or "NIL"))
+            
+        elseif obj:IsA("Weld") then
+            table.insert(structure.welds, {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "NIL",
+                part1 = obj.Part1 and obj.Part1.Name or "NIL"
+            })
+            print("🔗 Weld: " .. obj.Name)
+            
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            table.insert(structure.scripts, {
+                name = obj.Name,
+                className = obj.ClassName,
+                enabled = obj.Enabled
+            })
+            print("📜 Script: " .. obj.Name .. " (" .. obj.ClassName .. ")")
+        end
+    end
     
-    if success then
-        print("✅ Drag-and-drop симулирован успешно")
-        return true
-    else
-        print("⚠️ Ошибка симуляции drag-and-drop:", error)
+    print("📊 Итого в " .. toolType .. ":")
+    print("   🧱 Частей: " .. #structure.parts)
+    print("   🎨 Мешей: " .. #structure.meshes)
+    print("   ⚙️ Motor6D: " .. #structure.motor6ds)
+    print("   🔗 Weld: " .. #structure.welds)
+    print("   📜 Скриптов: " .. #structure.scripts)
+    print("   📦 Всего объектов: " .. structure.totalChildren)
+    
+    return structure
+end
+
+-- Функция замены структуры Shovel на структуру питомца
+local function replaceShovelStructure(shovelTool, petTool)
+    if not shovelTool or not petTool then
+        print("❌ Shovel или питомец не найден!")
         return false
     end
-end
-
--- Функция альтернативного метода через клики
-local function alternativeTransferMethod(dragonflyButton, targetSlot)
-    print("🎯 Пробую альтернативный метод через клики...")
     
-    -- Метод 1: Двойной клик по Dragonfly
-    local success1, error1 = pcall(function()
-        local pos = dragonflyButton.AbsolutePosition
-        local size = dragonflyButton.AbsoluteSize
-        local centerX = pos.X + size.X / 2
-        local centerY = pos.Y + size.Y / 2
-        
-        -- Двойной клик
-        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
-        wait(0.1)
-        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
-    end)
+    print("\n🔄 === ЗАМЕНА СТРУКТУРЫ SHOVEL НА ПИТОМЦА ===")
+    print("🔄 Заменяю: " .. shovelTool.Name .. " → " .. petTool.Name)
     
-    if success1 then
-        print("✅ Двойной клик по Dragonfly выполнен")
-        return true
+    -- Сохраняем имя и родителя Shovel
+    local shovelName = shovelTool.Name
+    local shovelParent = shovelTool.Parent
+    
+    -- Удаляем все содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovelTool:GetChildren()) do
+        child:Destroy()
     end
     
-    -- Метод 2: Правый клик + левый клик на цель
-    local success2, error2 = pcall(function()
-        local sourcePos = dragonflyButton.AbsolutePosition
-        local sourceSize = dragonflyButton.AbsoluteSize
-        local sourceCenterX = sourcePos.X + sourceSize.X / 2
-        local sourceCenterY = sourcePos.Y + sourceSize.Y / 2
-        
-        -- Правый клик на источник
-        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 1, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 1, false, game, 1)
-        wait(0.2)
-        
-        -- Левый клик на цель
-        local targetPos = targetSlot.AbsolutePosition
-        local targetSize = targetSlot.AbsoluteSize
-        local targetCenterX = targetPos.X + targetSize.X / 2
-        local targetCenterY = targetPos.Y + targetSize.Y / 2
-        
-        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, false, game, 1)
-    end)
-    
-    if success2 then
-        print("✅ Правый клик + левый клик выполнен")
-        return true
+    -- Копируем все содержимое питомца в Shovel
+    print("📋 Копирую содержимое питомца в Shovel...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local childCopy = child:Clone()
+        childCopy.Parent = shovelTool
+        print("   ✅ Скопирован: " .. child.Name .. " (" .. child.ClassName .. ")")
     end
     
-    return false
+    -- Меняем имя Shovel на Dragonfly
+    shovelTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    
+    print("✅ Структура Shovel заменена на структуру питомца!")
+    print("✅ Shovel теперь называется: " .. shovelTool.Name)
+    
+    return true
 end
 
--- Функция проверки успешности переноса
-local function checkTransferSuccess()
-    wait(1)
+-- Создаем GUI для анализа и замены
+local function createAnalyzerGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ShovelAnalyzerGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
     
-    local hotbar = findMainInventory()
-    if not hotbar then return false end
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 500, 0, 400)
+    frame.Position = UDim2.new(0.5, -250, 0.5, -200)
+    frame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
     
-    -- Проверяем слоты 1 и 2 на наличие Dragonfly
-    for _, child in pairs(hotbar:GetChildren()) do
-        if child:IsA("TextButton") and (child.Name == "1" or child.Name == "2") then
-            for _, desc in pairs(child:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Text:lower():find("dragonfly") then
-                    print("🎉 Dragonfly успешно перенесен в слот:", child.Name)
-                    return true
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    title.BorderSizePixel = 0
+    title.Text = "🔍 Анализатор и заменитель Shovel"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 60)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "Готов к анализу. Возьмите Shovel или питомца в руки."
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
+    
+    -- Кнопка анализа Shovel
+    local analyzeShovelBtn = Instance.new("TextButton")
+    analyzeShovelBtn.Size = UDim2.new(1, -20, 0, 40)
+    analyzeShovelBtn.Position = UDim2.new(0, 10, 0, 120)
+    analyzeShovelBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    analyzeShovelBtn.BorderSizePixel = 0
+    analyzeShovelBtn.Text = "🔍 Анализировать Shovel в руке"
+    analyzeShovelBtn.TextColor3 = Color3.new(1, 1, 1)
+    analyzeShovelBtn.TextScaled = true
+    analyzeShovelBtn.Font = Enum.Font.SourceSansBold
+    analyzeShovelBtn.Parent = frame
+    
+    -- Кнопка анализа питомца
+    local analyzePetBtn = Instance.new("TextButton")
+    analyzePetBtn.Size = UDim2.new(1, -20, 0, 40)
+    analyzePetBtn.Position = UDim2.new(0, 10, 0, 170)
+    analyzePetBtn.BackgroundColor3 = Color3.new(0, 0.6, 0.8)
+    analyzePetBtn.BorderSizePixel = 0
+    analyzePetBtn.Text = "🔍 Анализировать питомца в руке"
+    analyzePetBtn.TextColor3 = Color3.new(1, 1, 1)
+    analyzePetBtn.TextScaled = true
+    analyzePetBtn.Font = Enum.Font.SourceSansBold
+    analyzePetBtn.Parent = frame
+    
+    -- Кнопка замены структуры
+    local replaceBtn = Instance.new("TextButton")
+    replaceBtn.Size = UDim2.new(1, -20, 0, 40)
+    replaceBtn.Position = UDim2.new(0, 10, 0, 220)
+    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0, 0.8)
+    replaceBtn.BorderSizePixel = 0
+    replaceBtn.Text = "🔄 ЗАМЕНИТЬ структуру Shovel на питомца"
+    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
+    replaceBtn.TextScaled = true
+    replaceBtn.Font = Enum.Font.SourceSansBold
+    replaceBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 40)
+    closeBtn.Position = UDim2.new(0, 10, 0, 320)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0, 0)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
+    
+    -- События кнопок
+    analyzeShovelBtn.MouseButton1Click:Connect(function()
+        local shovel = findShovelInHand()
+        if shovel then
+            status.Text = "🔍 Анализирую Shovel: " .. shovel.Name
+            status.TextColor3 = Color3.new(0, 1, 1)
+            analyzeTool(shovel, "SHOVEL")
+            status.Text = "✅ Анализ Shovel завершен! Проверьте консоль."
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Shovel в руке не найден!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    analyzePetBtn.MouseButton1Click:Connect(function()
+        local pet = findPetInHand()
+        if pet then
+            status.Text = "🔍 Анализирую питомца: " .. pet.Name
+            status.TextColor3 = Color3.new(0, 1, 1)
+            analyzeTool(pet, "ПИТОМЕЦ")
+            status.Text = "✅ Анализ питомца завершен! Проверьте консоль."
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Питомец в руке не найден!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    replaceBtn.MouseButton1Click:Connect(function()
+        local shovel = findShovelInHand()
+        local pet = findPetInHand()
+        
+        if not shovel and not pet then
+            status.Text = "❌ Нужен Shovel И питомец! Сначала возьмите Shovel, затем питомца."
+            status.TextColor3 = Color3.new(1, 0, 0)
+            return
+        end
+        
+        -- Если в руке питомец, ищем Shovel в Backpack
+        if not shovel then
+            local character = player.Character
+            local backpack = character and character:FindFirstChild("Backpack")
+            if backpack then
+                for _, tool in pairs(backpack:GetChildren()) do
+                    if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+                        shovel = tool
+                        break
+                    end
                 end
             end
         end
-    end
-    
-    return false
-end
-
--- Основная функция переноса
-local function transferDragonfly()
-    statusLabel.Text = "🔍 Поиск инвентарей..."
-    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
-    
-    -- Шаг 1: Найти основной инвентарь
-    local hotbar = findMainInventory()
-    if not hotbar then
-        statusLabel.Text = "❌ Основной инвентарь не найден"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-    
-    -- Шаг 2: Найти Dragonfly в расширенном инвентаре
-    statusLabel.Text = "🐉 Поиск Dragonfly..."
-    local dragonflyButton = findDragonflyInExtended()
-    if not dragonflyButton then
-        statusLabel.Text = "❌ Dragonfly не найден в расширенном инвентаре"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-    
-    -- Шаг 3: Найти пустой слот в основном инвентаре
-    statusLabel.Text = "📦 Поиск пустого слота..."
-    local emptySlot = findEmptySlotInMain(hotbar)
-    if not emptySlot then
-        statusLabel.Text = "❌ Пустые слоты не найдены"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-    
-    -- Шаг 4: Выполнить перенос
-    statusLabel.Text = "🔄 Переношу Dragonfly..."
-    
-    -- Пробуем drag-and-drop
-    local dragSuccess = simulateDragAndDrop(dragonflyButton, emptySlot)
-    
-    if not dragSuccess then
-        -- Пробуем альтернативные методы
-        statusLabel.Text = "🎯 Пробую альтернативные методы..."
-        alternativeTransferMethod(dragonflyButton, emptySlot)
-    end
-    
-    -- Шаг 5: Проверить результат
-    statusLabel.Text = "✅ Проверяю результат..."
-    
-    if checkTransferSuccess() then
-        statusLabel.Text = "🎉 Dragonfly успешно перенесен в основной инвентарь!\nТеперь его можно выбрать в руку."
-        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-    else
-        statusLabel.Text = "❌ Перенос не удался\nПопробуйте перенести Dragonfly вручную"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-    end
-end
-
--- Обработчик кнопки
-transferButton.MouseButton1Click:Connect(function()
-    transferButton.Text = "⏳ Переношу..."
-    transferButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
-    
-    spawn(function()
-        transferDragonfly()
         
-        wait(2)
-        transferButton.Text = "🔄 Перенести Dragonfly в основной инвентарь"
-        transferButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+        if shovel and pet then
+            status.Text = "🔄 Заменяю структуру Shovel на питомца..."
+            status.TextColor3 = Color3.new(1, 1, 0)
+            
+            local success = replaceShovelStructure(shovel, pet)
+            
+            if success then
+                status.Text = "✅ Структура Shovel заменена на питомца!"
+                status.TextColor3 = Color3.new(0, 1, 0)
+            else
+                status.Text = "❌ Ошибка при замене структуры!"
+                status.TextColor3 = Color3.new(1, 0, 0)
+            end
+        else
+            status.Text = "❌ Не найден Shovel или питомец!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
     end)
-end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+end
 
-print("✅ DragonflyTransfer загружен! Перенесет Dragonfly в основной инвентарь.")
+-- Запускаем анализатор
+createAnalyzerGUI()
+print("✅ ShovelAnalyzer готов!")
+print("🎮 Инструкция:")
+print("   1. Возьмите Shovel в руки → Анализируйте")
+print("   2. Возьмите питомца в руки → Анализируйте") 
+print("   3. Нажмите 'ЗАМЕНИТЬ структуру' для замены")
+print("   4. Проверьте результат!")
