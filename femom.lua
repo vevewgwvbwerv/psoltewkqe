@@ -106,9 +106,83 @@ local function directReplace()
     return true
 end
 
--- ИСПРАВЛЕННАЯ АЛЬТЕРНАТИВА: С правильным положением Handle
+-- ФУНКЦИЯ CFRAME АНИМАЦИИ питомца (ОБЪЯВЛЯЕМ СНАЧАЛА)
+local animationConnection = nil
+
+local function startPetAnimation(tool)
+    if not tool then return end
+    
+    print("🎬 === ЗАПУСК CFRAME АНИМАЦИИ ===")
+    
+    -- Останавливаем предыдущую анимацию
+    if animationConnection then
+        animationConnection:Disconnect()
+        animationConnection = nil
+        print("⏹️ Остановлена предыдущая анимация")
+    end
+    
+    -- Находим все части питомца
+    local petParts = {}
+    local partCount = 0
+    for _, child in pairs(tool:GetDescendants()) do
+        if child:IsA("BasePart") and child.Name ~= "Handle" then
+            petParts[child.Name] = {
+                part = child,
+                originalCFrame = child.CFrame,
+                time = math.random() * 10 -- Случайное начальное время для разнообразия
+            }
+            partCount = partCount + 1
+        end
+    end
+    
+    print(string.format("🎭 Найдено %d частей для анимации", partCount))
+    
+    -- Запускаем анимацию
+    local RunService = game:GetService("RunService")
+    animationConnection = RunService.Heartbeat:Connect(function()
+        local time = tick()
+        
+        for partName, data in pairs(petParts) do
+            if data.part and data.part.Parent then
+                -- Проверяем что часть все еще существует
+                local success, err = pcall(function()
+                    -- Простая idle анимация (покачивание)
+                    local offsetY = math.sin(time * 2 + data.time) * 0.1
+                    local offsetX = math.cos(time * 1.5 + data.time) * 0.05
+                    
+                    -- Применяем анимацию без нарушения физики
+                    local newCFrame = data.originalCFrame * CFrame.new(offsetX, offsetY, 0)
+                    data.part.CFrame = newCFrame
+                end)
+                
+                if not success then
+                    print("⚠️ Ошибка анимации части " .. partName .. ": " .. tostring(err))
+                end
+                
+                -- Обновляем базовое положение периодически
+                data.time = data.time + 0.01
+            end
+        end
+    end)
+    
+    print("✅ CFrame анимация запущена!")
+    print("🎭 Питомец должен покачиваться (idle анимация)")
+end
+
+-- ФУНКЦИЯ ОСТАНОВКИ АНИМАЦИИ
+local function stopPetAnimation()
+    if animationConnection then
+        animationConnection:Disconnect()
+        animationConnection = nil
+        print("⏹️ CFrame анимация остановлена")
+        return true
+    end
+    return false
+end
+
+-- АЛЬТЕРНАТИВА С CFRAME АНИМАЦИЕЙ: Создание с анимацией питомца
 local function alternativeReplace()
-    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА С АНИМАЦИЕЙ ===")
     
     if not petTool then
         print("❌ Сначала сохраните питомца!")
@@ -128,17 +202,9 @@ local function alternativeReplace()
     end
     
     print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Альтернативная замена с исправлением положения...")
+    print("🎬 Альтернативная замена с CFrame анимацией...")
     
-    -- Сохраняем оригинальное положение питомца
-    local petHandle = petTool:FindFirstChild("Handle")
-    local originalCFrame = nil
-    if petHandle then
-        originalCFrame = petHandle.CFrame
-        print("💾 Сохранено положение питомца Handle")
-    end
-    
-    -- Создаем новый Tool на основе питомца
+    -- Создаем новый Tool на основе питомца (БЕЗ изменения CFrame)
     local newTool = Instance.new("Tool")
     newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
     newTool.RequiresHandle = true
@@ -152,15 +218,6 @@ local function alternativeReplace()
         local copy = child:Clone()
         copy.Parent = newTool
         print("   ✅ Скопировано: " .. child.Name)
-    end
-    
-    -- Исправляем положение Handle в новом Tool
-    local newHandle = newTool:FindFirstChild("Handle")
-    if newHandle and originalCFrame then
-        print("🎯 Исправляю положение Handle...")
-        -- Используем оригинальное положение питомца
-        newHandle.CFrame = originalCFrame
-        print("✅ Handle установлен в правильное положение")
     end
     
     -- Удаляем Shovel
@@ -185,8 +242,14 @@ local function alternativeReplace()
     print("🎮 Перемещаю в руки...")
     newTool.Parent = character
     
-    print("✅ Альтернативная замена завершена!")
-    print("🎯 Handle должен быть в правильном положении!")
+    wait(0.3)
+    
+    -- Добавляем CFrame анимацию питомца
+    print("🎬 Запускаю CFrame анимацию питомца...")
+    startPetAnimation(newTool)
+    
+    print("✅ Альтернативная замена с анимацией завершена!")
+    print("🎭 Копия должна анимироваться как питомец!")
     return true
 end
 
@@ -249,13 +312,13 @@ local function createDirectFixGUI()
     directBtn.Visible = false
     directBtn.Parent = frame
     
-    -- Кнопка альтернативы
+    -- Кнопка альтернативы с анимацией
     local altBtn = Instance.new("TextButton")
     altBtn.Size = UDim2.new(1, -20, 0, 50)
     altBtn.Position = UDim2.new(0, 10, 0, 260)
     altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
     altBtn.BorderSizePixel = 0
-    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.Text = "🎬 АЛЬТЕРНАТИВА + АНИМАЦИЯ"
     altBtn.TextColor3 = Color3.new(1, 1, 1)
     altBtn.TextScaled = true
     altBtn.Font = Enum.Font.SourceSansBold
@@ -308,16 +371,16 @@ local function createDirectFixGUI()
     end)
     
     altBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Альтернативная замена..."
+        status.Text = "🎬 Альтернативная замена + анимация...\nСоздаю копию с CFrame анимацией..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
         local success = alternativeReplace()
         
         if success then
-            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
+            status.Text = "✅ АЛЬТЕРНАТИВА + АНИМАЦИЯ ЗАВЕРШЕНА!\nКопия анимируется как питомец!"
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Ошибка альтернативы!"
+            status.Text = "❌ Ошибка альтернативы с анимацией!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
