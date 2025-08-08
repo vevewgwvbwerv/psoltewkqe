@@ -1,387 +1,272 @@
--- 🔍 UNIVERSAL PET DETECTOR
--- Мониторит ВСЕ новые модели в Workspace для поиска питомцев
--- Показывает подробную информацию о каждой новой модели
+-- DragonflySwitcherV2.lua
+-- Правильный переключатель Dragonfly на основе анализа событий
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
 
-print("🔍 === UNIVERSAL PET DETECTOR ===")
-print("Мониторит ВСЕ новые модели в Workspace")
+-- Создаем компактный GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DragonflySwitcherV2"
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- === ПЕРЕМЕННЫЕ ===
-local gui = nil
-local consoleText = nil
-local scrollingFrame = nil
-local logLines = {}
-local maxLogLines = 100
-local isMonitoring = false
-local trackedModels = {}
-local connections = {}
+-- Главный фрейм
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0.8, 0, 0.3, 0)
+mainFrame.Position = UDim2.new(0.1, 0, 0.35, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
 
--- === ФУНКЦИИ ЛОГИРОВАНИЯ ===
+-- Заголовок
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
+titleLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+titleLabel.BorderSizePixel = 0
+titleLabel.Text = "🐉 Dragonfly Switcher V2"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextScaled = true
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.Parent = mainFrame
 
-local function addLogLine(message)
-    local timestamp = os.date("%H:%M:%S")
-    local logMessage = "[" .. timestamp .. "] " .. message
+-- Кнопка переключения
+local switchButton = Instance.new("TextButton")
+switchButton.Size = UDim2.new(0.8, 0, 0.4, 0)
+switchButton.Position = UDim2.new(0.1, 0, 0.4, 0)
+switchButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+switchButton.BorderSizePixel = 0
+switchButton.Text = "🔄 Переключить на Dragonfly"
+switchButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+switchButton.TextScaled = true
+switchButton.Font = Enum.Font.SourceSansBold
+switchButton.Parent = mainFrame
+
+-- Статус лейбл
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0.3, 0)
+statusLabel.Position = UDim2.new(0, 0, 0.7, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Готов к переключению"
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.Parent = mainFrame
+
+-- Функция поиска Dragonfly TextButton
+local function findDragonflyButton()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return nil end
     
-    table.insert(logLines, logMessage)
-    print(logMessage)
+    local backpackGui = playerGui:FindFirstChild("BackpackGui")
+    if not backpackGui then return nil end
     
-    if #logLines > maxLogLines then
-        table.remove(logLines, 1)
+    -- Ищем TextButton с именем "23" (из анализа событий)
+    for _, desc in pairs(backpackGui:GetDescendants()) do
+        if desc:IsA("TextButton") and desc.Name == "23" then
+            -- Проверяем, что это действительно Dragonfly
+            for _, child in pairs(desc:GetDescendants()) do
+                if child:IsA("TextLabel") and child.Text:lower():find("dragonfly") then
+                    print("✅ Найден Dragonfly TextButton:", desc.Name)
+                    return desc
+                end
+            end
+        end
     end
     
-    if consoleText then
-        consoleText.Text = table.concat(logLines, "\n")
-        if scrollingFrame then
-            scrollingFrame.CanvasPosition = Vector2.new(0, scrollingFrame.AbsoluteCanvasSize.Y)
-        end
+    print("❌ Dragonfly TextButton не найден")
+    return nil
+end
+
+-- Функция симуляции клика через VirtualInputManager
+local function simulateRealClick(button)
+    if not button then return false end
+    
+    print("🖱️ Симулирую реальный клик по кнопке:", button.Name)
+    
+    -- Получаем абсолютную позицию кнопки на экране
+    local absolutePos = button.AbsolutePosition
+    local absoluteSize = button.AbsoluteSize
+    
+    -- Вычисляем центр кнопки
+    local centerX = absolutePos.X + absoluteSize.X / 2
+    local centerY = absolutePos.Y + absoluteSize.Y / 2
+    
+    print("📍 Позиция клика:", centerX, centerY)
+    
+    -- Симулируем реальный клик мыши
+    local success, error = pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
+        wait(0.1)
+        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
+    end)
+    
+    if success then
+        print("✅ Реальный клик симулирован успешно")
+        return true
+    else
+        print("⚠️ Ошибка симуляции реального клика:", error)
+        return false
     end
 end
 
-local function analyzeModel(model)
-    local info = {
-        name = model.Name,
-        fullName = model:GetFullName(),
-        className = model.ClassName,
-        parts = {},
-        totalParts = 0,
-        hasMotor6D = false,
-        hasHumanoid = false,
-        hasPrimaryPart = model.PrimaryPart ~= nil,
-        hasAnimations = false,
-        specialObjects = {}
+-- Функция программного вызова события
+local function triggerClickEvent(button)
+    if not button then return false end
+    
+    print("🎯 Программно вызываю событие MouseButton1Click")
+    
+    -- Создаем фиктивный InputObject
+    local fakeInputObject = {
+        UserInputType = Enum.UserInputType.MouseButton1,
+        UserInputState = Enum.UserInputState.Begin,
+        Position = Vector3.new(0, 0, 0),
+        Delta = Vector3.new(0, 0, 0),
+        KeyCode = Enum.KeyCode.Unknown
     }
     
-    -- Получаем позицию если возможно
-    local success, position = pcall(function()
-        return model:GetModelCFrame().Position
-    end)
-    info.position = success and position or "Неизвестно"
-    
-    -- Анализируем содержимое
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            info.totalParts = info.totalParts + 1
-            if info.totalParts <= 5 then -- Записываем только первые 5 частей
-                table.insert(info.parts, {
-                    name = obj.Name,
-                    size = obj.Size,
-                    anchored = obj.Anchored,
-                    material = obj.Material.Name
-                })
+    -- Пробуем разные способы активации события
+    local methods = {
+        function()
+            -- Способ 1: Прямой вызов через getconnections (если доступно)
+            local connections = getconnections and getconnections(button.MouseButton1Click) or {}
+            for _, connection in pairs(connections) do
+                if connection.Function then
+                    connection.Function()
+                    return true
+                end
             end
-        elseif obj:IsA("Motor6D") then
-            info.hasMotor6D = true
-        elseif obj:IsA("Humanoid") then
-            info.hasHumanoid = true
-        elseif obj:IsA("Animation") or obj:IsA("AnimationTrack") then
-            info.hasAnimations = true
-        elseif obj:IsA("SpecialMesh") or obj:IsA("MeshPart") then
-            table.insert(info.specialObjects, obj.ClassName .. ":" .. obj.Name)
-        end
-    end
-    
-    return info
-end
-
-local function logModelInfo(model, action)
-    local info = analyzeModel(model)
-    
-    addLogLine("🆕 " .. action .. " МОДЕЛЬ: " .. info.name)
-    addLogLine("  📍 Полное имя: " .. info.fullName)
-    addLogLine("  📍 Позиция: " .. tostring(info.position))
-    addLogLine("  🧩 Частей: " .. info.totalParts)
-    addLogLine("  🔗 Motor6D: " .. (info.hasMotor6D and "✅" or "❌"))
-    addLogLine("  🚶 Humanoid: " .. (info.hasHumanoid and "✅" or "❌"))
-    addLogLine("  🎯 PrimaryPart: " .. (info.hasPrimaryPart and "✅" or "❌"))
-    addLogLine("  🎬 Анимации: " .. (info.hasAnimations and "✅" or "❌"))
-    
-    -- Показываем части
-    if #info.parts > 0 then
-        addLogLine("  📦 Части:")
-        for _, part in ipairs(info.parts) do
-            addLogLine("    • " .. part.name .. ": " .. tostring(part.size) .. 
-                      " (" .. part.material .. ", Anchored:" .. tostring(part.anchored) .. ")")
-        end
-        if info.totalParts > #info.parts then
-            addLogLine("    ... и еще " .. (info.totalParts - #info.parts) .. " частей")
-        end
-    end
-    
-    -- Показываем специальные объекты
-    if #info.specialObjects > 0 then
-        addLogLine("  ✨ Специальные объекты: " .. table.concat(info.specialObjects, ", "))
-    end
-    
-    addLogLine("") -- Пустая строка для разделения
-    
-    return info
-end
-
--- === МОНИТОРИНГ ФУНКЦИИ ===
-
-local function monitorContainer(container, containerName)
-    addLogLine("👀 Мониторю: " .. containerName)
-    
-    local function onChildAdded(child)
-        if child:IsA("Model") then
-            -- Логируем ВСЕ новые модели
-            addLogLine("🎉 НОВАЯ МОДЕЛЬ В " .. containerName .. "!")
-            local info = logModelInfo(child, "ДОБАВЛЕНА В " .. containerName)
-            
-            -- Отслеживаем эту модель
-            trackedModels[child] = {
-                startTime = tick(),
-                container = containerName,
-                initialInfo = info,
-                sizeHistory = {}
-            }
-            
-            -- Мониторим изменения размера
-            spawn(function()
-                local model = child
-                local trackData = trackedModels[model]
-                
-                while model.Parent and trackData do
-                    wait(0.2) -- Проверяем каждые 0.2 секунды
-                    
-                    if not model.Parent then break end
-                    
-                    -- Записываем текущие размеры
-                    local currentSizes = {}
-                    for _, obj in pairs(model:GetDescendants()) do
-                        if obj:IsA("BasePart") then
-                            currentSizes[obj.Name] = obj.Size
-                        end
-                    end
-                    
-                    table.insert(trackData.sizeHistory, {
-                        time = tick() - trackData.startTime,
-                        sizes = currentSizes
-                    })
-                end
-            end)
-        end
-    end
-    
-    local function onChildRemoved(child)
-        if trackedModels[child] then
-            local trackData = trackedModels[child]
-            local lifeTime = tick() - trackData.startTime
-            
-            addLogLine("👋 МОДЕЛЬ УДАЛЕНА ИЗ " .. trackData.container .. "!")
-            addLogLine("  📛 Имя: " .. child.Name)
-            addLogLine("  ⏱️ Время жизни: " .. string.format("%.2f", lifeTime) .. " сек")
-            
-            -- Анализируем изменения размера
-            if #trackData.sizeHistory > 1 then
-                local firstSizes = trackData.sizeHistory[1].sizes
-                local lastSizes = trackData.sizeHistory[#trackData.sizeHistory].sizes
-                
-                addLogLine("📊 АНАЛИЗ ИЗМЕНЕНИЙ РАЗМЕРА:")
-                local hasChanges = false
-                
-                for partName, finalSize in pairs(lastSizes) do
-                    local initialSize = firstSizes[partName]
-                    if initialSize then
-                        local scaleX = finalSize.X / initialSize.X
-                        local scaleY = finalSize.Y / initialSize.Y
-                        local scaleZ = finalSize.Z / initialSize.Z
-                        
-                        if math.abs(scaleX - 1) > 0.05 or math.abs(scaleY - 1) > 0.05 or math.abs(scaleZ - 1) > 0.05 then
-                            hasChanges = true
-                            addLogLine("  🔄 " .. partName .. ": " .. 
-                                string.format("%.3fx, %.3fx, %.3fx", scaleX, scaleY, scaleZ))
-                        end
-                    end
-                end
-                
-                if not hasChanges then
-                    addLogLine("  ➡️ Размеры не изменились")
-                end
-            else
-                addLogLine("  ⚠️ Недостаточно данных для анализа изменений")
+            return false
+        end,
+        
+        function()
+            -- Способ 2: Симуляция через GuiService
+            local GuiService = game:GetService("GuiService")
+            if GuiService.SelectedObject ~= button then
+                GuiService.SelectedObject = button
             end
-            
-            addLogLine("") -- Пустая строка
-            trackedModels[child] = nil
+            wait(0.1)
+            -- Попробуем активировать выбранный объект
+            return true
+        end,
+        
+        function()
+            -- Способ 3: Изменение свойств для активации скриптов
+            local originalActive = button.Active
+            button.Active = false
+            wait(0.05)
+            button.Active = true
+            wait(0.05)
+            button.Active = originalActive
+            return true
+        end
+    }
+    
+    for i, method in pairs(methods) do
+        local success, result = pcall(method)
+        if success and result then
+            print("✅ Метод", i, "сработал успешно")
+            return true
+        else
+            print("⚠️ Метод", i, "не сработал:", result or "неизвестная ошибка")
         end
     end
     
-    -- Подключаем обработчики
-    table.insert(connections, container.ChildAdded:Connect(onChildAdded))
-    table.insert(connections, container.ChildRemoved:Connect(onChildRemoved))
-    
-    -- Проверяем уже существующие модели
-    for _, child in pairs(container:GetChildren()) do
-        if child:IsA("Model") then
-            addLogLine("📋 Существующая модель: " .. child.Name .. " в " .. containerName)
-        end
-    end
+    return false
 end
 
-local function startMonitoring()
-    if isMonitoring then
-        addLogLine("⚠️ Мониторинг уже запущен!")
+-- Функция удаления текущего питомца из handle
+local function removeCurrentPetFromHandle()
+    local playerChar = player.Character
+    if not playerChar then return false end
+    
+    local handle = playerChar:FindFirstChild("Handle")
+    if not handle then return false end
+    
+    local removed = false
+    for _, child in pairs(handle:GetChildren()) do
+        if child:IsA("Model") and not child.Name:lower():find("dragonfly") then
+            print("🗑️ Убираю из handle:", child.Name)
+            child:Destroy()
+            removed = true
+        end
+    end
+    
+    return removed
+end
+
+-- Функция проверки появления Dragonfly в handle
+local function checkDragonflyInHandle()
+    local playerChar = player.Character
+    if not playerChar then return false end
+    
+    local handle = playerChar:FindFirstChild("Handle")
+    if not handle then return false end
+    
+    for _, child in pairs(handle:GetChildren()) do
+        if child:IsA("Model") and child.Name:lower():find("dragonfly") then
+            print("✅ Dragonfly найден в handle!")
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Основная функция переключения
+local function switchToDragonfly()
+    statusLabel.Text = "🔍 Ищу Dragonfly кнопку..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+    
+    -- Шаг 1: Найти Dragonfly кнопку
+    local dragonflyButton = findDragonflyButton()
+    if not dragonflyButton then
+        statusLabel.Text = "❌ Dragonfly кнопка не найдена"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
     
-    isMonitoring = true
-    addLogLine("🚀 Запуск универсального мониторинга...")
+    -- Шаг 2: Убрать текущего питомца из handle
+    statusLabel.Text = "🗑️ Убираю текущего питомца..."
+    removeCurrentPetFromHandle()
+    wait(0.5)
     
-    -- Мониторим основной Workspace
-    monitorContainer(Workspace, "Workspace")
+    -- Шаг 3: Попробовать реальный клик
+    statusLabel.Text = "🖱️ Симулирую реальный клик..."
+    local realClickSuccess = simulateRealClick(dragonflyButton)
     
-    -- Мониторим workspace.visuals если есть
-    local visuals = Workspace:FindFirstChild("visuals")
-    if visuals then
-        monitorContainer(visuals, "workspace.visuals")
+    if not realClickSuccess then
+        -- Шаг 4: Попробовать программный вызов события
+        statusLabel.Text = "🎯 Программно активирую событие..."
+        triggerClickEvent(dragonflyButton)
+    end
+    
+    -- Шаг 5: Проверить результат
+    wait(1)
+    statusLabel.Text = "✅ Проверяю результат..."
+    
+    if checkDragonflyInHandle() then
+        statusLabel.Text = "🎉 Dragonfly успешно в руке!"
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
     else
-        addLogLine("⚠️ workspace.visuals не найден")
+        statusLabel.Text = "❌ Dragonfly не появился в руке"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
     end
-    
-    -- Мониторим другие потенциальные контейнеры
-    local commonContainers = {"Pets", "Models", "Effects", "Visuals", "Game"}
-    for _, containerName in ipairs(commonContainers) do
-        local container = Workspace:FindFirstChild(containerName)
-        if container then
-            monitorContainer(container, "workspace." .. containerName)
-        end
-    end
-    
-    addLogLine("👁️ Мониторинг активен. Открывайте яйца!")
 end
 
-local function stopMonitoring()
-    if not isMonitoring then
-        addLogLine("⚠️ Мониторинг не запущен!")
-        return
-    end
+-- Обработчик кнопки
+switchButton.MouseButton1Click:Connect(function()
+    switchButton.Text = "⏳ Переключаю..."
+    switchButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
     
-    isMonitoring = false
-    
-    -- Отключаем все соединения
-    for _, connection in ipairs(connections) do
-        connection:Disconnect()
-    end
-    connections = {}
-    
-    trackedModels = {}
-    addLogLine("🛑 Мониторинг остановлен")
-end
-
--- === СОЗДАНИЕ GUI ===
-
-local function createGUI()
-    local existingGui = playerGui:FindFirstChild("UniversalPetDetector")
-    if existingGui then
-        existingGui:Destroy()
-    end
-    
-    gui = Instance.new("ScreenGui")
-    gui.Name = "UniversalPetDetector"
-    gui.Parent = playerGui
-    
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 700, 0, 500)
-    mainFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    mainFrame.BorderSizePixel = 2
-    mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 0)
-    mainFrame.Parent = gui
-    
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Size = UDim2.new(1, 0, 0, 40)
-    titleLabel.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-    titleLabel.Text = "🔍 Universal Pet Detector"
-    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleLabel.TextScaled = true
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.Parent = mainFrame
-    
-    local buttonFrame = Instance.new("Frame")
-    buttonFrame.Size = UDim2.new(1, 0, 0, 50)
-    buttonFrame.Position = UDim2.new(0, 0, 0, 40)
-    buttonFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    buttonFrame.Parent = mainFrame
-    
-    local startButton = Instance.new("TextButton")
-    startButton.Size = UDim2.new(0, 120, 0, 30)
-    startButton.Position = UDim2.new(0, 10, 0, 10)
-    startButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    startButton.Text = "🚀 Старт"
-    startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    startButton.TextScaled = true
-    startButton.Font = Enum.Font.Gotham
-    startButton.Parent = buttonFrame
-    
-    local stopButton = Instance.new("TextButton")
-    stopButton.Size = UDim2.new(0, 120, 0, 30)
-    stopButton.Position = UDim2.new(0, 140, 0, 10)
-    stopButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-    stopButton.Text = "🛑 Стоп"
-    stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    stopButton.TextScaled = true
-    stopButton.Font = Enum.Font.Gotham
-    stopButton.Parent = buttonFrame
-    
-    local clearButton = Instance.new("TextButton")
-    clearButton.Size = UDim2.new(0, 120, 0, 30)
-    clearButton.Position = UDim2.new(0, 270, 0, 10)
-    clearButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-    clearButton.Text = "🗑️ Очистить"
-    clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    clearButton.TextScaled = true
-    clearButton.Font = Enum.Font.Gotham
-    clearButton.Parent = buttonFrame
-    
-    scrollingFrame = Instance.new("ScrollingFrame")
-    scrollingFrame.Size = UDim2.new(1, -20, 1, -110)
-    scrollingFrame.Position = UDim2.new(0, 10, 0, 100)
-    scrollingFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-    scrollingFrame.BorderSizePixel = 1
-    scrollingFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
-    scrollingFrame.ScrollBarThickness = 12
-    scrollingFrame.Parent = mainFrame
-    
-    consoleText = Instance.new("TextLabel")
-    consoleText.Size = UDim2.new(1, -10, 1, 0)
-    consoleText.Position = UDim2.new(0, 5, 0, 0)
-    consoleText.BackgroundTransparency = 1
-    consoleText.Text = ""
-    consoleText.TextColor3 = Color3.fromRGB(255, 200, 0)
-    consoleText.TextSize = 11
-    consoleText.Font = Enum.Font.Code
-    consoleText.TextXAlignment = Enum.TextXAlignment.Left
-    consoleText.TextYAlignment = Enum.TextYAlignment.Top
-    consoleText.TextWrapped = true
-    consoleText.Parent = scrollingFrame
-    
-    -- Обработчики кнопок
-    startButton.MouseButton1Click:Connect(startMonitoring)
-    stopButton.MouseButton1Click:Connect(stopMonitoring)
-    clearButton.MouseButton1Click:Connect(function()
-        logLines = {}
-        if consoleText then
-            consoleText.Text = ""
-        end
-        addLogLine("🗑️ Консоль очищена")
+    spawn(function()
+        switchToDragonfly()
+        
+        wait(2)
+        switchButton.Text = "🔄 Переключить на Dragonfly"
+        switchButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
     end)
-    
-    addLogLine("🔍 Universal Pet Detector готов!")
-    addLogLine("📋 Мониторит ВСЕ новые модели в Workspace")
-    addLogLine("🎯 Нажмите 'Старт' и откройте яйцо")
-    addLogLine("💡 Покажет ЛЮБУЮ новую модель, даже если это не питомец")
-end
+end)
 
--- === ЗАПУСК ===
-
-createGUI()
-
-addLogLine("✅ Универсальный детектор готов!")
-addLogLine("🔥 Найдет ЛЮБУЮ новую модель в Workspace!")
+print("✅ DragonflySwitcherV2 загружен! Использует данные анализа событий.")
