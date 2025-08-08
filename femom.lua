@@ -1,398 +1,528 @@
--- DirectShovelFix.lua
--- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
+-- 🔬 EGG ANIMATION SOURCE TRACKER
+-- Исследует ОТКУДА и КАК игра создает временную анимированную модель питомца
+-- Отслеживает все события, скрипты, источники анимации во время взрыва яйца
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 
-print("=== DIRECT SHOVEL FIX ===")
+-- 📊 КОНФИГУРАЦИЯ
+local CONFIG = {
+    SEARCH_RADIUS = 300,
+    MONITOR_DURATION = 45,
+    DEEP_SCAN_INTERVAL = 0.1
+}
 
--- Глобальные переменные
-local petTool = nil
+-- 🖥️ СИСТЕМА ОТДЕЛЬНОЙ КОНСОЛИ
+local ConsoleGUI = nil
+local ConsoleFrame = nil
+local ConsoleScrollFrame = nil
+local ConsoleTextLabel = nil
+local ConsoleLines = {}
+local MaxConsoleLines = 100
 
--- Поиск питомца в руках
-local function findPetInHands()
-    local character = player.Character
-    if not character then return nil end
+-- 📋 СОСТОЯНИЕ ОТСЛЕЖИВАНИЯ
+local TrackingState = {
+    isActive = false,
+    eggExplodeDetected = false,
+    startTime = 0,
+    beforeSnapshot = {},
+    afterSnapshot = {},
+    detectedEvents = {},
+    foundScripts = {},
+    animationSources = {}
+}
+
+-- Функция создания отдельной консоли
+local function createResearchConsole()
+    if ConsoleGUI then
+        ConsoleGUI:Destroy()
+    end
     
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
-            return tool
+    ConsoleGUI = Instance.new("ScreenGui")
+    ConsoleGUI.Name = "EggAnimationSourceTrackerConsole"
+    ConsoleGUI.Parent = player:WaitForChild("PlayerGui")
+    
+    -- Основной фрейм консоли
+    ConsoleFrame = Instance.new("Frame")
+    ConsoleFrame.Size = UDim2.new(0, 700, 0, 500)
+    ConsoleFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+    ConsoleFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+    ConsoleFrame.BorderSizePixel = 2
+    ConsoleFrame.BorderColor3 = Color3.fromRGB(255, 100, 0)
+    ConsoleFrame.Parent = ConsoleGUI
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = ConsoleFrame
+    
+    -- Заголовок
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 40)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "🔬 EGG ANIMATION SOURCE TRACKER - ИССЛЕДОВАТЕЛЬСКАЯ КОНСОЛЬ"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.Parent = ConsoleFrame
+    
+    -- Панель кнопок
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Size = UDim2.new(1, 0, 0, 40)
+    buttonFrame.Position = UDim2.new(0, 0, 0, 45)
+    buttonFrame.BackgroundTransparency = 1
+    buttonFrame.Parent = ConsoleFrame
+    
+    -- Кнопка запуска
+    local startButton = Instance.new("TextButton")
+    startButton.Size = UDim2.new(0, 150, 0, 30)
+    startButton.Position = UDim2.new(0, 10, 0, 5)
+    startButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+    startButton.Text = "🚀 НАЧАТЬ ИССЛЕДОВАНИЕ"
+    startButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    startButton.TextScaled = true
+    startButton.Font = Enum.Font.SourceSansBold
+    startButton.Parent = buttonFrame
+    
+    local startCorner = Instance.new("UICorner")
+    startCorner.CornerRadius = UDim.new(0, 5)
+    startCorner.Parent = startButton
+    
+    -- Кнопка очистки
+    local clearButton = Instance.new("TextButton")
+    clearButton.Size = UDim2.new(0, 100, 0, 30)
+    clearButton.Position = UDim2.new(0, 170, 0, 5)
+    clearButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    clearButton.Text = "🗑️ ОЧИСТИТЬ"
+    clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    clearButton.TextScaled = true
+    clearButton.Font = Enum.Font.SourceSansBold
+    clearButton.Parent = buttonFrame
+    
+    local clearCorner = Instance.new("UICorner")
+    clearCorner.CornerRadius = UDim.new(0, 5)
+    clearCorner.Parent = clearButton
+    
+    -- Кнопка сводки
+    local summaryButton = Instance.new("TextButton")
+    summaryButton.Size = UDim2.new(0, 120, 0, 30)
+    summaryButton.Position = UDim2.new(0, 280, 0, 5)
+    summaryButton.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+    summaryButton.Text = "📊 СВОДКА"
+    summaryButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    summaryButton.TextScaled = true
+    summaryButton.Font = Enum.Font.SourceSansBold
+    summaryButton.Parent = buttonFrame
+    
+    local summaryCorner = Instance.new("UICorner")
+    summaryCorner.CornerRadius = UDim.new(0, 5)
+    summaryCorner.Parent = summaryButton
+    
+    -- Скролл фрейм для консоли
+    ConsoleScrollFrame = Instance.new("ScrollingFrame")
+    ConsoleScrollFrame.Size = UDim2.new(1, -20, 1, -100)
+    ConsoleScrollFrame.Position = UDim2.new(0, 10, 0, 90)
+    ConsoleScrollFrame.BackgroundColor3 = Color3.fromRGB(3, 3, 8)
+    ConsoleScrollFrame.BorderSizePixel = 1
+    ConsoleScrollFrame.BorderColor3 = Color3.fromRGB(80, 80, 80)
+    ConsoleScrollFrame.ScrollBarThickness = 12
+    ConsoleScrollFrame.Parent = ConsoleFrame
+    
+    local scrollCorner = Instance.new("UICorner")
+    scrollCorner.CornerRadius = UDim.new(0, 5)
+    scrollCorner.Parent = ConsoleScrollFrame
+    
+    -- Текстовая метка для консоли
+    ConsoleTextLabel = Instance.new("TextLabel")
+    ConsoleTextLabel.Size = UDim2.new(1, -10, 1, 0)
+    ConsoleTextLabel.Position = UDim2.new(0, 5, 0, 0)
+    ConsoleTextLabel.BackgroundTransparency = 1
+    ConsoleTextLabel.Text = "🔬 Исследовательская консоль готова.\\n📋 Нажмите 'НАЧАТЬ ИССЛЕДОВАНИЕ' для запуска глубокого анализа источников анимации."
+    ConsoleTextLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+    ConsoleTextLabel.TextSize = 11
+    ConsoleTextLabel.Font = Enum.Font.SourceSans
+    ConsoleTextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ConsoleTextLabel.TextYAlignment = Enum.TextYAlignment.Top
+    ConsoleTextLabel.TextWrapped = true
+    ConsoleTextLabel.Parent = ConsoleScrollFrame
+    
+    return startButton, clearButton, summaryButton
+end
+
+-- Функция добавления строки в консоль
+local function addResearchLog(level, message, data)
+    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+    local prefixes = {
+        RESEARCH = "🔬", EVENT = "⚡", SCRIPT = "📜", ANIMATION = "🎬",
+        CREATION = "⚙️", SOURCE = "🎯", DISCOVERY = "💡", WARNING = "⚠️"
+    }
+    
+    local logLine = string.format("[%s] %s %s", timestamp, prefixes[level] or "ℹ️", message)
+    
+    if data and next(data) then
+        for key, value in pairs(data) do
+            logLine = logLine .. string.format("\\n    %s: %s", key, tostring(value))
         end
     end
-    return nil
-end
-
--- Поиск Shovel в руках
-local function findShovelInHands()
-    local character = player.Character
-    if not character then return nil end
     
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            return tool
-        end
-    end
-    return nil
-end
-
--- СОХРАНИТЬ питомца
-local function savePet()
-    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
+    table.insert(ConsoleLines, logLine)
     
-    local pet = findPetInHands()
-    if not pet then
-        print("❌ Питомец в руках не найден!")
-        return false
+    -- Ограничиваем количество строк
+    if #ConsoleLines > MaxConsoleLines then
+        table.remove(ConsoleLines, 1)
     end
     
-    print("✅ Найден питомец: " .. pet.Name)
-    
-    -- Сохраняем ссылку на питомца
-    petTool = pet
-    
-    print("✅ Питомец сохранен!")
-    return true
-end
-
--- ПРЯМАЯ ЗАМЕНА содержимого
-local function directReplace()
-    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
-    
-    if not petTool then
-        print("❌ Сначала сохраните питомца!")
-        return false
-    end
-    
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
-    
-    -- Шаг 1: Меняем имя
-    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("📝 Имя изменено: " .. shovel.Name)
-    
-    -- Шаг 2: Копируем свойства Tool
-    shovel.RequiresHandle = petTool.RequiresHandle
-    shovel.CanBeDropped = petTool.CanBeDropped
-    shovel.ManualActivationOnly = petTool.ManualActivationOnly
-    print("🔧 Свойства Tool скопированы")
-    
-    -- Шаг 3: Удаляем все содержимое Shovel
-    print("🗑️ Очищаю содержимое Shovel...")
-    for _, child in pairs(shovel:GetChildren()) do
-        child:Destroy()
-    end
-    
-    wait(0.1)
-    
-    -- Шаг 4: Копируем все содержимое питомца
-    print("📋 Копирую содержимое питомца...")
-    for _, child in pairs(petTool:GetChildren()) do
-        local copy = child:Clone()
-        copy.Parent = shovel
-        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
-    end
-    
-    print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
-    print("📝 Новое имя: " .. shovel.Name)
-    print("🎮 В руках должен быть питомец с именем Dragonfly!")
-    
-    return true
-end
-
--- ФУНКЦИЯ CFRAME АНИМАЦИИ питомца (ОБЪЯВЛЯЕМ СНАЧАЛА)
-local animationConnection = nil
-
-local function startPetAnimation(tool)
-    if not tool then return end
-    
-    print("🎬 === ЗАПУСК CFRAME АНИМАЦИИ ===")
-    
-    -- Останавливаем предыдущую анимацию
-    if animationConnection then
-        animationConnection:Disconnect()
-        animationConnection = nil
-        print("⏹️ Остановлена предыдущая анимация")
-    end
-    
-    -- Находим все части питомца
-    local petParts = {}
-    local partCount = 0
-    for _, child in pairs(tool:GetDescendants()) do
-        if child:IsA("BasePart") and child.Name ~= "Handle" then
-            petParts[child.Name] = {
-                part = child,
-                originalCFrame = child.CFrame,
-                time = math.random() * 10 -- Случайное начальное время для разнообразия
-            }
-            partCount = partCount + 1
-        end
-    end
-    
-    print(string.format("🎭 Найдено %d частей для анимации", partCount))
-    
-    -- Запускаем анимацию
-    local RunService = game:GetService("RunService")
-    animationConnection = RunService.Heartbeat:Connect(function()
-        local time = tick()
+    -- Обновляем текст консоли
+    if ConsoleTextLabel then
+        ConsoleTextLabel.Text = table.concat(ConsoleLines, "\\n")
         
-        for partName, data in pairs(petParts) do
-            if data.part and data.part.Parent then
-                -- Проверяем что часть все еще существует
-                local success, err = pcall(function()
-                    -- Простая idle анимация (покачивание)
-                    local offsetY = math.sin(time * 2 + data.time) * 0.1
-                    local offsetX = math.cos(time * 1.5 + data.time) * 0.05
-                    
-                    -- Применяем анимацию без нарушения физики
-                    local newCFrame = data.originalCFrame * CFrame.new(offsetX, offsetY, 0)
-                    data.part.CFrame = newCFrame
-                end)
+        -- Автоскролл вниз
+        spawn(function()
+            wait(0.1)
+            ConsoleScrollFrame.CanvasPosition = Vector2.new(0, ConsoleTextLabel.TextBounds.Y)
+        end)
+    end
+end
+
+-- 🔍 ФУНКЦИЯ СОЗДАНИЯ СНИМКА СОСТОЯНИЯ
+local function createStateSnapshot(name)
+    local snapshot = {
+        name = name,
+        timestamp = tick(),
+        workspace = {},
+        replicatedStorage = {},
+        scripts = {},
+        events = {}
+    }
+    
+    -- Снимок Workspace
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("Folder") then
+            snapshot.workspace[obj.Name] = {
+                className = obj.ClassName,
+                childCount = #obj:GetChildren()
+            }
+        end
+    end
+    
+    -- Снимок ReplicatedStorage
+    for _, obj in pairs(ReplicatedStorage:GetChildren()) do
+        snapshot.replicatedStorage[obj.Name] = {
+            className = obj.ClassName,
+            childCount = #obj:GetChildren()
+        }
+    end
+    
+    -- Поиск скриптов
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+            table.insert(snapshot.scripts, {
+                name = obj.Name,
+                className = obj.ClassName,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            })
+        end
+    end
+    
+    return snapshot
+end
+
+-- 📊 ФУНКЦИЯ СРАВНЕНИЯ СНИМКОВ
+local function compareSnapshots(before, after)
+    local differences = {
+        newWorkspaceObjects = {},
+        newReplicatedObjects = {},
+        newScripts = {},
+        modifiedObjects = {}
+    }
+    
+    -- Сравнение Workspace
+    for name, data in pairs(after.workspace) do
+        if not before.workspace[name] then
+            table.insert(differences.newWorkspaceObjects, {name = name, data = data})
+        elseif before.workspace[name].childCount ~= data.childCount then
+            table.insert(differences.modifiedObjects, {name = name, location = "Workspace", data = data})
+        end
+    end
+    
+    -- Сравнение ReplicatedStorage
+    for name, data in pairs(after.replicatedStorage) do
+        if not before.replicatedStorage[name] then
+            table.insert(differences.newReplicatedObjects, {name = name, data = data})
+        end
+    end
+    
+    -- Сравнение скриптов
+    for _, script in pairs(after.scripts) do
+        local found = false
+        for _, beforeScript in pairs(before.scripts) do
+            if beforeScript.name == script.name and beforeScript.parent == script.parent then
+                found = true
+                break
+            end
+        end
+        if not found then
+            table.insert(differences.newScripts, script)
+        end
+    end
+    
+    return differences
+end
+
+-- 🎬 ФУНКЦИЯ АНАЛИЗА АНИМАЦИИ
+local function analyzeAnimationSources(model)
+    local animationData = {
+        animators = {},
+        animationTracks = {},
+        motor6ds = {},
+        tweens = {},
+        scripts = {}
+    }
+    
+    -- Поиск Animator и AnimationTrack
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Animator") then
+            table.insert(animationData.animators, {
+                name = obj.Name,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            })
+            
+            -- Получаем активные треки анимации
+            local tracks = obj:GetPlayingAnimationTracks()
+            for _, track in pairs(tracks) do
+                table.insert(animationData.animationTracks, {
+                    animationId = track.Animation and track.Animation.AnimationId or "Unknown",
+                    isPlaying = track.IsPlaying,
+                    speed = track.Speed,
+                    weight = track.Weight
+                })
+            end
+        elseif obj:IsA("Motor6D") then
+            table.insert(animationData.motor6ds, {
+                name = obj.Name,
+                c0 = tostring(obj.C0),
+                c1 = tostring(obj.C1),
+                part0 = obj.Part0 and obj.Part0.Name or "nil",
+                part1 = obj.Part1 and obj.Part1.Name or "nil"
+            })
+        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+            table.insert(animationData.scripts, {
+                name = obj.Name,
+                className = obj.ClassName,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            })
+        end
+    end
+    
+    return animationData
+end
+
+-- 🔍 ФУНКЦИЯ ПОИСКА EGGEXPLODE
+local function checkForEggExplode()
+    -- Ищем в ReplicatedStorage
+    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+        if obj.Name == "EggExplode" and obj:IsA("Model") then
+            return true, obj, "ReplicatedStorage"
+        end
+    end
+    
+    -- Ищем в Workspace
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj.Name == "EggExplode" and obj:IsA("Model") then
+            return true, obj, "Workspace"
+        end
+    end
+    
+    return false, nil, nil
+end
+
+-- 🚀 ОСНОВНАЯ ФУНКЦИЯ ИССЛЕДОВАНИЯ
+local function startDeepResearch()
+    addResearchLog("RESEARCH", "🚀 ЗАПУСК ГЛУБОКОГО ИССЛЕДОВАНИЯ ИСТОЧНИКОВ АНИМАЦИИ")
+    addResearchLog("RESEARCH", "🎯 Цель: Найти КАК и ОТКУДА создается временная анимированная модель")
+    
+    TrackingState.isActive = true
+    TrackingState.startTime = tick()
+    
+    -- Создаем снимок ДО взрыва яйца
+    addResearchLog("RESEARCH", "📸 Создание снимка состояния ДО взрыва яйца...")
+    TrackingState.beforeSnapshot = createStateSnapshot("BEFORE_EGG_EXPLODE")
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not TrackingState.isActive then
+            connection:Disconnect()
+            return
+        end
+        
+        local elapsed = tick() - TrackingState.startTime
+        
+        -- Фаза 1: Ожидание EggExplode
+        if not TrackingState.eggExplodeDetected then
+            local found, eggObj, location = checkForEggExplode()
+            if found then
+                TrackingState.eggExplodeDetected = true
                 
-                if not success then
-                    print("⚠️ Ошибка анимации части " .. partName .. ": " .. tostring(err))
+                addResearchLog("EVENT", "⚡ EGGEXPLODE ОБНАРУЖЕН В " .. location .. "!")
+                addResearchLog("RESEARCH", "📸 Создание снимка состояния ПОСЛЕ взрыва...")
+                
+                -- Создаем снимок ПОСЛЕ взрыва
+                wait(0.5) -- Небольшая задержка для стабилизации
+                TrackingState.afterSnapshot = createStateSnapshot("AFTER_EGG_EXPLODE")
+                
+                -- Сравниваем снимки
+                local differences = compareSnapshots(TrackingState.beforeSnapshot, TrackingState.afterSnapshot)
+                
+                addResearchLog("DISCOVERY", "💡 АНАЛИЗ ИЗМЕНЕНИЙ ПОСЛЕ ВЗРЫВА ЯЙЦА:")
+                
+                if #differences.newWorkspaceObjects > 0 then
+                    addResearchLog("CREATION", "⚙️ НОВЫЕ ОБЪЕКТЫ В WORKSPACE:", {
+                        count = #differences.newWorkspaceObjects
+                    })
+                    for _, obj in pairs(differences.newWorkspaceObjects) do
+                        addResearchLog("CREATION", "  📦 " .. obj.name, obj.data)
+                    end
                 end
                 
-                -- Обновляем базовое положение периодически
-                data.time = data.time + 0.01
+                if #differences.newReplicatedObjects > 0 then
+                    addResearchLog("CREATION", "⚙️ НОВЫЕ ОБЪЕКТЫ В REPLICATEDSTORAGE:", {
+                        count = #differences.newReplicatedObjects
+                    })
+                    for _, obj in pairs(differences.newReplicatedObjects) do
+                        addResearchLog("CREATION", "  📦 " .. obj.name, obj.data)
+                    end
+                end
+                
+                if #differences.newScripts > 0 then
+                    addResearchLog("SCRIPT", "📜 НОВЫЕ СКРИПТЫ ОБНАРУЖЕНЫ:", {
+                        count = #differences.newScripts
+                    })
+                    for _, script in pairs(differences.newScripts) do
+                        addResearchLog("SCRIPT", "  📜 " .. script.name, script)
+                    end
+                end
+                
+                -- Начинаем поиск анимированных моделей
+                addResearchLog("RESEARCH", "🔍 Начинаем поиск временных анимированных моделей...")
+            end
+        else
+            -- Фаза 2: Поиск и анализ анимированных моделей
+            if elapsed > CONFIG.MONITOR_DURATION then
+                addResearchLog("RESEARCH", "⏰ Исследование завершено по таймауту")
+                TrackingState.isActive = false
+                return
+            end
+            
+            -- Поиск моделей питомцев
+            for _, obj in pairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name:lower():find("dog") or 
+                   obj.Name:lower():find("bunny") or obj.Name:lower():find("golden") then
+                    
+                    if not TrackingState.animationSources[obj] then
+                        TrackingState.animationSources[obj] = true
+                        
+                        addResearchLog("DISCOVERY", "💡 НАЙДЕНА АНИМИРОВАННАЯ МОДЕЛЬ: " .. obj.Name)
+                        
+                        -- Глубокий анализ анимации
+                        local animationData = analyzeAnimationSources(obj)
+                        
+                        addResearchLog("ANIMATION", "🎬 АНАЛИЗ ИСТОЧНИКОВ АНИМАЦИИ:")
+                        addResearchLog("ANIMATION", "  Animators: " .. #animationData.animators)
+                        addResearchLog("ANIMATION", "  Animation Tracks: " .. #animationData.animationTracks)
+                        addResearchLog("ANIMATION", "  Motor6Ds: " .. #animationData.motor6ds)
+                        addResearchLog("ANIMATION", "  Scripts: " .. #animationData.scripts)
+                        
+                        if #animationData.animationTracks > 0 then
+                            for _, track in pairs(animationData.animationTracks) do
+                                addResearchLog("ANIMATION", "  🎬 Animation Track:", track)
+                            end
+                        end
+                        
+                        if #animationData.scripts > 0 then
+                            for _, script in pairs(animationData.scripts) do
+                                addResearchLog("SCRIPT", "  📜 Script in model:", script)
+                            end
+                        end
+                        
+                        -- Отслеживаем время жизни
+                        spawn(function()
+                            local startTime = tick()
+                            local modelName = obj.Name
+                            
+                            while obj and obj.Parent do
+                                wait(0.2)
+                            end
+                            
+                            local lifetime = tick() - startTime
+                            addResearchLog("DISCOVERY", string.format("⏱️ %s исчез через %.2f сек", modelName, lifetime))
+                        end)
+                    end
+                end
             end
         end
     end)
     
-    print("✅ CFrame анимация запущена!")
-    print("🎭 Питомец должен покачиваться (idle анимация)")
+    addResearchLog("RESEARCH", "🔍 Глубокое исследование активно. Откройте яйцо для анализа!")
 end
 
--- ФУНКЦИЯ ОСТАНОВКИ АНИМАЦИИ
-local function stopPetAnimation()
-    if animationConnection then
-        animationConnection:Disconnect()
-        animationConnection = nil
-        print("⏹️ CFrame анимация остановлена")
-        return true
+-- 📊 ФУНКЦИЯ СОЗДАНИЯ СВОДКИ
+local function generateSummary()
+    addResearchLog("RESEARCH", "📊 === СВОДКА ИССЛЕДОВАНИЯ ===")
+    addResearchLog("RESEARCH", "🎯 Найдено источников анимации: " .. #TrackingState.animationSources)
+    addResearchLog("RESEARCH", "📜 Обнаружено скриптов: " .. #TrackingState.foundScripts)
+    addResearchLog("RESEARCH", "⚡ Зафиксировано событий: " .. #TrackingState.detectedEvents)
+    
+    if TrackingState.beforeSnapshot and TrackingState.afterSnapshot then
+        local differences = compareSnapshots(TrackingState.beforeSnapshot, TrackingState.afterSnapshot)
+        addResearchLog("RESEARCH", "📦 Новых объектов в Workspace: " .. #differences.newWorkspaceObjects)
+        addResearchLog("RESEARCH", "📦 Новых объектов в ReplicatedStorage: " .. #differences.newReplicatedObjects)
+        addResearchLog("RESEARCH", "📜 Новых скриптов: " .. #differences.newScripts)
     end
-    return false
+    
+    addResearchLog("RESEARCH", "📋 === КОНЕЦ СВОДКИ ===")
 end
 
--- АЛЬТЕРНАТИВА С CFRAME АНИМАЦИЕЙ: Создание с анимацией питомца
-local function alternativeReplace()
-    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА С АНИМАЦИЕЙ ===")
+-- 🖥️ СОЗДАНИЕ GUI И ЗАПУСК
+local function initializeResearchTracker()
+    local startButton, clearButton, summaryButton = createResearchConsole()
     
-    if not petTool then
-        print("❌ Сначала сохраните питомца!")
-        return false
-    end
-    
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    local character = player.Character
-    if not character then
-        print("❌ Character не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🎬 Альтернативная замена с CFrame анимацией...")
-    
-    -- Создаем новый Tool на основе питомца (БЕЗ изменения CFrame)
-    local newTool = Instance.new("Tool")
-    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
-    newTool.RequiresHandle = true
-    newTool.CanBeDropped = true
-    newTool.ManualActivationOnly = false
-    
-    print("🔧 Копирую содержимое питомца...")
-    
-    -- Копируем содержимое питомца
-    for _, child in pairs(petTool:GetChildren()) do
-        local copy = child:Clone()
-        copy.Parent = newTool
-        print("   ✅ Скопировано: " .. child.Name)
-    end
-    
-    -- Удаляем Shovel
-    print("🗑️ Удаляю Shovel...")
-    shovel:Destroy()
-    
-    wait(0.2)
-    
-    -- Добавляем новый Tool в Backpack сначала
-    print("📦 Добавляю в Backpack...")
-    local backpack = character:FindFirstChild("Backpack")
-    if not backpack then
-        backpack = Instance.new("Backpack")
-        backpack.Parent = character
-    end
-    
-    newTool.Parent = backpack
-    
-    wait(0.1)
-    
-    -- Затем перемещаем в руки
-    print("🎮 Перемещаю в руки...")
-    newTool.Parent = character
-    
-    wait(0.3)
-    
-    -- Добавляем CFrame анимацию питомца
-    print("🎬 Запускаю CFrame анимацию питомца...")
-    startPetAnimation(newTool)
-    
-    print("✅ Альтернативная замена с анимацией завершена!")
-    print("🎭 Копия должна анимироваться как питомец!")
-    return true
-end
-
--- Создаем GUI
-local function createDirectFixGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "DirectShovelFixGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 400, 0, 350)
-    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
-    frame.BorderSizePixel = 0
-    frame.Parent = screenGui
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
-    title.BorderSizePixel = 0
-    title.Text = "🎯 DIRECT SHOVEL FIX"
-    title.TextColor3 = Color3.new(1, 1, 1)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 80)
-    status.Position = UDim2.new(0, 10, 0, 50)
-    status.BackgroundTransparency = 1
-    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
-    status.TextColor3 = Color3.new(1, 1, 1)
-    status.TextScaled = true
-    status.Font = Enum.Font.SourceSans
-    status.TextWrapped = true
-    status.Parent = frame
-    
-    -- Кнопка сохранения
-    local saveBtn = Instance.new("TextButton")
-    saveBtn.Size = UDim2.new(1, -20, 0, 50)
-    saveBtn.Position = UDim2.new(0, 10, 0, 140)
-    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
-    saveBtn.BorderSizePixel = 0
-    saveBtn.Text = "💾 Сохранить питомца"
-    saveBtn.TextColor3 = Color3.new(1, 1, 1)
-    saveBtn.TextScaled = true
-    saveBtn.Font = Enum.Font.SourceSansBold
-    saveBtn.Parent = frame
-    
-    -- Кнопка прямой замены
-    local directBtn = Instance.new("TextButton")
-    directBtn.Size = UDim2.new(1, -20, 0, 50)
-    directBtn.Position = UDim2.new(0, 10, 0, 200)
-    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    directBtn.BorderSizePixel = 0
-    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
-    directBtn.TextColor3 = Color3.new(1, 1, 1)
-    directBtn.TextScaled = true
-    directBtn.Font = Enum.Font.SourceSansBold
-    directBtn.Visible = false
-    directBtn.Parent = frame
-    
-    -- Кнопка альтернативы с анимацией
-    local altBtn = Instance.new("TextButton")
-    altBtn.Size = UDim2.new(1, -20, 0, 50)
-    altBtn.Position = UDim2.new(0, 10, 0, 260)
-    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
-    altBtn.BorderSizePixel = 0
-    altBtn.Text = "🎬 АЛЬТЕРНАТИВА + АНИМАЦИЯ"
-    altBtn.TextColor3 = Color3.new(1, 1, 1)
-    altBtn.TextScaled = true
-    altBtn.Font = Enum.Font.SourceSansBold
-    altBtn.Visible = false
-    altBtn.Parent = frame
-    
-    -- Кнопка закрытия
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(1, -20, 0, 30)
-    closeBtn.Position = UDim2.new(0, 10, 0, 310)
-    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
-    closeBtn.BorderSizePixel = 0
-    closeBtn.Text = "❌ Закрыть"
-    closeBtn.TextColor3 = Color3.new(1, 1, 1)
-    closeBtn.TextScaled = true
-    closeBtn.Font = Enum.Font.SourceSansBold
-    closeBtn.Parent = frame
-    
-    -- События
-    saveBtn.MouseButton1Click:Connect(function()
-        status.Text = "💾 Сохраняю питомца..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = savePet()
-        
-        if success then
-            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel и замените!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-            directBtn.Visible = true
-            altBtn.Visible = true
-        else
-            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
-            status.TextColor3 = Color3.new(1, 0, 0)
+    startButton.MouseButton1Click:Connect(function()
+        if not TrackingState.isActive then
+            startButton.Text = "⏳ ИССЛЕДОВАНИЕ АКТИВНО..."
+            startButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+            startDeepResearch()
         end
     end)
     
-    directBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Прямая замена содержимого..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = directReplace()
-        
-        if success then
-            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
-            status.TextColor3 = Color3.new(1, 0, 0)
+    clearButton.MouseButton1Click:Connect(function()
+        ConsoleLines = {}
+        TrackingState = {
+            isActive = false,
+            eggExplodeDetected = false,
+            startTime = 0,
+            beforeSnapshot = {},
+            afterSnapshot = {},
+            detectedEvents = {},
+            foundScripts = {},
+            animationSources = {}
+        }
+        if ConsoleTextLabel then
+            ConsoleTextLabel.Text = "🔬 Консоль очищена. Готов к новому исследованию."
         end
     end)
     
-    altBtn.MouseButton1Click:Connect(function()
-        status.Text = "🎬 Альтернативная замена + анимация...\nСоздаю копию с CFrame анимацией..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = alternativeReplace()
-        
-        if success then
-            status.Text = "✅ АЛЬТЕРНАТИВА + АНИМАЦИЯ ЗАВЕРШЕНА!\nКопия анимируется как питомец!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка альтернативы с анимацией!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
+    summaryButton.MouseButton1Click:Connect(function()
+        generateSummary()
     end)
     
-    closeBtn.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
-    end)
+    addResearchLog("RESEARCH", "✅ EGG ANIMATION SOURCE TRACKER ГОТОВ!")
+    addResearchLog("RESEARCH", "🔬 Исследует ОТКУДА берется анимация временной модели питомца")
+    addResearchLog("RESEARCH", "📋 Отслеживает события, скрипты, источники анимации")
+    addResearchLog("RESEARCH", "🎯 Нажмите 'НАЧАТЬ ИССЛЕДОВАНИЕ' для запуска")
 end
 
--- Запускаем
-createDirectFixGUI()
-print("✅ DirectShovelFix готов!")
-print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
-print("💾 1. Сохранить питомца")
-print("🔄 2. Заменить Shovel")
+-- 🚀 ЗАПУСК
+initializeResearchTracker()
