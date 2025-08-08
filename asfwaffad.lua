@@ -1,393 +1,218 @@
--- 🔥 COMPREHENSIVE EGG PET ANIMATION ANALYZER
--- Основан на анализе 10 скриптов: EggAnimationDiagnostic, AdvancedEggDiagnostic, EggExplosionTracker,
--- CorrectEggDiagnostic, RealPetModelFinder, EggExplodeAnalyzer, PrecisePetModelFilter, 
--- AggressiveModelCatcher, UniversalTempModelAnalyzer, PreciseAnimationModelFinder
--- 
--- ЦЕЛЬ: Полный анализ анимации workspace.visuals и eggexplode
--- Находит модели: dog, bunny, golden lab и анализирует их анимацию
+-- TextReplacer.lua
+-- Замена текста в GUI элементах инвентаря
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 
--- 📊 КОНФИГУРАЦИЯ
-local CONFIG = {
-    SEARCH_RADIUS = 200,
-    MONITOR_DURATION = 30,
-    CHECK_INTERVAL = 0.05,
-    ANALYSIS_DEPTH = 8,
-    MIN_CHILD_COUNT = 10,
-    MIN_MESH_COUNT = 1
-}
+print("=== TEXT REPLACER ===")
 
--- 🎯 КЛЮЧЕВЫЕ СЛОВА ПИТОМЦЕВ (из всех скриптов)
-local PET_KEYWORDS = {
-    "dog", "bunny", "golden lab", "cat", "rabbit", "pet", "animal", "golden", "lab"
-}
-
--- 🚫 ИСКЛЮЧЕНИЯ (из PrecisePetModelFilter и других)
-local EXCLUDED_NAMES = {
-    "EggExplode", "CraftingTables", "EventCraftingWorkBench", "Fruit", "Tree", 
-    "Bush", "Platform", "Stand", "Bench", "Table", "Chair", "Decoration"
-}
-
--- 📋 СИСТЕМА ЛОГИРОВАНИЯ
-local Logger = {
-    log = function(self, level, message, data)
-        local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
-        local prefixes = {
-            EXPLOSION = "💥", PET = "🐾", ANIMATION = "🎬", STRUCTURE = "🏗️",
-            MESH = "🎨", LIFECYCLE = "⏱️", CRITICAL = "🔥", FOUND = "🎯"
-        }
-        
-        print(string.format("[%s] %s %s", timestamp, prefixes[level] or "ℹ️", message))
-        
-        if data and next(data) then
-            for key, value in pairs(data) do
-                print(string.format("    %s: %s", key, tostring(value)))
-            end
-        end
-    end
-}
-
--- 🔍 ФУНКЦИЯ ПОИСКА EGGEXPLODE (из CorrectEggDiagnostic)
-local function checkForEggExplode()
-    -- Ищем в ReplicatedStorage
-    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-        if obj.Name == "EggExplode" and obj:IsA("Model") then
-            return true, obj, "ReplicatedStorage"
-        end
-    end
-    
-    -- Ищем в Workspace
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj.Name == "EggExplode" and obj:IsA("Model") then
-            return true, obj, "Workspace"
-        elseif obj.Name:lower():find("eggexplode") or (obj.Name:lower():find("egg") and obj.Name:lower():find("explode")) then
-            return true, obj, "Workspace"
-        end
-    end
-    
-    return false, nil, nil
-end
-
--- 🎯 ФУНКЦИЯ ПРОВЕРКИ МОДЕЛИ ПИТОМЦА (объединение всех подходов)
-local function isPetModel(model)
-    -- 1. Должна быть Model
-    if not model:IsA("Model") then return false end
-    
-    -- 2. Исключения
-    for _, excluded in pairs(EXCLUDED_NAMES) do
-        if model.Name:find(excluded) then return false end
-    end
-    
-    -- 3. Исключаем модели инвентаря игроков
-    if model.Name:find("%[") and model.Name:find("KG") and model.Name:find("Age") then
+-- Функция поиска и замены текста в Hotbar
+local function replaceTextInHotbar(slotNumber, newText)
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then
+        print("❌ PlayerGui не найден!")
         return false
     end
     
-    -- 4. Исключаем игроков
-    for _, p in pairs(Players:GetPlayers()) do
-        if model.Name == p.Name or model.Name:find(p.Name) then
-            return false
+    local backpackGui = playerGui:FindFirstChild("BackpackGui")
+    if not backpackGui then
+        print("❌ BackpackGui не найден!")
+        return false
+    end
+    
+    local backpack = backpackGui:FindFirstChild("Backpack")
+    if not backpack then
+        print("❌ Backpack не найден!")
+        return false
+    end
+    
+    local hotbar = backpack:FindFirstChild("Hotbar")
+    if not hotbar then
+        print("❌ Hotbar не найден!")
+        return false
+    end
+    
+    print("✅ Hotbar найден, ищу слот " .. slotNumber)
+    
+    -- Ищем слот с указанным номером
+    local targetSlot = hotbar:FindFirstChild(tostring(slotNumber))
+    if not targetSlot then
+        print("❌ Слот " .. slotNumber .. " не найден в Hotbar")
+        return false
+    end
+    
+    print("✅ Слот " .. slotNumber .. " найден")
+    
+    -- Ищем TextLabel в слоте
+    local textLabel = nil
+    for _, desc in pairs(targetSlot:GetDescendants()) do
+        if desc:IsA("TextLabel") and desc.Text ~= "" then
+            textLabel = desc
+            break
         end
     end
     
-    -- 5. Проверяем наличие мешей
-    local meshCount = 0
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-        end
+    if not textLabel then
+        print("❌ TextLabel не найден в слоте " .. slotNumber)
+        return false
     end
     
-    if meshCount < CONFIG.MIN_MESH_COUNT then return false end
+    local oldText = textLabel.Text
+    print("📝 Старый текст: " .. oldText)
+    print("🔄 Меняю на: " .. newText)
     
-    -- 6. Проверяем количество детей
-    if #model:GetChildren() < CONFIG.MIN_CHILD_COUNT then return false end
+    -- Заменяем текст
+    textLabel.Text = newText
     
-    -- 7. Проверяем расстояние до игрока
-    local playerChar = player.Character
-    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
-            if distance > CONFIG.SEARCH_RADIUS then return false end
-        end
-    end
+    print("✅ Текст успешно заменен!")
+    print("   Слот: " .. slotNumber)
+    print("   Было: " .. oldText)
+    print("   Стало: " .. newText)
     
     return true
 end
 
--- 🏗️ ГЛУБОКИЙ АНАЛИЗ СТРУКТУРЫ (из EggExplodeAnalyzer и UniversalTempModelAnalyzer)
-local function deepAnalyzeStructure(obj, depth, parentPath)
-    depth = depth or 0
-    parentPath = parentPath or ""
-    local indent = string.rep("  ", depth)
+-- Функция показа всех текстов в Hotbar
+local function showAllHotbarTexts()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return end
     
-    if depth > CONFIG.ANALYSIS_DEPTH then return end
+    local backpackGui = playerGui:FindFirstChild("BackpackGui")
+    if not backpackGui then return end
     
-    local currentPath = parentPath .. "/" .. obj.Name
+    local backpack = backpackGui:FindFirstChild("Backpack")
+    if not backpack then return end
     
-    Logger:log("STRUCTURE", indent .. "📦 " .. obj.Name .. " (" .. obj.ClassName .. ")", {
-        FullPath = currentPath,
-        Parent = obj.Parent and obj.Parent.Name or "nil"
-    })
+    local hotbar = backpack:FindFirstChild("Hotbar")
+    if not hotbar then return end
     
-    -- Анализ BasePart
-    if obj:IsA("BasePart") then
-        local partData = {
-            Size = tostring(obj.Size),
-            Position = tostring(obj.Position),
-            Transparency = obj.Transparency,
-            Color = tostring(obj.Color),
-            Material = obj.Material.Name,
-            CanCollide = obj.CanCollide,
-            Anchored = obj.Anchored
-        }
-        Logger:log("STRUCTURE", indent .. "  🧱 BasePart Properties", partData)
-    end
+    print("📋 Все тексты в Hotbar:")
     
-    -- Анализ MeshPart/SpecialMesh
-    if obj:IsA("MeshPart") then
-        local meshData = {
-            MeshId = obj.MeshId or "EMPTY",
-            TextureId = obj.TextureId or "EMPTY",
-            MeshSize = tostring(obj.MeshSize or "nil")
-        }
-        Logger:log("MESH", indent .. "  🎨 MeshPart Data", meshData)
-    elseif obj:IsA("SpecialMesh") then
-        local meshData = {
-            MeshId = obj.MeshId or "EMPTY",
-            TextureId = obj.TextureId or "EMPTY",
-            MeshType = obj.MeshType.Name,
-            Scale = tostring(obj.Scale)
-        }
-        Logger:log("MESH", indent .. "  🎨 SpecialMesh Data", meshData)
-    end
-    
-    -- Анализ Motor6D для анимации
-    if obj:IsA("Motor6D") then
-        local motorData = {
-            C0 = tostring(obj.C0),
-            C1 = tostring(obj.C1),
-            Part0 = obj.Part0 and obj.Part0.Name or "nil",
-            Part1 = obj.Part1 and obj.Part1.Name or "nil"
-        }
-        Logger:log("ANIMATION", indent .. "  🎬 Motor6D Data", motorData)
-    end
-    
-    -- Рекурсивный анализ детей
-    for _, child in pairs(obj:GetChildren()) do
-        deepAnalyzeStructure(child, depth + 1, currentPath)
-    end
-end
-
--- ⏱️ ОТСЛЕЖИВАНИЕ ЖИЗНЕННОГО ЦИКЛА (из всех скриптов)
-local function trackLifecycle(model)
-    local startTime = tick()
-    local modelName = model.Name
-    
-    Logger:log("LIFECYCLE", "⏱️ НАЧАЛО ОТСЛЕЖИВАНИЯ: " .. modelName)
-    
-    -- Мониторинг изменений позиции/анимации
-    local lastPosition = nil
-    local animationFrames = {}
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        if not model or not model.Parent then
-            connection:Disconnect()
-            local lifetime = tick() - startTime
-            
-            Logger:log("LIFECYCLE", "⏱️ МОДЕЛЬ ИСЧЕЗЛА: " .. modelName, {
-                lifetime = string.format("%.2f секунд", lifetime),
-                animationFrames = #animationFrames
-            })
-            
-            if #animationFrames > 0 then
-                Logger:log("ANIMATION", "🎬 ЗАПИСАННЫЕ КАДРЫ АНИМАЦИИ: " .. #animationFrames)
-            end
-            return
-        end
-        
-        -- Записываем кадры анимации
-        local success, currentCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            if not lastPosition or (currentCFrame.Position - lastPosition).Magnitude > 0.1 then
-                table.insert(animationFrames, {
-                    time = tick() - startTime,
-                    position = currentCFrame.Position,
-                    rotation = currentCFrame.Rotation
-                })
-                lastPosition = currentCFrame.Position
-                
-                Logger:log("ANIMATION", "🎬 КАДР АНИМАЦИИ", {
-                    frame = #animationFrames,
-                    time = string.format("%.2f", tick() - startTime),
-                    position = tostring(currentCFrame.Position)
-                })
-            end
-        end
-    end)
-end
-
--- 🎯 ОСНОВНАЯ ФУНКЦИЯ АНАЛИЗА
-local function startComprehensiveAnalysis()
-    Logger:log("CRITICAL", "🔥 ЗАПУСК КОМПЛЕКСНОГО АНАЛИЗА АНИМАЦИИ ПИТОМЦЕВ ИЗ ЯИЦ")
-    Logger:log("CRITICAL", "🎯 Цель: dog, bunny, golden lab и другие временные модели")
-    Logger:log("CRITICAL", "📋 Анализ: workspace.visuals, eggexplode, структура, анимация")
-    
-    local eggExplodeDetected = false
-    local analysisStartTime = 0
-    local processedModels = {}
-    local foundPetModels = {}
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        -- Фаза 1: Поиск EggExplode
-        if not eggExplodeDetected then
-            local found, eggObj, location = checkForEggExplode()
-            if found then
-                eggExplodeDetected = true
-                analysisStartTime = tick()
-                
-                Logger:log("EXPLOSION", "💥 EGGEXPLODE ОБНАРУЖЕН В " .. location .. "!")
-                Logger:log("EXPLOSION", "💥 Начинаем поиск и анализ моделей питомцев...")
-                
-                -- Анализируем сам EggExplode
-                if eggObj then
-                    Logger:log("EXPLOSION", "💥 АНАЛИЗ СТРУКТУРЫ EGGEXPLODE:")
-                    deepAnalyzeStructure(eggObj, 0, "EggExplode")
-                end
-            end
-        else
-            -- Фаза 2: Поиск и анализ моделей питомцев
-            local elapsed = tick() - analysisStartTime
-            
-            if elapsed > CONFIG.MONITOR_DURATION then
-                Logger:log("CRITICAL", "🔥 АНАЛИЗ ЗАВЕРШЁН ПО ТАЙМАУТУ")
-                connection:Disconnect()
-                
-                if #foundPetModels > 0 then
-                    Logger:log("CRITICAL", "🔥 НАЙДЕННЫЕ МОДЕЛИ ПИТОМЦЕВ:")
-                    for i, petData in pairs(foundPetModels) do
-                        Logger:log("PET", string.format("🐾 Питомец %d: %s", i, petData.name), petData.summary)
-                    end
-                else
-                    Logger:log("CRITICAL", "❌ МОДЕЛИ ПИТОМЦЕВ НЕ НАЙДЕНЫ!")
-                end
-                return
-            end
-            
-            -- Сканируем все модели
-            for _, obj in pairs(Workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj ~= player.Character and not processedModels[obj] then
-                    processedModels[obj] = true
-                    
-                    if isPetModel(obj) then
-                        -- Проверяем на ключевые слова питомцев
-                        local isPotentialPet = false
-                        for _, keyword in pairs(PET_KEYWORDS) do
-                            if obj.Name:lower():find(keyword) then
-                                isPotentialPet = true
-                                break
-                            end
-                        end
-                        
-                        if isPotentialPet then
-                            Logger:log("FOUND", "🎯 НАЙДЕНА МОДЕЛЬ ПИТОМЦА: " .. obj.Name)
-                            
-                            local petData = {
-                                name = obj.Name,
-                                foundTime = elapsed,
-                                summary = {
-                                    childCount = #obj:GetChildren(),
-                                    hasHumanoid = obj:FindFirstChild("Humanoid") ~= nil,
-                                    hasPrimaryPart = obj.PrimaryPart ~= nil
-                                }
-                            }
-                            
-                            table.insert(foundPetModels, petData)
-                            
-                            -- Полный анализ структуры
-                            Logger:log("PET", "🐾 ПОЛНЫЙ АНАЛИЗ СТРУКТУРЫ: " .. obj.Name)
-                            deepAnalyzeStructure(obj, 0, obj.Name)
-                            
-                            -- Отслеживание жизненного цикла и анимации
-                            trackLifecycle(obj)
-                        end
-                    end
+    for i = 1, 10 do
+        local slot = hotbar:FindFirstChild(tostring(i))
+        if slot then
+            for _, desc in pairs(slot:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Text ~= "" then
+                    print("   Слот " .. i .. ": " .. desc.Text)
+                    break
                 end
             end
         end
-    end)
-    
-    Logger:log("CRITICAL", "🔥 МОНИТОРИНГ АКТИВЕН. ОТКРОЙТЕ ЯЙЦО ДЛЯ АНАЛИЗА!")
+    end
 end
 
--- 🖥️ GUI
-local function createAnalysisGUI()
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "ComprehensiveEggPetAnalyzerGUI"
-    gui.Parent = player:WaitForChild("PlayerGui")
+-- Функция создания GUI для управления
+local function createControlGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "TextReplacerGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
     
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 450, 0, 200)
-    frame.Position = UDim2.new(0.5, -225, 0.5, -100)
-    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-    frame.BorderSizePixel = 0
-    frame.Parent = gui
+    -- Главное окно
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 400, 0, 300)
+    mainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
+    mainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
     
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = frame
+    -- Заголовок
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 40)
+    titleLabel.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    titleLabel.BorderSizePixel = 0
+    titleLabel.Text = "📝 Замена текста в инвентаре"
+    titleLabel.TextColor3 = Color3.new(1, 1, 1)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.Parent = mainFrame
     
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 50)
-    title.BackgroundTransparency = 1
-    title.Text = "🔥 COMPREHENSIVE EGG PET ANALYZER"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
+    -- Кнопка замены слота 1
+    local replaceSlot1Button = Instance.new("TextButton")
+    replaceSlot1Button.Size = UDim2.new(1, -20, 0, 40)
+    replaceSlot1Button.Position = UDim2.new(0, 10, 0, 60)
+    replaceSlot1Button.BackgroundColor3 = Color3.new(0, 0.6, 0)
+    replaceSlot1Button.BorderSizePixel = 0
+    replaceSlot1Button.Text = "🔄 Заменить слот 1 на Dragonfly"
+    replaceSlot1Button.TextColor3 = Color3.new(1, 1, 1)
+    replaceSlot1Button.TextScaled = true
+    replaceSlot1Button.Font = Enum.Font.SourceSansBold
+    replaceSlot1Button.Parent = mainFrame
     
-    local startButton = Instance.new("TextButton")
-    startButton.Size = UDim2.new(0.8, 0, 0, 40)
-    startButton.Position = UDim2.new(0.1, 0, 0.3, 0)
-    startButton.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
-    startButton.Text = "🚀 ЗАПУСТИТЬ АНАЛИЗ"
-    startButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-    startButton.TextScaled = true
-    startButton.Font = Enum.Font.SourceSansBold
-    startButton.Parent = frame
+    -- Кнопка замены слота 2
+    local replaceSlot2Button = Instance.new("TextButton")
+    replaceSlot2Button.Size = UDim2.new(1, -20, 0, 40)
+    replaceSlot2Button.Position = UDim2.new(0, 10, 0, 110)
+    replaceSlot2Button.BackgroundColor3 = Color3.new(0, 0.6, 0)
+    replaceSlot2Button.BorderSizePixel = 0
+    replaceSlot2Button.Text = "🔄 Заменить слот 2 на Dragonfly"
+    replaceSlot2Button.TextColor3 = Color3.new(1, 1, 1)
+    replaceSlot2Button.TextScaled = true
+    replaceSlot2Button.Font = Enum.Font.SourceSansBold
+    replaceSlot2Button.Parent = mainFrame
     
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 5)
-    buttonCorner.Parent = startButton
+    -- Кнопка показа всех текстов
+    local showAllButton = Instance.new("TextButton")
+    showAllButton.Size = UDim2.new(1, -20, 0, 40)
+    showAllButton.Position = UDim2.new(0, 10, 0, 160)
+    showAllButton.BackgroundColor3 = Color3.new(0, 0.4, 0.8)
+    showAllButton.BorderSizePixel = 0
+    showAllButton.Text = "📋 Показать все тексты"
+    showAllButton.TextColor3 = Color3.new(1, 1, 1)
+    showAllButton.TextScaled = true
+    showAllButton.Font = Enum.Font.SourceSansBold
+    showAllButton.Parent = mainFrame
     
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Size = UDim2.new(0.9, 0, 0.4, 0)
-    infoLabel.Position = UDim2.new(0.05, 0, 0.55, 0)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = "Анализирует: EggExplode → Dog/Bunny/Golden Lab\nСтруктура, анимация, жизненный цикл\nОткройте F9 для просмотра логов"
-    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLabel.TextScaled = true
-    infoLabel.Font = Enum.Font.SourceSans
-    infoLabel.Parent = frame
+    -- Кнопка закрытия
+    local closeButton = Instance.new("TextButton")
+    closeButton.Size = UDim2.new(1, -20, 0, 40)
+    closeButton.Position = UDim2.new(0, 10, 0, 210)
+    closeButton.BackgroundColor3 = Color3.new(0.8, 0, 0)
+    closeButton.BorderSizePixel = 0
+    closeButton.Text = "❌ Закрыть"
+    closeButton.TextColor3 = Color3.new(1, 1, 1)
+    closeButton.TextScaled = true
+    closeButton.Font = Enum.Font.SourceSansBold
+    closeButton.Parent = mainFrame
     
-    startButton.MouseButton1Click:Connect(function()
-        startButton.Text = "⏳ АНАЛИЗ АКТИВЕН..."
-        startButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-        startComprehensiveAnalysis()
+    -- Подключаем события
+    replaceSlot1Button.MouseButton1Click:Connect(function()
+        replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
+    end)
+    
+    replaceSlot2Button.MouseButton1Click:Connect(function()
+        replaceTextInHotbar(2, "Dragonfly [6.36 KG] [Age 35]")
+    end)
+    
+    showAllButton.MouseButton1Click:Connect(function()
+        showAllHotbarTexts()
+    end)
+    
+    closeButton.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
     end)
 end
 
--- 🚀 ЗАПУСК
-createAnalysisGUI()
-Logger:log("CRITICAL", "🔥 COMPREHENSIVE EGG PET ANIMATION ANALYZER ГОТОВ!")
-Logger:log("CRITICAL", "📋 Основан на анализе 10 диагностических скриптов")
-Logger:log("CRITICAL", "🎯 Нажмите кнопку для начала анализа")
+-- Тестирование
+print("🧪 Тестирую замену текста...")
+
+-- Показываем текущие тексты
+showAllHotbarTexts()
+
+print("")
+print("🎯 Попытка замены слота 1...")
+local success = replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
+
+if success then
+    print("✅ Замена успешна! Проверяем результат...")
+    wait(1)
+    showAllHotbarTexts()
+else
+    print("❌ Замена не удалась")
+end
+
+-- Создаем GUI для управления
+print("")
+print("🎮 Создаю GUI для управления...")
+createControlGUI()
+
+print("=== TEXT REPLACER ГОТОВ ===")
