@@ -1,26 +1,15 @@
--- ShovelReplacer.lua
--- Заменяет Shovel НА ЕГО МЕСТЕ на отсканированную копию питомца
+-- ToolCloneDiagnostic.lua
+-- Диагностика проблем с клонированием и добавлением Tool в руки
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
-print("=== SHOVEL REPLACER ===")
+print("=== TOOL CLONE DIAGNOSTIC ===")
 
--- Глобальная переменная для хранения отсканированного питомца
-local scannedPetData = nil
-
--- Функция поиска Shovel в руках
-local function findShovelInHands()
-    local character = player.Character
-    if not character then return nil end
-    
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            return tool
-        end
-    end
-    return nil
-end
+-- Глобальные переменные
+local scannedTool = nil
+local diagnosticConnection = nil
 
 -- Функция поиска питомца в руках
 local function findPetInHands()
@@ -35,9 +24,22 @@ local function findPetInHands()
     return nil
 end
 
--- Функция сканирования питомца
-local function scanPet()
-    print("\n🔍 === СКАНИРОВАНИЕ ПИТОМЦА ===")
+-- Функция поиска Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
+        end
+    end
+    return nil
+end
+
+-- ГЛУБОКОЕ СКАНИРОВАНИЕ питомца
+local function deepScanPet()
+    print("\n🔍 === ГЛУБОКОЕ СКАНИРОВАНИЕ ПИТОМЦА ===")
     
     local pet = findPetInHands()
     if not pet then
@@ -46,103 +48,130 @@ local function scanPet()
     end
     
     print("✅ Найден питомец: " .. pet.Name)
+    print("📊 Анализирую структуру...")
     
-    -- Сохраняем данные питомца
-    scannedPetData = {
+    -- Анализируем структуру питомца
+    local structure = {
         name = pet.Name,
         className = pet.ClassName,
-        properties = {},
-        children = {}
+        parent = pet.Parent and pet.Parent.Name or "NIL",
+        children = {},
+        properties = {}
     }
     
-    -- Копируем свойства
-    for property, value in pairs(getfenv(1)) do
-        pcall(function()
-            if pet[property] ~= nil then
-                scannedPetData.properties[property] = pet[property]
-            end
-        end)
+    -- Сохраняем важные свойства
+    if pet:IsA("Tool") then
+        structure.properties.RequiresHandle = pet.RequiresHandle
+        structure.properties.CanBeDropped = pet.CanBeDropped
+        structure.properties.ManualActivationOnly = pet.ManualActivationOnly
+        print("🔧 Tool свойства:")
+        print("   RequiresHandle: " .. tostring(pet.RequiresHandle))
+        print("   CanBeDropped: " .. tostring(pet.CanBeDropped))
+        print("   ManualActivationOnly: " .. tostring(pet.ManualActivationOnly))
     end
     
-    -- Копируем детей
+    -- Анализируем детей
+    print("📦 Дети питомца:")
     for _, child in pairs(pet:GetChildren()) do
         local childData = {
             name = child.Name,
             className = child.ClassName,
-            object = child:Clone()
+            parent = child.Parent.Name
         }
-        table.insert(scannedPetData.children, childData)
+        
+        if child:IsA("BasePart") then
+            childData.size = child.Size
+            childData.cframe = child.CFrame
+            childData.canCollide = child.CanCollide
+            print(string.format("   📦 Part: %s (Size: %.2f,%.2f,%.2f)", 
+                child.Name, child.Size.X, child.Size.Y, child.Size.Z))
+        elseif child:IsA("SpecialMesh") then
+            childData.meshType = child.MeshType
+            childData.scale = child.Scale
+            print(string.format("   🎨 Mesh: %s (Scale: %.2f,%.2f,%.2f)", 
+                child.Name, child.Scale.X, child.Scale.Y, child.Scale.Z))
+        elseif child:IsA("Motor6D") then
+            childData.part0 = child.Part0 and child.Part0.Name or "NIL"
+            childData.part1 = child.Part1 and child.Part1.Name or "NIL"
+            print(string.format("   🔗 Motor6D: %s (%s -> %s)", 
+                child.Name, childData.part0, childData.part1))
+        elseif child:IsA("Script") or child:IsA("LocalScript") then
+            childData.enabled = child.Enabled
+            print(string.format("   📜 Script: %s (Enabled: %s)", 
+                child.Name, tostring(child.Enabled)))
+        else
+            print(string.format("   ❓ Other: %s (%s)", child.Name, child.ClassName))
+        end
+        
+        table.insert(structure.children, childData)
     end
     
-    print("✅ Питомец отсканирован!")
-    print("📊 Найдено детей: " .. #scannedPetData.children)
+    -- Сохраняем структуру
+    scannedTool = structure
+    
+    print("✅ Сканирование завершено!")
+    print(string.format("📊 Итого: %d детей", #structure.children))
     
     return true
 end
 
--- Функция замены Shovel на отсканированного питомца НА ЕГО МЕСТЕ
-local function replaceShovelInPlace()
-    print("\n🔄 === ЗАМЕНА SHOVEL НА ЕГО МЕСТЕ ===")
+-- СОЗДАНИЕ ТОЧНОГО КЛОНА
+local function createPerfectClone()
+    print("\n🎭 === СОЗДАНИЕ ТОЧНОГО КЛОНА ===")
     
-    if not scannedPetData then
-        print("❌ Питомец не отсканирован! Сначала отсканируйте питомца.")
-        return false
+    if not scannedTool then
+        print("❌ Сначала отсканируйте питомца!")
+        return nil
     end
     
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
+        return nil
     end
     
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Заменяю Shovel на отсканированного питомца...")
+    print("🔧 Создаю точный клон...")
     
-    -- Шаг 1: Меняем имя Shovel
-    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("✅ Имя изменено: " .. shovel.Name)
+    -- Создаем клон
+    local clone = pet:Clone()
+    clone.Name = "Dragonfly [6.36 KG] [Age 35]"
     
-    -- Шаг 2: Удаляем всё содержимое Shovel
-    print("🗑️ Очищаю содержимое Shovel...")
-    for _, child in pairs(shovel:GetChildren()) do
-        child:Destroy()
+    print("✅ Клон создан: " .. clone.Name)
+    print("📊 Проверяю структуру клона...")
+    
+    -- Проверяем структуру клона
+    local cloneChildCount = #clone:GetChildren()
+    local originalChildCount = #pet:GetChildren()
+    
+    print(string.format("📊 Дети: Оригинал=%d, Клон=%d", originalChildCount, cloneChildCount))
+    
+    if cloneChildCount ~= originalChildCount then
+        print("⚠️ ВНИМАНИЕ: Количество детей не совпадает!")
     end
     
-    -- Шаг 3: Добавляем содержимое отсканированного питомца
-    print("📋 Добавляю содержимое питомца...")
-    for _, childData in pairs(scannedPetData.children) do
-        local newChild = childData.object:Clone()
-        newChild.Parent = shovel
-        print("   ✅ Добавлен: " .. newChild.Name .. " (" .. newChild.ClassName .. ")")
+    -- Проверяем Handle
+    local handle = clone:FindFirstChild("Handle")
+    if handle then
+        print("✅ Handle найден: " .. handle.Name)
+        print(string.format("   Size: %.2f,%.2f,%.2f", handle.Size.X, handle.Size.Y, handle.Size.Z))
+        print("   CanCollide: " .. tostring(handle.CanCollide))
+    else
+        print("❌ Handle НЕ найден! Создаю...")
+        handle = Instance.new("Part")
+        handle.Name = "Handle"
+        handle.Size = Vector3.new(1, 1, 1)
+        handle.Transparency = 1
+        handle.CanCollide = false
+        handle.Parent = clone
+        print("✅ Handle создан")
     end
     
-    -- Шаг 4: Копируем свойства питомца в Shovel
-    print("⚙️ Копирую свойства питомца...")
-    for property, value in pairs(scannedPetData.properties) do
-        pcall(function()
-            if property ~= "Name" and property ~= "Parent" then
-                shovel[property] = value
-            end
-        end)
-    end
-    
-    print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Shovel заменен НА ЕГО МЕСТЕ!")
-    print("📝 Новое имя: " .. shovel.Name)
-    print("📍 Местоположение: " .. (shovel.Parent and shovel.Parent.Name or "NIL"))
-    print("🎮 Shovel теперь является копией питомца!")
-    
-    return true
+    return clone
 end
 
--- Функция удаления Shovel и создания питомца НА ТОМ ЖЕ МЕСТЕ
-local function replaceWithNewPet()
-    print("\n🔄 === СОЗДАНИЕ ПИТОМЦА НА МЕСТЕ SHOVEL ===")
-    
-    if not scannedPetData then
-        print("❌ Питомец не отсканирован!")
-        return false
-    end
+-- ДИАГНОСТИЧЕСКАЯ ЗАМЕНА с подробным логированием
+local function diagnosticReplace()
+    print("\n🔬 === ДИАГНОСТИЧЕСКАЯ ЗАМЕНА ===")
     
     local shovel = findShovelInHands()
     if not shovel then
@@ -157,77 +186,125 @@ local function replaceWithNewPet()
     end
     
     print("✅ Найден Shovel: " .. shovel.Name)
+    print("📍 Character: " .. character.Name)
     
-    -- Шаг 1: Запоминаем родителя Shovel
-    local shovelParent = shovel.Parent
+    -- Создаем клон
+    local clone = createPerfectClone()
+    if not clone then
+        print("❌ Не удалось создать клон!")
+        return false
+    end
+    
+    print("🔧 Начинаю замену...")
+    
+    -- Шаг 1: Логируем состояние ДО замены
+    print("📊 СОСТОЯНИЕ ДО ЗАМЕНЫ:")
+    local toolsInCharacterBefore = {}
+    for _, obj in pairs(character:GetChildren()) do
+        if obj:IsA("Tool") then
+            table.insert(toolsInCharacterBefore, obj.Name)
+        end
+    end
+    print("   Tools в Character: " .. table.concat(toolsInCharacterBefore, ", "))
     
     -- Шаг 2: Удаляем Shovel
     print("🗑️ Удаляю Shovel...")
     shovel:Destroy()
     
-    wait(0.1)
+    -- Шаг 3: Пауза
+    wait(0.3)
     
-    -- Шаг 3: Создаем новый Tool питомца
-    print("🔧 Создаю Tool питомца...")
-    local newPetTool = Instance.new("Tool")
-    newPetTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    -- Шаг 4: Логируем состояние ПОСЛЕ удаления
+    print("📊 СОСТОЯНИЕ ПОСЛЕ УДАЛЕНИЯ:")
+    local toolsInCharacterAfterDelete = {}
+    for _, obj in pairs(character:GetChildren()) do
+        if obj:IsA("Tool") then
+            table.insert(toolsInCharacterAfterDelete, obj.Name)
+        end
+    end
+    print("   Tools в Character: " .. (table.concat(toolsInCharacterAfterDelete, ", ") ~= "" and table.concat(toolsInCharacterAfterDelete, ", ") or "ПУСТО"))
     
-    -- Шаг 4: Добавляем содержимое отсканированного питомца
-    print("📋 Добавляю содержимое питомца...")
-    for _, childData in pairs(scannedPetData.children) do
-        local newChild = childData.object:Clone()
-        newChild.Parent = newPetTool
-        print("   ✅ Добавлен: " .. newChild.Name .. " (" .. newChild.ClassName .. ")")
+    -- Шаг 5: Добавляем клон
+    print("🐉 Добавляю клон в Character...")
+    clone.Parent = character
+    
+    -- Шаг 6: Пауза
+    wait(0.2)
+    
+    -- Шаг 7: Логируем состояние ПОСЛЕ добавления
+    print("📊 СОСТОЯНИЕ ПОСЛЕ ДОБАВЛЕНИЯ:")
+    local toolsInCharacterAfterAdd = {}
+    for _, obj in pairs(character:GetChildren()) do
+        if obj:IsA("Tool") then
+            table.insert(toolsInCharacterAfterAdd, obj.Name)
+            print("   🎮 Tool в руках: " .. obj.Name)
+            print("      Parent: " .. (obj.Parent and obj.Parent.Name or "NIL"))
+            print("      ClassName: " .. obj.ClassName)
+        end
     end
     
-    -- Шаг 5: Копируем свойства
-    for property, value in pairs(scannedPetData.properties) do
-        pcall(function()
-            if property ~= "Name" and property ~= "Parent" then
-                newPetTool[property] = value
+    -- Шаг 8: Проверяем Backpack
+    local backpack = character:FindFirstChild("Backpack")
+    if backpack then
+        print("📦 ПРОВЕРКА BACKPACK:")
+        local toolsInBackpack = {}
+        for _, obj in pairs(backpack:GetChildren()) do
+            if obj:IsA("Tool") then
+                table.insert(toolsInBackpack, obj.Name)
+                print("   📦 Tool в Backpack: " .. obj.Name)
             end
-        end)
+        end
+        if #toolsInBackpack == 0 then
+            print("   📦 Backpack пуст")
+        end
+    else
+        print("❌ Backpack не найден!")
     end
     
-    -- Шаг 6: Помещаем НА ТО ЖЕ МЕСТО где был Shovel
-    newPetTool.Parent = shovelParent
+    print("🎯 === ИТОГ ДИАГНОСТИКИ ===")
+    if #toolsInCharacterAfterAdd > 0 then
+        print("✅ УСПЕХ: Клон добавлен в руки!")
+        print("📝 Имя: " .. toolsInCharacterAfterAdd[1])
+    else
+        print("❌ ПРОВАЛ: Клон НЕ появился в руках!")
+        print("🔍 Возможные причины:")
+        print("   1. Клон был удален системой")
+        print("   2. Клон попал в Backpack")
+        print("   3. Проблема с Handle")
+        print("   4. Проблема с Tool свойствами")
+    end
     
-    print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Питомец создан НА МЕСТЕ Shovel!")
-    print("📝 Имя: " .. newPetTool.Name)
-    print("📍 Местоположение: " .. (newPetTool.Parent and newPetTool.Parent.Name or "NIL"))
-    
-    return true
+    return #toolsInCharacterAfterAdd > 0
 end
 
 -- Создаем GUI
-local function createReplacerGUI()
+local function createDiagnosticGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "ShovelReplacerGUI"
+    screenGui.Name = "ToolCloneDiagnosticGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 400, 0, 300)
-    frame.Position = UDim2.new(0.5, -200, 0.5, -150)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.3, 0.1)
+    frame.Size = UDim2.new(0, 500, 0, 450)
+    frame.Position = UDim2.new(0.5, -250, 0.5, -225)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.6, 0.2)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
     title.BorderSizePixel = 0
-    title.Text = "🔄 SHOVEL REPLACER"
+    title.Text = "🔬 TOOL CLONE DIAGNOSTIC"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 50)
+    status.Size = UDim2.new(1, -20, 0, 100)
     status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "1. Возьмите питомца в руки\n2. Отсканируйте питомца\n3. Замените Shovel"
+    status.Text = "ДИАГНОСТИКА ПРОБЛЕМ С КЛОНИРОВАНИЕМ:\n1. Возьмите питомца в руки\n2. Глубоко отсканируйте структуру\n3. Возьмите Shovel\n4. Выполните диагностическую замену"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
@@ -236,94 +313,109 @@ local function createReplacerGUI()
     
     -- Кнопка сканирования
     local scanBtn = Instance.new("TextButton")
-    scanBtn.Size = UDim2.new(1, -20, 0, 40)
-    scanBtn.Position = UDim2.new(0, 10, 0, 110)
+    scanBtn.Size = UDim2.new(1, -20, 0, 50)
+    scanBtn.Position = UDim2.new(0, 10, 0, 160)
     scanBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
     scanBtn.BorderSizePixel = 0
-    scanBtn.Text = "🔍 Отсканировать питомца"
+    scanBtn.Text = "🔍 Глубокое сканирование"
     scanBtn.TextColor3 = Color3.new(1, 1, 1)
     scanBtn.TextScaled = true
     scanBtn.Font = Enum.Font.SourceSansBold
     scanBtn.Parent = frame
     
-    -- Кнопка замены на месте
+    -- Кнопка создания клона
+    local cloneBtn = Instance.new("TextButton")
+    cloneBtn.Size = UDim2.new(1, -20, 0, 50)
+    cloneBtn.Position = UDim2.new(0, 10, 0, 220)
+    cloneBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    cloneBtn.BorderSizePixel = 0
+    cloneBtn.Text = "🎭 Создать точный клон"
+    cloneBtn.TextColor3 = Color3.new(1, 1, 1)
+    cloneBtn.TextScaled = true
+    cloneBtn.Font = Enum.Font.SourceSansBold
+    cloneBtn.Visible = false
+    cloneBtn.Parent = frame
+    
+    -- Кнопка диагностической замены
     local replaceBtn = Instance.new("TextButton")
-    replaceBtn.Size = UDim2.new(1, -20, 0, 40)
-    replaceBtn.Position = UDim2.new(0, 10, 0, 160)
-    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    replaceBtn.Size = UDim2.new(1, -20, 0, 50)
+    replaceBtn.Position = UDim2.new(0, 10, 0, 280)
+    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0, 0.4)
     replaceBtn.BorderSizePixel = 0
-    replaceBtn.Text = "🔄 Заменить Shovel НА МЕСТЕ"
+    replaceBtn.Text = "🔬 ДИАГНОСТИЧЕСКАЯ ЗАМЕНА"
     replaceBtn.TextColor3 = Color3.new(1, 1, 1)
     replaceBtn.TextScaled = true
     replaceBtn.Font = Enum.Font.SourceSansBold
     replaceBtn.Visible = false
     replaceBtn.Parent = frame
     
-    -- Кнопка создания нового
-    local newBtn = Instance.new("TextButton")
-    newBtn.Size = UDim2.new(1, -20, 0, 40)
-    newBtn.Position = UDim2.new(0, 10, 0, 210)
-    newBtn.BackgroundColor3 = Color3.new(0.8, 0, 0.8)
-    newBtn.BorderSizePixel = 0
-    newBtn.Text = "🆕 Создать питомца НА МЕСТЕ"
-    newBtn.TextColor3 = Color3.new(1, 1, 1)
-    newBtn.TextScaled = true
-    newBtn.Font = Enum.Font.SourceSansBold
-    newBtn.Visible = false
-    newBtn.Parent = frame
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 40)
+    closeBtn.Position = UDim2.new(0, 10, 0, 340)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
     
     -- События
     scanBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔍 Сканирую питомца..."
+        status.Text = "🔍 Сканирую питомца...\nАнализирую структуру и свойства..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = scanPet()
+        local success = deepScanPet()
         
         if success then
-            status.Text = "✅ Питомец отсканирован!\nТеперь можно заменить Shovel."
+            status.Text = "✅ Сканирование завершено!\nСтруктура питомца сохранена.\nТеперь возьмите Shovel."
             status.TextColor3 = Color3.new(0, 1, 0)
+            cloneBtn.Visible = true
             replaceBtn.Visible = true
-            newBtn.Visible = true
         else
             status.Text = "❌ Ошибка сканирования!\nВозьмите питомца в руки."
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    replaceBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Заменяю Shovel на месте..."
+    cloneBtn.MouseButton1Click:Connect(function()
+        status.Text = "🎭 Создаю точный клон...\nПроверяю структуру..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = replaceShovelInPlace()
+        local clone = createPerfectClone()
         
-        if success then
-            status.Text = "✅ Shovel заменен НА МЕСТЕ!"
+        if clone then
+            status.Text = "✅ Точный клон создан!\nПроверьте консоль для деталей."
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Ошибка замены!"
+            status.Text = "❌ Ошибка создания клона!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    newBtn.MouseButton1Click:Connect(function()
-        status.Text = "🆕 Создаю питомца на месте..."
+    replaceBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔬 Диагностическая замена...\nПодробное логирование..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = replaceWithNewPet()
+        local success = diagnosticReplace()
         
         if success then
-            status.Text = "✅ Питомец создан НА МЕСТЕ!"
+            status.Text = "✅ ДИАГНОСТИКА ЗАВЕРШЕНА!\nКлон в руках! Проверьте консоль."
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Ошибка создания!"
+            status.Text = "❌ ДИАГНОСТИКА: Клон НЕ появился!\nПроверьте консоль для деталей."
             status.TextColor3 = Color3.new(1, 0, 0)
         end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
     end)
 end
 
 -- Запускаем
-createReplacerGUI()
-print("✅ ShovelReplacer готов!")
-print("🔍 1. Возьмите питомца в руки")
-print("🔍 2. Нажмите 'Отсканировать питомца'")
-print("🔄 3. Нажмите 'Заменить Shovel НА МЕСТЕ'")
+createDiagnosticGUI()
+print("✅ ToolCloneDiagnostic готов!")
+print("🔬 ЦЕЛЬ: Выяснить, почему клон питомца не появляется в руках")
+print("📊 Будет подробное логирование каждого шага")
