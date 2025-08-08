@@ -309,7 +309,37 @@ local function replaceToolInHand(analyzedToolData)
         return false
     end
     
-    print("🔄 Заменяю Tool в слоте 1 на копию питомца: " .. sourceTool.Name)
+    print("🔄 Заменяю Shovel в слоте 1 на копию питомца: " .. sourceTool.Name)
+    
+    -- НОВЫЙ ПОДХОД: Заменяем Tool, который сейчас в руке (если это Shovel)
+    local currentToolInHand = nil
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") then
+            currentToolInHand = tool
+            break
+        end
+    end
+    
+    if currentToolInHand and not (string.find(currentToolInHand.Name, "KG%]") and string.find(currentToolInHand.Name, "%[")) then
+        -- Это не питомец (вероятно Shovel), заменяем его
+        print("🎯 Заменяю Tool в руке: " .. currentToolInHand.Name)
+        
+        -- Создаем копию питомца
+        local petCopy = sourceTool:Clone()
+        petCopy.Name = "Dragonfly [6.36 KG] [Age 35]"
+        
+        -- Удаляем Tool из руки и заменяем на копию
+        currentToolInHand:Destroy()
+        wait(0.1)
+        petCopy.Parent = character
+        
+        -- Заменяем текст в слоте 1
+        replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
+        
+        print("✅ Tool в руке заменен на Dragonfly!")
+        print("✅ Текст в слоте 1 заменен!")
+        return true
+    end
     
     -- Новый подход: ищем Tool, который соответствует слоту 1 в Hotbar
     local function findToolInSlot1()
@@ -417,6 +447,207 @@ local function replaceToolInHand(analyzedToolData)
     
     print("✅ Shovel успешно заменен на копию питомца Dragonfly!")
     print("✅ Теперь у вас есть Dragonfly вместо Shovel!")
+    return true
+end
+
+-- НОВЫЙ ПОДХОД: Создаем Tool прямо в слоте 1 через замену текста + создание Tool
+local function replaceToolStructure(analyzedToolData)
+    local character = player.Character
+    if not character then
+        print("❌ Персонаж не найден")
+        return false
+    end
+    
+    -- Находим проанализированный питомец в руке
+    local sourceTool = findHandPetTool()
+    if not sourceTool then
+        print("❌ Проанализированный питомец в руке не найден")
+        return false
+    end
+    
+    print("🔄 === НОВЫЙ ПОДХОД: ПРЯМАЯ ЗАМЕНА СЛОТА 1 ===")
+    
+    -- Шаг 1: Заменяем текст в слоте 1
+    print("📝 Шаг 1: Заменяю текст в слоте 1...")
+    local textSuccess = replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
+    if textSuccess then
+        print("✅ Текст в слоте 1 заменен!")
+    else
+        print("⚠️ Не удалось заменить текст в слоте 1")
+    end
+    
+    -- Шаг 2: Создаем новый Tool с именем Dragonfly
+    print("🔧 Шаг 2: Создаю новый Tool Dragonfly...")
+    local newTool = sourceTool:Clone()
+    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    
+    -- Шаг 3: Удаляем все существующие Tool (кроме питомца в руке)
+    print("🗑️ Шаг 3: Очищаю инвентарь от старых Tool...")
+    local backpack = character:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                print("   🗑️ Удаляю: " .. tool.Name)
+                tool:Destroy()
+            end
+        end
+    end
+    
+    -- Удаляем Tool из рук (кроме питомца)
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and not (string.find(tool.Name, "KG%]") and string.find(tool.Name, "%[")) then
+            print("   🗑️ Удаляю из рук: " .. tool.Name)
+            tool:Destroy()
+        end
+    end
+    
+    wait(0.2)
+    
+    -- Шаг 4: Добавляем новый Tool в Backpack
+    print("📦 Шаг 4: Добавляю Dragonfly в Backpack...")
+    if not backpack then
+        backpack = Instance.new("Backpack")
+        backpack.Parent = character
+        print("✅ Создан новый Backpack")
+    end
+    
+    newTool.Parent = backpack
+    print("✅ Dragonfly добавлен в Backpack!")
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("📝 Текст в слоте 1: Dragonfly [6.36 KG] [Age 35]")
+    print("🔧 Tool в Backpack: " .. newTool.Name)
+    print("📊 Структура: " .. analyzedToolData.totalChildren .. " объектов")
+    
+    return true
+end
+
+-- СТАРЫЙ ПОДХОД (оставляем как резерв)
+local function replaceToolStructureOLD(analyzedToolData)
+    local character = player.Character
+    if not character then
+        print("❌ Персонаж не найден")
+        return false
+    end
+    
+    -- Находим проанализированный питомец в руке
+    local sourceTool = findHandPetTool()
+    if not sourceTool then
+        print("❌ Проанализированный питомец в руке не найден")
+        return false
+    end
+    
+    print("🔄 Ищу Shovel для замены структуры...")
+    
+    -- Ищем Shovel в руке или в Backpack
+    local targetTool = nil
+    
+    -- Сначала проверяем руки
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            targetTool = tool
+            print("✅ Найден Shovel в руке: " .. tool.Name)
+            break
+        end
+    end
+    
+    -- Если не в руке, ищем в Backpack
+    if not targetTool then
+        local backpack = character:FindFirstChild("Backpack")
+        if backpack then
+            for _, tool in pairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+                    targetTool = tool
+                    print("✅ Найден Shovel в Backpack: " .. tool.Name)
+                    break
+                end
+            end
+        end
+    end
+    
+    if not targetTool then
+        print("❌ Shovel не найден для замены!")
+        
+        -- ДИАГНОСТИКА: Показываем что есть в инвентаре
+        print("🔍 === ДИАГНОСТИКА ИНВЕНТАРЯ ===")
+        print("📦 Содержимое Character:")
+        for _, tool in pairs(character:GetChildren()) do
+            if tool:IsA("Tool") then
+                print("   🔧 В руке: " .. tool.Name)
+            end
+        end
+        
+        local backpack = character:FindFirstChild("Backpack")
+        if backpack then
+            print("📦 Содержимое Backpack:")
+            for _, tool in pairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") then
+                    print("   🔧 В Backpack: " .. tool.Name)
+                end
+            end
+            
+            if #backpack:GetChildren() == 0 then
+                print("   ⚠️ Backpack пуст!")
+            end
+        else
+            print("❌ Backpack не найден!")
+        end
+        
+        -- Попробуем найти любой не-питомец Tool
+        print("🔍 Ищу любой не-питомец Tool...")
+        for _, tool in pairs(character:GetChildren()) do
+            if tool:IsA("Tool") and not (string.find(tool.Name, "KG%]") and string.find(tool.Name, "%[")) then
+                print("   🎯 Найден кандидат в руке: " .. tool.Name)
+                targetTool = tool
+                break
+            end
+        end
+        
+        if not targetTool and backpack then
+            for _, tool in pairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") and not (string.find(tool.Name, "KG%]") and string.find(tool.Name, "%[")) then
+                    print("   🎯 Найден кандидат в Backpack: " .. tool.Name)
+                    targetTool = tool
+                    break
+                end
+            end
+        end
+        
+        if not targetTool then
+            print("❌ Никаких подходящих Tool не найдено!")
+            return false
+        else
+            print("✅ Используем Tool: " .. targetTool.Name)
+        end
+    end
+    
+    print("🔄 Заменяю структуру: " .. targetTool.Name .. " → " .. sourceTool.Name)
+    
+    -- Удаляем все содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(targetTool:GetChildren()) do
+        child:Destroy()
+        print("   🗑️ Удален: " .. child.Name)
+    end
+    
+    wait(0.1)
+    
+    -- Копируем все содержимое питомца в Shovel
+    print("📋 Копирую содержимое питомца в Shovel...")
+    for _, child in pairs(sourceTool:GetChildren()) do
+        local childCopy = child:Clone()
+        childCopy.Parent = targetTool
+        print("   ✅ Скопирован: " .. child.Name .. " (" .. child.ClassName .. ")")
+    end
+    
+    -- Меняем имя Tool на Dragonfly
+    local oldName = targetTool.Name
+    targetTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    
+    print("✅ Структура заменена успешно!")
+    print("📝 " .. oldName .. " → " .. targetTool.Name)
+    print("📊 Скопировано объектов: " .. analyzedToolData.totalChildren)
+    
     return true
 end
 
@@ -539,14 +770,18 @@ local function createControlGUI()
     
     replaceToolButton.MouseButton1Click:Connect(function()
         if analyzedToolData then
-            local success = replaceToolInHand(analyzedToolData)
+            statusLabel.Text = "🔄 Выполняю замену структуры..."
+            statusLabel.TextColor3 = Color3.new(1, 1, 0)
+            
+            -- НОВЫЙ ПОДХОД: Заменяем структуру существующего Tool
+            local success = replaceToolStructure(analyzedToolData)
             if success then
                 -- Также заменяем текст
                 replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-                statusLabel.Text = "✅ Tool и текст успешно заменены!"
+                statusLabel.Text = "✅ Структура Tool заменена на питомца!"
                 statusLabel.TextColor3 = Color3.new(0, 1, 0)
             else
-                statusLabel.Text = "❌ Не удалось заменить Tool"
+                statusLabel.Text = "❌ Не удалось заменить структуру Tool"
                 statusLabel.TextColor3 = Color3.new(1, 0, 0)
             end
         end
