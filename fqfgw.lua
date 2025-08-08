@@ -296,9 +296,10 @@ local function replaceShovelWithAnimation()
     
     wait(0.1)
     
-    -- Шаг 3: Добавляем содержимое питомца
+    -- Шаг 3: Добавляем содержимое питомца БЕЗ изменения CFrame
     print("📋 Добавляю содержимое питомца...")
     local addedParts = {}
+    local shovelHandle = shovel:FindFirstChild("Handle")
     
     for _, childData in pairs(scannedPetData.children) do
         local newChild = childData.object:Clone()
@@ -306,9 +307,15 @@ local function replaceShovelWithAnimation()
         
         if newChild:IsA("BasePart") then
             addedParts[newChild.Name] = newChild
-            -- Устанавливаем начальный CFrame
-            if scannedPetData.staticCFrames[newChild.Name] then
-                newChild.CFrame = scannedPetData.staticCFrames[newChild.Name]
+            
+            -- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: НЕ меняем CFrame, используем относительное позиционирование
+            if newChild.Name ~= "Handle" and shovelHandle then
+                -- Создаем WeldConstraint для прикрепления к Handle Shovel
+                local weld = Instance.new("WeldConstraint")
+                weld.Part0 = shovelHandle
+                weld.Part1 = newChild
+                weld.Parent = shovel
+                print("   🔗 Прикреплен к Handle: " .. newChild.Name)
             end
         end
         
@@ -361,42 +368,9 @@ local function replaceShovelWithAnimation()
         end)
     end
     
-    -- Шаг 6: ВОСПРОИЗВОДИМ АНИМАЦИЮ
-    if scannedPetData.animationFrames and next(scannedPetData.animationFrames) then
-        print("🎬 Запускаю воспроизведение анимации...")
-        
-        local animStartTime = tick()
-        local animConnection
-        
-        animConnection = RunService.Heartbeat:Connect(function()
-            local elapsed = tick() - animStartTime
-            
-            -- Циклически воспроизводим анимацию (5 секунд цикл)
-            local cycleTime = elapsed % 5
-            
-            for partName, frames in pairs(scannedPetData.animationFrames) do
-                local part = addedParts[partName]
-                if part and #frames > 0 then
-                    -- Находим ближайший кадр по времени
-                    local bestFrame = frames[1]
-                    local bestTimeDiff = math.abs(cycleTime - bestFrame.time)
-                    
-                    for _, frame in ipairs(frames) do
-                        local timeDiff = math.abs(cycleTime - frame.time)
-                        if timeDiff < bestTimeDiff then
-                            bestTimeDiff = timeDiff
-                            bestFrame = frame
-                        end
-                    end
-                    
-                    -- Применяем CFrame из кадра
-                    part.CFrame = bestFrame.cframe
-                end
-            end
-        end)
-        
-        print("✅ Анимация запущена в цикле!")
-    end
+    -- Шаг 6: ПРОПУСКАЕМ CFrame анимацию (это вызывает подкидывание игрока)
+    print("🎬 Пропускаю CFrame анимацию для избежания подкидывания игрока...")
+    print("💡 Питомец будет статичным, но не будет подкидывать игрока")
     
     print("🎯 === РЕЗУЛЬТАТ ===")
     print("✅ Shovel заменен на питомца с анимацией!")
@@ -482,22 +456,30 @@ local function createAdvancedReplacerGUI()
     scanBtn.MouseButton1Click:Connect(function()
         status.Text = "🎬 Сканирую питомца с записью анимации...\nДержите питомца в руках 5 секунд!"
         status.TextColor3 = Color3.new(1, 1, 0)
-        scanBtn.Enabled = false
+        scanBtn.Text = "⏳ Сканирование..."
         
         local success = scanPetWithAnimation()
         
-        wait(6) -- Ждем завершения записи
-        
-        if success and scannedPetData then
-            status.Text = "✅ Питомец отсканирован с анимацией!\nТеперь возьмите Shovel и замените."
-            status.TextColor3 = Color3.new(0, 1, 0)
-            replaceBtn.Visible = true
+        if success then
+            -- Ждем завершения записи через spawn
+            spawn(function()
+                wait(6)
+                if scannedPetData then
+                    status.Text = "✅ Питомец отсканирован с анимацией!\nТеперь возьмите Shovel и замените."
+                    status.TextColor3 = Color3.new(0, 1, 0)
+                    replaceBtn.Visible = true
+                    scanBtn.Text = "🎬 Сканировать с записью анимации"
+                else
+                    status.Text = "❌ Ошибка сканирования!\nВозьмите питомца в руки."
+                    status.TextColor3 = Color3.new(1, 0, 0)
+                    scanBtn.Text = "🎬 Сканировать с записью анимации"
+                end
+            end)
         else
             status.Text = "❌ Ошибка сканирования!\nВозьмите питомца в руки."
             status.TextColor3 = Color3.new(1, 0, 0)
+            scanBtn.Text = "🎬 Сканировать с записью анимации"
         end
-        
-        scanBtn.Enabled = true
     end)
     
     replaceBtn.MouseButton1Click:Connect(function()
