@@ -1,362 +1,329 @@
--- DragonflyTransfer.lua
--- Автоматический перенос Dragonfly из расширенного инвентаря в основной
+-- PerfectShovelReplacer.lua
+-- РАДИКАЛЬНЫЙ ПОДХОД: Полная замена Tool на клонированный питомец
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-
 local player = Players.LocalPlayer
 
--- Создаем компактный GUI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DragonflyTransfer"
-screenGui.Parent = player:WaitForChild("PlayerGui")
+print("=== PERFECT SHOVEL REPLACER ===")
 
--- Главный фрейм
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0.8, 0, 0.4, 0)
-mainFrame.Position = UDim2.new(0.1, 0, 0.3, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
+-- Глобальная переменная для хранения клонированного питомца
+local clonedPetTool = nil
 
--- Заголовок
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.2, 0)
-titleLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-titleLabel.BorderSizePixel = 0
-titleLabel.Text = "🐉 Dragonfly Transfer System"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextScaled = true
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.Parent = mainFrame
-
--- Кнопка переноса
-local transferButton = Instance.new("TextButton")
-transferButton.Size = UDim2.new(0.8, 0, 0.3, 0)
-transferButton.Position = UDim2.new(0.1, 0, 0.3, 0)
-transferButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-transferButton.BorderSizePixel = 0
-transferButton.Text = "🔄 Перенести Dragonfly в основной инвентарь"
-transferButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-transferButton.TextScaled = true
-transferButton.Font = Enum.Font.SourceSansBold
-transferButton.Parent = mainFrame
-
--- Статус лейбл
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, 0, 0.5, 0)
-statusLabel.Position = UDim2.new(0, 0, 0.5, 0)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Готов к переносу Dragonfly\nИз расширенного инвентаря в основной (слот 1 или 2)"
-statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.SourceSans
-statusLabel.TextWrapped = true
-statusLabel.Parent = mainFrame
-
--- Функция поиска основного инвентаря (Hotbar)
-local function findMainInventory()
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then 
-        print("❌ PlayerGui не найден")
-        return nil 
-    end
+-- Функция поиска Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then 
-        print("❌ BackpackGui не найден")
-        return nil 
-    end
-    
-    print("📱 BackpackGui найден, ищу Hotbar...")
-    
-    -- Ищем Hotbar в BackpackGui (точный путь из анализа)
-    local hotbar = backpackGui:FindFirstChild("Hotbar")
-    if hotbar then
-        print("✅ Найден основной инвентарь (Hotbar) с 10 слотами")
-        return hotbar
-    end
-    
-    print("❌ Hotbar не найден в BackpackGui")
-    return nil
-end
-
--- Функция поиска расширенного инвентаря с Dragonfly
-local function findDragonflyInExtended()
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then 
-        print("❌ PlayerGui не найден для поиска Dragonfly")
-        return nil 
-    end
-    
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then 
-        print("❌ BackpackGui не найден для поиска Dragonfly")
-        return nil 
-    end
-    
-    -- Ищем CategoryFrame в расширенном инвентаре (точный путь из анализа)
-    local inventory = backpackGui:FindFirstChild("Inventory")
-    if not inventory then
-        print("❌ Inventory не найден в BackpackGui")
-        return nil
-    end
-    
-    local categoryFrame = inventory:FindFirstChild("CategoryFrame")
-    if not categoryFrame then
-        print("❌ CategoryFrame не найден в Inventory")
-        return nil
-    end
-    
-    print("🔍 Ищу Dragonfly в CategoryFrame...")
-    
-    -- Ищем кнопку с Dragonfly в CategoryFrame
-    for _, child in pairs(categoryFrame:GetChildren()) do
-        if child:IsA("TextButton") then
-            -- Проверяем содержимое кнопки
-            for _, desc in pairs(child:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Text:lower():find("dragonfly") then
-                    print("✅ Найден Dragonfly в расширенном инвентаре:", desc.Text)
-                    print("   📍 Кнопка:", child.Name, "в CategoryFrame")
-                    return child
-                end
-            end
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
         end
     end
-    
-    print("❌ Dragonfly не найден в CategoryFrame")
     return nil
 end
 
--- Функция поиска пустого слота в основном инвентаре
-local function findEmptySlotInMain(hotbar)
-    if not hotbar then 
-        print("❌ Hotbar не передан")
-        return nil 
-    end
+-- Функция поиска питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    print("🔍 Ищу слоты для замены в Hotbar...")
-    
-    -- Ищем слоты 1 и 2 (обычно содержат предметы, не питомцев)
-    for _, child in pairs(hotbar:GetChildren()) do
-        if child:IsA("TextButton") and (child.Name == "1" or child.Name == "2") then
-            -- Проверяем содержимое слота
-            local itemText = ""
-            local hasPet = false
-            
-            for _, desc in pairs(child:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Text ~= "" then
-                    itemText = desc.Text
-                    -- Проверяем, это питомец или предмет
-                    if desc.Text:lower():find("kg") and desc.Text:lower():find("age") then
-                        hasPet = true
-                    end
-                    break
-                end
-            end
-            
-            if not hasPet and itemText ~= "" then
-                print("✅ Найден слот с предметом для замены:", child.Name, "(" .. itemText .. ")")
-                return child
-            end
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
         end
     end
-    
-    print("❌ Подходящие слоты (1 или 2) не найдены")
     return nil
 end
 
--- Функция симуляции drag-and-drop
-local function simulateDragAndDrop(source, target)
-    if not source or not target then return false end
+-- НОВЫЙ ПОДХОД: Полное клонирование питомца Tool
+local function clonePetTool()
+    print("\n📋 === КЛОНИРОВАНИЕ ПИТОМЦА TOOL ===")
     
-    print("🖱️ Симулирую drag-and-drop:")
-    print("   📤 Источник:", source.Name, "в", source.Parent.Name)
-    print("   📥 Цель:", target.Name, "в", target.Parent.Name)
-    
-    -- Получаем позиции элементов
-    local sourcePos = source.AbsolutePosition
-    local sourceSize = source.AbsoluteSize
-    local targetPos = target.AbsolutePosition
-    local targetSize = target.AbsoluteSize
-    
-    -- Вычисляем центры элементов
-    local sourceCenterX = sourcePos.X + sourceSize.X / 2
-    local sourceCenterY = sourcePos.Y + sourceSize.Y / 2
-    local targetCenterX = targetPos.X + targetSize.X / 2
-    local targetCenterY = targetPos.Y + targetSize.Y / 2
-    
-    print("   📍 Источник центр:", sourceCenterX, sourceCenterY)
-    print("   📍 Цель центр:", targetCenterX, targetCenterY)
-    
-    -- Симулируем drag-and-drop
-    local success, error = pcall(function()
-        -- Начинаем перетаскивание
-        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 0, true, game, 1)
-        wait(0.1)
-        
-        -- Перемещаем к цели
-        VirtualInputManager:SendMouseMoveEvent(targetCenterX, targetCenterY, game)
-        wait(0.2)
-        
-        -- Отпускаем
-        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, false, game, 1)
-        wait(0.1)
-    end)
-    
-    if success then
-        print("✅ Drag-and-drop симулирован успешно")
-        return true
-    else
-        print("⚠️ Ошибка симуляции drag-and-drop:", error)
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
         return false
     end
-end
-
--- Функция альтернативного метода через клики
-local function alternativeTransferMethod(dragonflyButton, targetSlot)
-    print("🎯 Пробую альтернативный метод через клики...")
     
-    -- Метод 1: Двойной клик по Dragonfly
-    local success1, error1 = pcall(function()
-        local pos = dragonflyButton.AbsolutePosition
-        local size = dragonflyButton.AbsoluteSize
-        local centerX = pos.X + size.X / 2
-        local centerY = pos.Y + size.Y / 2
-        
-        -- Двойной клик
-        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
-        wait(0.1)
-        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
-    end)
+    print("✅ Найден питомец: " .. pet.Name)
     
-    if success1 then
-        print("✅ Двойной клик по Dragonfly выполнен")
-        return true
-    end
+    -- Создаем ПОЛНУЮ копию Tool питомца
+    clonedPetTool = pet:Clone()
+    clonedPetTool.Name = "Dragonfly [6.36 KG] [Age 35]"
     
-    -- Метод 2: Правый клик + левый клик на цель
-    local success2, error2 = pcall(function()
-        local sourcePos = dragonflyButton.AbsolutePosition
-        local sourceSize = dragonflyButton.AbsoluteSize
-        local sourceCenterX = sourcePos.X + sourceSize.X / 2
-        local sourceCenterY = sourcePos.Y + sourceSize.Y / 2
-        
-        -- Правый клик на источник
-        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 1, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(sourceCenterX, sourceCenterY, 1, false, game, 1)
-        wait(0.2)
-        
-        -- Левый клик на цель
-        local targetPos = targetSlot.AbsolutePosition
-        local targetSize = targetSlot.AbsoluteSize
-        local targetCenterX = targetPos.X + targetSize.X / 2
-        local targetCenterY = targetPos.Y + targetSize.Y / 2
-        
-        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(targetCenterX, targetCenterY, 0, false, game, 1)
-    end)
+    print("✅ Создан клон питомца: " .. clonedPetTool.Name)
+    print("📊 Структура клона:")
     
-    if success2 then
-        print("✅ Правый клик + левый клик выполнен")
-        return true
-    end
+    -- Анализируем структуру клона
+    local partCount = 0
+    local meshCount = 0
+    local scriptCount = 0
     
-    return false
-end
-
--- Функция проверки успешности переноса
-local function checkTransferSuccess()
-    wait(1)
-    
-    local hotbar = findMainInventory()
-    if not hotbar then return false end
-    
-    -- Проверяем слоты 1 и 2 на наличие Dragonfly
-    for _, child in pairs(hotbar:GetChildren()) do
-        if child:IsA("TextButton") and (child.Name == "1" or child.Name == "2") then
-            for _, desc in pairs(child:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Text:lower():find("dragonfly") then
-                    print("🎉 Dragonfly успешно перенесен в слот:", child.Name)
-                    return true
-                end
-            end
+    for _, obj in pairs(clonedPetTool:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            partCount = partCount + 1
+            print("   📦 Part: " .. obj.Name)
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            print("   🎨 Mesh: " .. obj.Name)
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            scriptCount = scriptCount + 1
+            print("   📜 Script: " .. obj.Name)
+        elseif obj:IsA("Motor6D") then
+            print("   🔗 Motor6D: " .. obj.Name)
+        elseif obj:IsA("Weld") then
+            print("   🔗 Weld: " .. obj.Name)
         end
     end
     
-    return false
+    print(string.format("📊 Итого: %d частей, %d мешей, %d скриптов", partCount, meshCount, scriptCount))
+    print("✅ Клонирование завершено!")
+    
+    return true
 end
 
--- Основная функция переноса
-local function transferDragonfly()
-    statusLabel.Text = "🔍 Поиск инвентарей..."
-    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+-- РАДИКАЛЬНАЯ ЗАМЕНА: Удаляем Shovel, добавляем клон питомца
+local function perfectReplace()
+    print("\n🔄 === ИДЕАЛЬНАЯ ЗАМЕНА SHOVEL ===")
     
-    -- Шаг 1: Найти основной инвентарь
-    local hotbar = findMainInventory()
-    if not hotbar then
-        statusLabel.Text = "❌ Основной инвентарь не найден"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
+    if not clonedPetTool then
+        print("❌ Клон питомца не создан! Сначала клонируйте питомца.")
+        return false
     end
     
-    -- Шаг 2: Найти Dragonfly в расширенном инвентаре
-    statusLabel.Text = "🐉 Поиск Dragonfly..."
-    local dragonflyButton = findDragonflyInExtended()
-    if not dragonflyButton then
-        statusLabel.Text = "❌ Dragonfly не найден в расширенном инвентаре"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
     end
     
-    -- Шаг 3: Найти пустой слот в основном инвентаре
-    statusLabel.Text = "📦 Поиск пустого слота..."
-    local emptySlot = findEmptySlotInMain(hotbar)
-    if not emptySlot then
-        statusLabel.Text = "❌ Пустые слоты не найдены"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
     end
     
-    -- Шаг 4: Выполнить перенос
-    statusLabel.Text = "🔄 Переношу Dragonfly..."
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Выполняю идеальную замену...")
     
-    -- Пробуем drag-and-drop
-    local dragSuccess = simulateDragAndDrop(dragonflyButton, emptySlot)
+    -- Шаг 1: Удаляем Shovel полностью
+    print("🗑️ Удаляю Shovel...")
+    shovel:Destroy()
     
-    if not dragSuccess then
-        -- Пробуем альтернативные методы
-        statusLabel.Text = "🎯 Пробую альтернативные методы..."
-        alternativeTransferMethod(dragonflyButton, emptySlot)
-    end
+    -- Шаг 2: Небольшая пауза для стабилизации
+    wait(0.1)
     
-    -- Шаг 5: Проверить результат
-    statusLabel.Text = "✅ Проверяю результат..."
+    -- Шаг 3: Добавляем клон питомца в руки
+    print("🐉 Добавляю клон питомца в руки...")
+    clonedPetTool.Parent = character
     
-    if checkTransferSuccess() then
-        statusLabel.Text = "🎉 Dragonfly успешно перенесен в основной инвентарь!\nТеперь его можно выбрать в руку."
-        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-    else
-        statusLabel.Text = "❌ Перенос не удался\nПопробуйте перенести Dragonfly вручную"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-    end
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен на клон питомца!")
+    print("📝 Имя: " .. clonedPetTool.Name)
+    print("📍 Местоположение: " .. (clonedPetTool.Parent and clonedPetTool.Parent.Name or "NIL"))
+    print("🎮 В руках должен быть ТОЧНЫЙ клон питомца!")
+    print("🎭 Со всеми анимациями и правильным положением!")
+    
+    return true
 end
 
--- Обработчик кнопки
-transferButton.MouseButton1Click:Connect(function()
-    transferButton.Text = "⏳ Переношу..."
-    transferButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
+-- АЛЬТЕРНАТИВНЫЙ ПОДХОД: Замена через Backpack
+local function replaceViaBackpack()
+    print("\n🔄 === ЗАМЕНА ЧЕРЕЗ BACKPACK ===")
     
-    spawn(function()
-        transferDragonfly()
+    if not clonedPetTool then
+        print("❌ Клон питомца не создан!")
+        return false
+    end
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    local backpack = character:FindFirstChild("Backpack")
+    if not backpack then
+        backpack = Instance.new("Backpack")
+        backpack.Parent = character
+        print("✅ Создан Backpack")
+    end
+    
+    -- Удаляем все Tool из Backpack и Character
+    print("🗑️ Очищаю инвентарь...")
+    
+    for _, tool in pairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            print("   🗑️ Удаляю из Backpack: " .. tool.Name)
+            tool:Destroy()
+        end
+    end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") then
+            print("   🗑️ Удаляю из рук: " .. tool.Name)
+            tool:Destroy()
+        end
+    end
+    
+    wait(0.2)
+    
+    -- Добавляем клон питомца в Backpack
+    print("🐉 Добавляю клон в Backpack...")
+    clonedPetTool.Parent = backpack
+    
+    wait(0.1)
+    
+    -- Перемещаем в руки
+    print("🔄 Перемещаю в руки...")
+    clonedPetTool.Parent = character
+    
+    print("✅ Замена через Backpack завершена!")
+    return true
+end
+
+-- Создаем GUI
+local function createPerfectReplacerGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PerfectShovelReplacerGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 450, 0, 400)
+    frame.Position = UDim2.new(0.5, -225, 0.5, -200)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 PERFECT SHOVEL REPLACER"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 80)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "РАДИКАЛЬНЫЙ ПОДХОД:\n1. Возьмите питомца в руки\n2. Клонируйте питомца\n3. Возьмите Shovel\n4. Выполните идеальную замену"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
+    
+    -- Кнопка клонирования
+    local cloneBtn = Instance.new("TextButton")
+    cloneBtn.Size = UDim2.new(1, -20, 0, 50)
+    cloneBtn.Position = UDim2.new(0, 10, 0, 140)
+    cloneBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    cloneBtn.BorderSizePixel = 0
+    cloneBtn.Text = "📋 Клонировать питомца Tool"
+    cloneBtn.TextColor3 = Color3.new(1, 1, 1)
+    cloneBtn.TextScaled = true
+    cloneBtn.Font = Enum.Font.SourceSansBold
+    cloneBtn.Parent = frame
+    
+    -- Кнопка идеальной замены
+    local perfectBtn = Instance.new("TextButton")
+    perfectBtn.Size = UDim2.new(1, -20, 0, 50)
+    perfectBtn.Position = UDim2.new(0, 10, 0, 200)
+    perfectBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    perfectBtn.BorderSizePixel = 0
+    perfectBtn.Text = "🎯 ИДЕАЛЬНАЯ ЗАМЕНА"
+    perfectBtn.TextColor3 = Color3.new(1, 1, 1)
+    perfectBtn.TextScaled = true
+    perfectBtn.Font = Enum.Font.SourceSansBold
+    perfectBtn.Visible = false
+    perfectBtn.Parent = frame
+    
+    -- Кнопка замены через Backpack
+    local backpackBtn = Instance.new("TextButton")
+    backpackBtn.Size = UDim2.new(1, -20, 0, 50)
+    backpackBtn.Position = UDim2.new(0, 10, 0, 260)
+    backpackBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    backpackBtn.BorderSizePixel = 0
+    backpackBtn.Text = "🔄 Замена через Backpack"
+    backpackBtn.TextColor3 = Color3.new(1, 1, 1)
+    backpackBtn.TextScaled = true
+    backpackBtn.Font = Enum.Font.SourceSansBold
+    backpackBtn.Visible = false
+    backpackBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 40)
+    closeBtn.Position = UDim2.new(0, 10, 0, 320)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
+    
+    -- События
+    cloneBtn.MouseButton1Click:Connect(function()
+        status.Text = "📋 Клонирую питомца Tool...\nАнализирую структуру..."
+        status.TextColor3 = Color3.new(1, 1, 0)
         
-        wait(2)
-        transferButton.Text = "🔄 Перенести Dragonfly в основной инвентарь"
-        transferButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+        local success = clonePetTool()
+        
+        if success then
+            status.Text = "✅ Питомец клонирован!\nТеперь возьмите Shovel и выполните замену."
+            status.TextColor3 = Color3.new(0, 1, 0)
+            perfectBtn.Visible = true
+            backpackBtn.Visible = true
+        else
+            status.Text = "❌ Ошибка клонирования!\nВозьмите питомца в руки."
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
     end)
-end)
+    
+    perfectBtn.MouseButton1Click:Connect(function()
+        status.Text = "🎯 Выполняю идеальную замену...\nУдаляю Shovel, добавляю клон питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = perfectReplace()
+        
+        if success then
+            status.Text = "✅ ИДЕАЛЬНАЯ ЗАМЕНА ЗАВЕРШЕНА!\nВ руках точный клон питомца!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки."
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    backpackBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Замена через Backpack...\nОчищаю инвентарь и добавляю клон..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = replaceViaBackpack()
+        
+        if success then
+            status.Text = "✅ Замена через Backpack завершена!\nКлон питомца в руках!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены через Backpack!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+end
 
-print("✅ DragonflyTransfer загружен! Перенесет Dragonfly в основной инвентарь.")
+-- Запускаем
+createPerfectReplacerGUI()
+print("✅ PerfectShovelReplacer готов!")
+print("🎯 РАДИКАЛЬНЫЙ ПОДХОД:")
+print("   📋 1. Клонируем ВЕСЬ Tool питомца")
+print("   🗑️ 2. Полностью удаляем Shovel")
+print("   🐉 3. Добавляем клон питомца в руки")
+print("🎮 Результат: ТОЧНАЯ копия питомца вместо Shovel!")
