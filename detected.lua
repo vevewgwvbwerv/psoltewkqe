@@ -1,651 +1,302 @@
--- 🥚 EGG INTERCEPTOR v1.0 - ЧАСТЬ 1
--- Перехватывает временную модель из яйца и заменяет на Dragonfly
--- Сохраняет ВСЕ эффекты взрыва и роста, НЕ копирует idle анимацию
+-- DragonflySwitcher.lua
+-- Скрипт для автоматического перемещения Dragonfly из BackpackGui в handle
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
-print("🥚 === EGG INTERCEPTOR v1.0 - ЧАСТЬ 1 ===")
-print("=" .. string.rep("=", 60))
+-- Создаем компактный GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DragonflySwitcher"
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- 📊 КОНФИГУРАЦИЯ
-local CONFIG = {
-    SEARCH_RADIUS = 100,  -- Радиус поиска Dragonfly рядом с игроком
-    MONITOR_DURATION = 30, -- Время мониторинга после EggExplode
-    DEBUG_MODE = true     -- Подробные логи
-}
+-- Главный фрейм (компактный)
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0.8, 0, 0.3, 0)
+mainFrame.Position = UDim2.new(0.1, 0, 0.35, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
 
--- 🎯 СОСТОЯНИЕ ПЕРЕХВАТЧИКА
-local InterceptorState = {
-    isActive = false,
-    eggExplodeDetected = false,
-    dragonflyFound = false,
-    dragonflyModel = nil,
-    originalPetModel = nil,
-    interceptComplete = false
-}
+-- Заголовок
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
+titleLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+titleLabel.BorderSizePixel = 0
+titleLabel.Text = "🐉 Dragonfly Switcher"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextScaled = true
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.Parent = mainFrame
 
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
-end
+-- Кнопка переключения
+local switchButton = Instance.new("TextButton")
+switchButton.Size = UDim2.new(0.8, 0, 0.4, 0)
+switchButton.Position = UDim2.new(0.1, 0, 0.4, 0)
+switchButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+switchButton.BorderSizePixel = 0
+switchButton.Text = "🔄 Переместить Dragonfly в руку"
+switchButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+switchButton.TextScaled = true
+switchButton.Font = Enum.Font.SourceSansBold
+switchButton.Parent = mainFrame
 
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
+-- Статус лейбл
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0.3, 0)
+statusLabel.Position = UDim2.new(0, 0, 0.7, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Готов к переключению"
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.Parent = mainFrame
 
-local playerPos = hrp.Position
-print("📍 Позиция игрока:", playerPos)
-print("🎯 Радиус поиска Dragonfly:", CONFIG.SEARCH_RADIUS)
-
--- 🐉 ФУНКЦИЯ ПРОВЕРКИ ЧТО МОДЕЛЬ - DRAGONFLY
--- Основана на диагностике: 0 MeshPart, но есть BasePart с характерными именами
-local function checkIfDragonfly(model)
-    if not model or not model:IsA("Model") then
-        return false
+-- Функция поиска Dragonfly в BackpackGui
+local function findDragonflyInGui()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then 
+        print("❌ PlayerGui не найден")
+        return nil 
     end
     
-    local meshPartCount = 0
-    local basePartCount = 0
-    local hasDragonflyParts = false
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
-            meshPartCount = meshPartCount + 1
-        elseif obj:IsA("BasePart") and obj.Name ~= "Handle" then
-            basePartCount = basePartCount + 1
-            
-            -- Проверяем характерные части Dragonfly
-            local partName = obj.Name:lower()
-            if partName:find("wing") or partName:find("tail") or 
-               partName:find("leg") or partName:find("body") or 
-               partName:find("head") or partName:find("bug") or
-               partName:find("dragon") then
-                hasDragonflyParts = true
-            end
-        end
-    end
-    
-    -- Dragonfly: 0 MeshPart, но есть BasePart с характерными именами
-    local isDragonfly = (meshPartCount == 0) and (basePartCount > 0) and hasDragonflyParts
-    
-    if CONFIG.DEBUG_MODE and isDragonfly then
-        print("🐉 Подтверждение Dragonfly:")
-        print("   MeshPart: " .. meshPartCount)
-        print("   BasePart: " .. basePartCount) 
-        print("   Характерные части: " .. tostring(hasDragonflyParts))
-    end
-    
-    return isDragonfly
-end
-
--- 🔍 ФУНКЦИЯ ПОИСКА DRAGONFLY РЯДОМ С ИГРОКОМ
--- Основана на PetScaler_v2.9.lua с учетом особенностей Dragonfly
-local function findNearbyDragonfly()
-    if CONFIG.DEBUG_MODE then
-        print("🔍 Поиск Dragonfly рядом с игроком...")
-    end
-    
-    local foundDragonflyModels = {}
-    
-    -- Поиск UUID моделей (как в PetScaler_v2.9.lua)
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    -- Проверяем что это Dragonfly (0 MeshPart, но есть BasePart)
-                    local isDragonfly = checkIfDragonfly(obj)
-                    if isDragonfly then
-                        table.insert(foundDragonflyModels, {
-                            model = obj,
-                            distance = distance
-                        })
-                        if CONFIG.DEBUG_MODE then
-                            print("✅ Найден Dragonfly:", obj.Name, "Дистанция:", math.floor(distance))
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    if #foundDragonflyModels == 0 then
-        print("❌ Dragonfly не найден рядом с игроком!")
-        return nil
-    end
-    
-    -- Возвращаем ближайший
-    table.sort(foundDragonflyModels, function(a, b) return a.distance < b.distance end)
-    local targetDragonfly = foundDragonflyModels[1].model
-    
-    print("🐉 Выбран Dragonfly:", targetDragonfly.Name)
-    return targetDragonfly
-end
-
--- 🔍 ФУНКЦИЯ ПОИСКА EGGEXPLODE
--- Основана на EggAnimationSourceTracker.lua
-local function checkForEggExplode()
-    -- Ищем в ReplicatedStorage
-    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-        if obj.Name == "EggExplode" and obj:IsA("Model") then
-            return true, obj, "ReplicatedStorage"
-        end
-    end
-    
-    -- Ищем в Workspace
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj.Name == "EggExplode" and obj:IsA("Model") then
-            return true, obj, "Workspace"
-        end
-    end
-    
-    return false, nil, nil
-end
-
--- 🎯 ФУНКЦИЯ ПОИСКА ВРЕМЕННОЙ МОДЕЛИ В VISUALS
--- Основана на результатах диагностики
-local function findTemporaryPetInVisuals()
-    local visualsFolder = Workspace:FindFirstChild("Visuals")
-    if not visualsFolder then
-        return nil
-    end
-    
-    -- Ищем модели питомцев в Visuals
-    for _, obj in pairs(visualsFolder:GetChildren()) do
-        if obj:IsA("Model") then
-            local modelName = obj.Name:lower()
-            -- Проверяем известные имена питомцев из диагностики
-            if modelName:find("dog") or modelName:find("bunny") or 
-               modelName:find("golden") or modelName:find("lab") then
-                if CONFIG.DEBUG_MODE then
-                    print("🎯 Найдена временная модель в Visuals:", obj.Name)
-                end
-                return obj
-            end
-        end
-    end
-    
-    return nil
-end
-
--- 🔄 ФУНКЦИЯ ГЛУБОКОГО КОПИРОВАНИЯ DRAGONFLY
--- Основана на deepCopyModel из PetScaler_v2.9.lua
-local function deepCopyDragonfly(originalDragonfly)
-    if CONFIG.DEBUG_MODE then
-        print("📋 Создаю глубокую копию Dragonfly:", originalDragonfly.Name)
-    end
-    
-    local copy = originalDragonfly:Clone()
-    copy.Name = "Dragonfly_EggReplacement"
-    
-    -- Убеждаемся что копия не имеет родителя пока
-    copy.Parent = nil
-    
-    if CONFIG.DEBUG_MODE then
-        print("✅ Копия Dragonfly создана:", copy.Name)
-    end
-    
-    return copy
-end
-
--- 🎯 ФУНКЦИЯ ЗАМЕНЫ ВРЕМЕННОЙ МОДЕЛИ НА DRAGONFLY
--- Ключевая функция перехвата
-local function replaceTemporaryModel(originalPetModel, dragonflyReplacement)
-    if CONFIG.DEBUG_MODE then
-        print("🔄 Начинаю замену модели:")
-        print("   Оригинал:", originalPetModel.Name)
-        print("   Замена:", dragonflyReplacement.Name)
-    end
-    
-    -- Сохраняем важные параметры оригинальной модели
-    local originalParent = originalPetModel.Parent
-    local originalCFrame = originalPetModel:GetModelCFrame()
-    local originalSize = originalPetModel:GetModelSize()
-    
-    if CONFIG.DEBUG_MODE then
-        print("📍 Параметры оригинала:")
-        print("   Parent:", originalParent and originalParent.Name or "nil")
-        print("   Position:", originalCFrame.Position)
-        print("   Size:", originalSize)
-    end
-    
-    -- Удаляем оригинальную модель
-    originalPetModel:Destroy()
-    
-    -- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Размещаем в WORKSPACE, а не в Visuals!
-    -- Visuals - временная папка, которая может быть скрыта или удалена
-    dragonflyReplacement.Parent = Workspace
-    
-    if CONFIG.DEBUG_MODE then
-        print("🔄 Критическое исправление: Dragonfly размещен в Workspace вместо Visuals")
-    end
-    
-    -- Пробуем использовать PrimaryPart если есть
-    local placementSuccess = false
-    if dragonflyReplacement.PrimaryPart then
-        local success = pcall(function()
-            dragonflyReplacement:SetPrimaryPartCFrame(originalCFrame)
-        end)
-        if success then
-            placementSuccess = true
-            if CONFIG.DEBUG_MODE then
-                print("✅ Dragonfly размещен через PrimaryPart")
-            end
-        end
-    end
-    
-    -- Если PrimaryPart не сработал, размещаем вручную
-    if not placementSuccess then
-        if CONFIG.DEBUG_MODE then
-            print("🔧 PrimaryPart недоступен, размещаю вручную...")
-        end
+    local backpackGui = playerGui:FindFirstChild("BackpackGui")
+    if not backpackGui then
+        print("❌ BackpackGui не найден")
         
-        -- Находим первую BasePart в Dragonfly для размещения
-        local firstPart = nil
-        for _, obj in pairs(dragonflyReplacement:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                firstPart = obj
+        -- Попробуем найти другие GUI с похожими именами
+        print("🔍 Ищу альтернативные GUI...")
+        for _, gui in pairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and (
+                gui.Name:lower():find("backpack") or 
+                gui.Name:lower():find("inventory") or 
+                gui.Name:lower():find("pet")
+            ) then
+                print("📱 Найден альтернативный GUI:", gui.Name)
+                backpackGui = gui
                 break
             end
         end
         
-        if firstPart then
-            local success = pcall(function()
-                firstPart.CFrame = originalCFrame
-            end)
-            if success then
-                placementSuccess = true
-                if CONFIG.DEBUG_MODE then
-                    print("✅ Dragonfly размещен через первую BasePart:", firstPart.Name)
-                end
-            end
+        if not backpackGui then
+            return nil
         end
     end
     
-    -- Если и это не сработало, пробуем через MoveTo
-    if not placementSuccess then
-        local success = pcall(function()
-            dragonflyReplacement:MoveTo(originalCFrame.Position)
-        end)
-        if success then
-            placementSuccess = true
-            if CONFIG.DEBUG_MODE then
-                print("✅ Dragonfly размещен через MoveTo")
-            end
+    print("📱 Сканирую GUI:", backpackGui.Name)
+    
+    -- Ищем элемент с Dragonfly
+    local dragonflyElements = {}
+    
+    for _, desc in pairs(backpackGui:GetDescendants()) do
+        if desc:IsA("TextLabel") and desc.Text:lower():find("dragonfly") then
+            local element = {
+                textLabel = desc,
+                text = desc.Text,
+                parent = desc.Parent,
+                parentName = desc.Parent.Name,
+                parentType = desc.Parent.ClassName
+            }
+            table.insert(dragonflyElements, element)
+            print("🐾 Найден Dragonfly элемент:")
+            print("   📝 Текст:", desc.Text)
+            print("   📦 Родитель:", desc.Parent.Name, "(" .. desc.Parent.ClassName .. ")")
         end
     end
     
-    if CONFIG.DEBUG_MODE then
-        if placementSuccess then
-            print("✅ Замена завершена! Dragonfly размещен в:", originalParent.Name)
-        else
-            print("⚠️ Замена завершена, но размещение может быть неточным")
-        end
+    if #dragonflyElements == 0 then
+        print("❌ Dragonfly не найден в", backpackGui.Name)
+        return nil
     end
     
-    return dragonflyReplacement
+    -- Возвращаем первый найденный элемент
+    local bestElement = dragonflyElements[1]
+    print("✅ Выбран Dragonfly элемент:", bestElement.text)
+    print("   🎯 Целевой элемент:", bestElement.parentName, "(" .. bestElement.parentType .. ")")
+    
+    return bestElement.parent
 end
 
--- 🎬 ФУНКЦИЯ КОПИРОВАНИЯ ЭФФЕКТОВ (НЕ IDLE АНИМАЦИИ)
--- Копирует все эффекты кроме idle анимации
-local function copyNonIdleEffects(fromModel, toModel)
-    if CONFIG.DEBUG_MODE then
-        print("🎬 Копирование эффектов (исключая idle)...")
-    end
+-- Функция симуляции клика по элементу GUI
+local function simulateClick(guiElement)
+    if not guiElement then return false end
     
-    -- БЕЗОПАСНОЕ копирование Animator
-    local animatorFound = false
-    for _, obj in pairs(fromModel:GetDescendants()) do
-        if obj:IsA("Animator") then
-            local success, animatorCopy = pcall(function()
-                return obj:Clone()
-            end)
+    print("🔍 Анализирую элемент:", guiElement.Name, "Тип:", guiElement.ClassName)
+    
+    -- Способ 1: Прямое изменение свойств для активации
+    local success1, error1 = pcall(function()
+        if guiElement:IsA("GuiButton") or guiElement:IsA("TextButton") or guiElement:IsA("ImageButton") then
+            print("🖱️ Пробую активировать кнопку через свойства:", guiElement.Name)
             
-            if success and animatorCopy then
-                -- Ищем безопасное место для размещения
-                local targetHumanoid = toModel:FindFirstChildOfClass("Humanoid")
-                
-                if targetHumanoid then
-                    -- Проверяем что у Humanoid еще нет Animator
-                    local existingAnimator = targetHumanoid:FindFirstChildOfClass("Animator")
-                    if not existingAnimator then
-                        local placeSuccess = pcall(function()
-                            animatorCopy.Parent = targetHumanoid
-                        end)
-                        if placeSuccess then
-                            animatorFound = true
-                            if CONFIG.DEBUG_MODE then
-                                print("✅ Animator безопасно скопирован в Humanoid")
-                            end
-                        end
-                    end
-                end
-                
-                -- Если не удалось поместить в Humanoid, пробуем корень модели
-                if not animatorFound then
-                    local existingAnimator = toModel:FindFirstChildOfClass("Animator")
-                    if not existingAnimator then
-                        local placeSuccess = pcall(function()
-                            animatorCopy.Parent = toModel
-                        end)
-                        if placeSuccess then
-                            animatorFound = true
-                            if CONFIG.DEBUG_MODE then
-                                print("✅ Animator безопасно скопирован в корень модели")
-                            end
-                        end
-                    end
-                end
-                
-                -- Если не удалось разместить, просто удаляем копию
-                if not animatorFound then
-                    animatorCopy:Destroy()
-                    if CONFIG.DEBUG_MODE then
-                        print("⚠️ Не удалось разместить Animator, пропускаем")
-                    end
-                end
-            end
-            break -- Копируем только первый найденный Animator
-        end
-    end
-    
-    -- НЕ копируем Motor6D состояния (чтобы не копировать idle)
-    -- Эффекты роста и взрыва будут применены игрой автоматически
-    
-    if CONFIG.DEBUG_MODE then
-        print("✅ Эффекты скопированы (idle анимация исключена)")
-        print("   Animator скопирован:", animatorFound)
-    end
-end
-
--- ⚡ ОСНОВНАЯ ФУНКЦИЯ МОНИТОРИНГА И ПЕРЕХВАТА
-local function startEggInterception()
-    print("🚀 Запуск системы перехвата яйца...")
-    
-    -- Шаг 1: Найти Dragonfly рядом с игроком
-    local dragonflyModel = findNearbyDragonfly()
-    if not dragonflyModel then
-        print("❌ Не найден Dragonfly рядом с игроком!")
-        return false
-    end
-    
-    InterceptorState.dragonflyModel = dragonflyModel
-    InterceptorState.dragonflyFound = true
-    print("✅ Dragonfly найден и готов к замене")
-    
-    -- Шаг 2: Создать копию Dragonfly для замены
-    local dragonflyReplacement = deepCopyDragonfly(dragonflyModel)
-    
-    -- Шаг 3: Запустить мониторинг EggExplode
-    InterceptorState.isActive = true
-    local startTime = tick()
-    
-    print("🔍 Мониторинг EggExplode активен. Откройте яйцо!")
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        if not InterceptorState.isActive then
-            connection:Disconnect()
-            return
-        end
-        
-        local elapsed = tick() - startTime
-        
-        -- Таймаут мониторинга
-        if elapsed > CONFIG.MONITOR_DURATION then
-            print("⏰ Мониторинг завершен по таймауту")
-            InterceptorState.isActive = false
-            return
-        end
-        
-        -- Проверяем EggExplode
-        if not InterceptorState.eggExplodeDetected then
-            local found, eggObj, location = checkForEggExplode()
-            if found then
-                InterceptorState.eggExplodeDetected = true
-                print("⚡ EggExplode обнаружен в", location)
-                
-                -- ЦИКЛИЧЕСКИЙ ПОИСК временной модели в реальном времени
-                spawn(function()
-                    print("🔍 Начинаю циклический поиск временной модели в Visuals...")
-                    
-                    local searchAttempts = 0
-                    local maxAttempts = 200 -- 20 секунд поиска (200 * 0.1 сек)
-                    local temporaryPet = nil
-                    
-                    -- Циклический поиск каждые 0.1 секунды
-                    while searchAttempts < maxAttempts and not temporaryPet do
-                        temporaryPet = findTemporaryPetInVisuals()
-                        
-                        if temporaryPet then
-                            print("🎯 Временная модель НАЙДЕНА:", temporaryPet.Name, "(попытка", searchAttempts + 1, ")")
-                            break
-                        end
-                        
-                        searchAttempts = searchAttempts + 1
-                        if CONFIG.DEBUG_MODE and searchAttempts % 10 == 0 then
-                            print("🔍 Поиск продолжается... попытка", searchAttempts, "из", maxAttempts)
-                        end
-                        
-                        wait(0.1) -- Ждем 0.1 секунды перед следующей попыткой
-                    end
-                    
-                    if temporaryPet then
-                        print("✅ Временная модель найдена, начинаю замену...")
-                        
-                        -- Копируем эффекты (НЕ idle)
-                        copyNonIdleEffects(temporaryPet, dragonflyReplacement)
-                        
-                        -- ГЛАВНОЕ: Заменяем временную модель на Dragonfly
-                        local replacedModel = replaceTemporaryModel(temporaryPet, dragonflyReplacement)
-                        
-                        if replacedModel then
-                            InterceptorState.interceptComplete = true
-                            print("🎉 УСПЕХ! Временная модель заменена на Dragonfly!")
-                            print("✅ Dragonfly получит все эффекты роста и взрыва")
-                            print("✅ Idle анимация НЕ копируется (как требовалось)")
-                        else
-                            print("❌ Ошибка при замене модели")
-                        end
-                    else
-                        print("❌ Временная модель НЕ НАЙДЕНА после", maxAttempts, "попыток")
-                        print("💡 Попробуйте открыть яйцо сразу после нажатия кнопки")
-                    end
-                    
-                    InterceptorState.isActive = false
-                end)
-            end
+            -- Изменяем свойства, которые могут вызвать активацию
+            local originalActive = guiElement.Active
+            local originalVisible = guiElement.Visible
+            
+            guiElement.Active = false
+            wait(0.1)
+            guiElement.Active = true
+            wait(0.1)
+            guiElement.Active = originalActive
+            
+            return true
         end
     end)
     
-    return true
-end
-
--- 🖥️ СОЗДАНИЕ GUI СИСТЕМЫ
--- Основано на createGUI из PetScaler_v2.9.lua
-local function createEggInterceptorGUI()
-    local playerGui = player:WaitForChild("PlayerGui")
-    
-    -- Удаляем старый GUI если есть
-    local oldGui = playerGui:FindFirstChild("EggInterceptorGUI")
-    if oldGui then
-        oldGui:Destroy()
+    if success1 then
+        print("✅ Активация через свойства успешна")
+        return true
+    else
+        print("⚠️ Ошибка активации через свойства:", error1)
     end
     
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "EggInterceptorGUI"
-    screenGui.Parent = playerGui
-    
-    -- Основной фрейм
-    local frame = Instance.new("Frame")
-    frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 280, 0, 120)
-    frame.Position = UDim2.new(0, 50, 0, 250) -- Под PetScaler
-    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-    frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(255, 100, 0) -- Оранжевая рамка
-    frame.Parent = screenGui
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = frame
-    
-    -- Заголовок
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, 0, 0, 25)
-    titleLabel.Position = UDim2.new(0, 0, 0, 5)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Text = "🥚 EGG INTERCEPTOR v1.0"
-    titleLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
-    titleLabel.TextSize = 12
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.Parent = frame
-    
-    -- Кнопка запуска
-    local interceptButton = Instance.new("TextButton")
-    interceptButton.Name = "InterceptButton"
-    interceptButton.Size = UDim2.new(0, 260, 0, 35)
-    interceptButton.Position = UDim2.new(0, 10, 0, 35)
-    interceptButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-    interceptButton.BorderSizePixel = 0
-    interceptButton.Text = "🥚 ЗАПУСТИТЬ ПЕРЕХВАТ ЯЙЦА"
-    interceptButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-    interceptButton.TextSize = 12
-    interceptButton.Font = Enum.Font.SourceSansBold
-    interceptButton.Parent = frame
-    
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 5)
-    buttonCorner.Parent = interceptButton
-    
-    -- Статусная метка
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Name = "StatusLabel"
-    statusLabel.Size = UDim2.new(1, -20, 0, 40)
-    statusLabel.Position = UDim2.new(0, 10, 0, 75)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "🔍 Найдите Dragonfly рядом и нажмите кнопку"
-    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    statusLabel.TextSize = 10
-    statusLabel.Font = Enum.Font.SourceSans
-    statusLabel.TextWrapped = true
-    statusLabel.TextYAlignment = Enum.TextYAlignment.Top
-    statusLabel.Parent = frame
-    
-    -- Логика кнопки
-    interceptButton.MouseButton1Click:Connect(function()
-        if InterceptorState.isActive then
-            print("⚠️ Перехват уже активен!")
-            return
+    -- Способ 2: Поиск и активация дочерних кнопок
+    print("🔍 Ищу кликабельные дочерние элементы в:", guiElement.Name)
+    for _, child in pairs(guiElement:GetChildren()) do
+        if child:IsA("GuiButton") or child:IsA("TextButton") or child:IsA("ImageButton") then
+            print("🖱️ Найдена кнопка в элементе:", child.Name)
+            local childResult = simulateClick(child)
+            if childResult then
+                return true
+            end
         end
-        
-        interceptButton.Text = "⏳ ПОИСК DRAGONFLY..."
-        interceptButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-        statusLabel.Text = "🔍 Ищем Dragonfly рядом с игроком..."
-        
-        spawn(function()
-            local success = startEggInterception()
-            
-            if success then
-                interceptButton.Text = "🎯 МОНИТОРИНГ АКТИВЕН"
-                interceptButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-                statusLabel.Text = "✅ Dragonfly найден! Откройте яйцо для замены."
-                
-                -- Ожидаем завершения перехвата
-                while InterceptorState.isActive do
-                    wait(0.5)
-                end
-                
-                if InterceptorState.interceptComplete then
-                    interceptButton.Text = "🎉 ПЕРЕХВАТ УСПЕШЕН!"
-                    interceptButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-                    statusLabel.Text = "🎉 Успех! Временная модель заменена на Dragonfly!"
-                else
-                    interceptButton.Text = "⏰ ТАЙМАУТ"
-                    interceptButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
-                    statusLabel.Text = "⏰ Мониторинг завершен по таймауту."
-                end
-                
-                -- Сброс через 5 секунд
-                wait(5)
-                interceptButton.Text = "🥚 ЗАПУСТИТЬ ПЕРЕХВАТ ЯЙЦА"
-                interceptButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-                statusLabel.Text = "🔍 Готов к новому перехвату."
-                
-                -- Сброс состояния
-                InterceptorState = {
-                    isActive = false,
-                    eggExplodeDetected = false,
-                    dragonflyFound = false,
-                    dragonflyModel = nil,
-                    originalPetModel = nil,
-                    interceptComplete = false
-                }
+    end
+    
+    -- Способ 3: Попробуем найти RemoteEvent или RemoteFunction
+    print("🔍 Ищу Remote объекты...")
+    for _, desc in pairs(guiElement:GetDescendants()) do
+        if desc:IsA("RemoteEvent") then
+            print("📡 Найден RemoteEvent:", desc.Name)
+            local success3, error3 = pcall(function()
+                desc:FireServer()
+            end)
+            if success3 then
+                print("✅ RemoteEvent активирован")
+                return true
             else
-                interceptButton.Text = "❌ DRAGONFLY НЕ НАЙДЕН"
-                interceptButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-                statusLabel.Text = "❌ Dragonfly не найден рядом с игроком!"
-                
-                wait(3)
-                interceptButton.Text = "🥚 ЗАПУСТИТЬ ПЕРЕХВАТ ЯЙЦА"
-                interceptButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-                statusLabel.Text = "🔍 Найдите Dragonfly рядом и попробуйте снова."
+                print("⚠️ Ошибка активации RemoteEvent:", error3)
             end
-        end)
-    end)
-    
-    -- Эффекты наведения
-    interceptButton.MouseEnter:Connect(function()
-        if interceptButton.BackgroundColor3 == Color3.fromRGB(255, 100, 0) then
-            interceptButton.BackgroundColor3 = Color3.fromRGB(255, 120, 20)
+        elseif desc:IsA("RemoteFunction") then
+            print("📡 Найден RemoteFunction:", desc.Name)
+            local success4, error4 = pcall(function()
+                desc:InvokeServer()
+            end)
+            if success4 then
+                print("✅ RemoteFunction активирован")
+                return true
+            else
+                print("⚠️ Ошибка активации RemoteFunction:", error4)
+            end
         end
-    end)
+    end
     
-    interceptButton.MouseLeave:Connect(function()
-        if interceptButton.BackgroundColor3 == Color3.fromRGB(255, 120, 20) then
-            interceptButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+    -- Способ 4: Информация о найденных скриптах (для диагностики)
+    print("🔍 Диагностика скриптов в элементе...")
+    for _, desc in pairs(guiElement:GetDescendants()) do
+        if desc:IsA("LocalScript") or desc:IsA("Script") then
+            print("📜 Найден скрипт:", desc.Name, "в", desc.Parent.Name)
         end
-    end)
+    end
     
-    print("🖥️ EggInterceptor GUI создан!")
+    print("❌ Не удалось активировать элемент:", guiElement.Name)
+    return false
 end
 
--- 🚀 ИНИЦИАЛИЗАЦИЯ И ЗАПУСК
-local function initializeEggInterceptor()
-    print("🚀 === ИНИЦИАЛИЗАЦИЯ EGG INTERCEPTOR v1.0 ===")
+-- Функция удаления текущего питомца из handle
+local function removeCurrentPetFromHandle()
+    local playerChar = player.Character
+    if not playerChar then return false end
     
-    -- Создаем GUI
-    createEggInterceptorGUI()
+    local handle = playerChar:FindFirstChild("Handle")
+    if not handle then 
+        print("❌ Handle не найден")
+        return false 
+    end
     
-    print("✅ EGG INTERCEPTOR v1.0 ГОТОВ К РАБОТЕ!")
-    print("📋 ИНСТРУКЦИЯ:")
-    print("   1. Найдите Dragonfly рядом с собой (UUID имя с {})")
-    print("   2. Нажмите кнопку 'ЗАПУСТИТЬ ПЕРЕХВАТ ЯЙЦА'")
-    print("   3. Откройте яйцо - временная модель заменится на Dragonfly")
-    print("   4. Dragonfly получит ВСЕ эффекты роста и взрыва")
-    print("   5. Idle анимация НЕ копируется (остается оригинальная)")
-    print("🎯 Готов к перехвату!")
+    -- Удаляем всех питомцев из handle (кроме Dragonfly)
+    local removed = false
+    for _, child in pairs(handle:GetChildren()) do
+        if child:IsA("Model") and not child.Name:lower():find("dragonfly") then
+            print("🗑️ Убираю из handle:", child.Name)
+            child:Destroy()
+            removed = true
+        end
+    end
+    
+    return removed
 end
 
--- ✅ ФИНАЛЬНАЯ ЧАСТЬ 3 ЗАГРУЖЕНА
-print("✅ ЧАСТЬ 3 ЗАГРУЖЕНА:")
-print("   🖥️ GUI система с кнопкой запуска")
-print("   📊 Статусные сообщения и индикация")
-print("   🎮 Интерактивное управление")
-print("   🔄 Автоматический сброс состояния")
-print("🎉 === EGG INTERCEPTOR v1.0 ПОЛНОСТЬЮ ГОТОВ! ===")
-print("=" .. string.rep("=", 60))
+-- Функция проверки появления Dragonfly в handle
+local function checkDragonflyInHandle()
+    local playerChar = player.Character
+    if not playerChar then return false end
+    
+    local handle = playerChar:FindFirstChild("Handle")
+    if not handle then return false end
+    
+    for _, child in pairs(handle:GetChildren()) do
+        if child:IsA("Model") and child.Name:lower():find("dragonfly") then
+            print("✅ Dragonfly найден в handle!")
+            return true
+        end
+    end
+    
+    return false
+end
 
--- 🚀 ЗАПУСК СИСТЕМЫ
-initializeEggInterceptor()
+-- Основная функция переключения
+local function switchTodragonfly()
+    statusLabel.Text = "🔍 Ищу Dragonfly..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+    
+    -- Шаг 1: Найти Dragonfly в GUI
+    local dragonflyElement = findDragonflyInGui()
+    if not dragonflyElement then
+        statusLabel.Text = "❌ Dragonfly не найден в GUI"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+    
+    -- Шаг 2: Убрать текущего питомца из handle
+    statusLabel.Text = "🗑️ Убираю текущего питомца..."
+    removeCurrentPetFromHandle()
+    wait(0.5)
+    
+    -- Шаг 3: Симулировать клик по Dragonfly
+    statusLabel.Text = "🖱️ Активирую Dragonfly..."
+    local clickSuccess = simulateClick(dragonflyElement)
+    
+    if not clickSuccess then
+        statusLabel.Text = "⚠️ Не удалось активировать Dragonfly"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
+        return
+    end
+    
+    -- Шаг 4: Проверить результат
+    wait(1)
+    statusLabel.Text = "✅ Проверяю результат..."
+    
+    if checkDragonflyInHandle() then
+        statusLabel.Text = "🎉 Dragonfly успешно в руке!"
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    else
+        statusLabel.Text = "❌ Dragonfly не появился в руке"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+    end
+end
+
+-- Обработчик кнопки
+switchButton.MouseButton1Click:Connect(function()
+    switchButton.Text = "⏳ Переключаю..."
+    switchButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
+    
+    spawn(function()
+        switchTodragonfly()
+        
+        wait(2)
+        switchButton.Text = "🔄 Переместить Dragonfly в руку"
+        switchButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    end)
+end)
+
+print("✅ DragonflySwitcher загружен! Нажмите кнопку для переключения.")
