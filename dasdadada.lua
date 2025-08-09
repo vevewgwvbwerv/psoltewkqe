@@ -230,17 +230,15 @@ local function alternativeReplace()
                 newGrip.Part1 = handle
                 newGrip.Parent = rightHand
                 
-                -- Применяем сохраненную ориентацию МГНОВЕННО
-                if savedPetGripC0 and savedPetGripC1 then
-                    newGrip.C0 = savedPetGripC0
-                    newGrip.C1 = savedPetGripC1
-                    print(" МГНОВЕННО применена сохраненная ориентация!")
-                else
-                    -- Стандартное крепление, если ориентация не сохранена
-                    newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
-                    newGrip.C1 = CFrame.new(0, 0, 0)
-                    print(" Применено стандартное крепление")
-                end
+                -- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем СТАНДАРТНОЕ крепление для руки
+                -- Проблема была в том, что сохраненная ориентация может быть неправильной
+                newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
+                newGrip.C1 = CFrame.new(0, 0, 0)
+                print("📍 ПРИМЕНЕНО стандартное крепление для руки!")
+                print("📍 C0: CFrame.new(0, -1, -0.5)")
+                print("📍 C1: CFrame.new(0, 0, 0)")
+                
+                -- Если нужна коррекция ориентации - используем кнопку "ИСПРАВИТЬ ОРИЕНТАЦИЮ"
                 
                 -- Настраиваем Handle как у настоящего питомца (ПОСЛЕ крепления)
                 handle.Anchored = false
@@ -268,10 +266,9 @@ local function alternativeReplace()
                                 restoredGrip.Part1 = handle
                                 restoredGrip.Parent = rightHand
                                 
-                                if savedPetGripC0 and savedPetGripC1 then
-                                    restoredGrip.C0 = savedPetGripC0
-                                    restoredGrip.C1 = savedPetGripC1
-                                end
+                                -- Используем стандартное крепление при восстановлении
+                                restoredGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
+                                restoredGrip.C1 = CFrame.new(0, 0, 0)
                                 
                                 newGrip = restoredGrip
                                 print(" Weld восстановлен с правильной ориентацией!")
@@ -351,19 +348,41 @@ local function fixPetOrientation()
     
     print("🔧 Применяю СОХРАНЕННУЮ ориентацию питомца...")
     
-    -- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Используем сохраненную ориентацию
-    if savedPetGripC0 and savedPetGripC1 then
-        rightGrip.C0 = savedPetGripC0
-        rightGrip.C1 = savedPetGripC1
-        print("📍 Применена СОХРАНЕННАЯ ориентация крепления!")
-        print("📍 C0:", savedPetGripC0)
-        print("📍 C1:", savedPetGripC1)
-        return true
+    -- ЦИКЛИЧЕСКОЕ ПЕРЕКЛЮЧЕНИЕ разных ориентаций для питомцев
+    local orientations = {
+        {name = "Стандартная", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая вправо", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая влево", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(-90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Перевернутая", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(180), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная вперед", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная назад", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(-45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Сохраненная (если есть)", c0 = savedPetGripC0 or CFrame.new(0, -1, -0.5), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Переворот головой вниз", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(math.rad(180), 0, 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот вправо", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот влево", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(-90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+    }
+    
+    -- Инициализируем индекс ориентации
+    if not _G.currentOrientationIndex then
+        _G.currentOrientationIndex = 1
     else
-        print("❌ Ориентация не была сохранена!")
-        print("💡 Сначала возьмите питомца в руки и нажмите 'Сохранить питомца'")
-        return false
+        _G.currentOrientationIndex = _G.currentOrientationIndex + 1
+        if _G.currentOrientationIndex > #orientations then
+            _G.currentOrientationIndex = 1
+        end
     end
+    
+    local currentOrientation = orientations[_G.currentOrientationIndex]
+    
+    rightGrip.C0 = currentOrientation.c0
+    rightGrip.C1 = currentOrientation.c1
+    
+    print("📍 Применена ориентация: " .. currentOrientation.name)
+    print("📍 C0:", currentOrientation.c0)
+    print("📍 C1:", currentOrientation.c1)
+    print("🔄 Нажмите еще раз для следующей ориентации (" .. _G.currentOrientationIndex .. "/" .. #orientations .. ")")
+    
+    return true
 end
 
 -- Создаем GUI
@@ -373,8 +392,8 @@ local function createDirectFixGUI()
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 400, 0, 400)
-    frame.Position = UDim2.new(0.5, -200, 0.5, -200)
+    frame.Size = UDim2.new(0, 400, 0, 450)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -225)
     frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
@@ -451,10 +470,23 @@ local function createDirectFixGUI()
     fixOrientBtn.Visible = false
     fixOrientBtn.Parent = frame
     
+    -- Кнопка изучения текущей ориентации
+    local learnOrientBtn = Instance.new("TextButton")
+    learnOrientBtn.Size = UDim2.new(1, -20, 0, 40)
+    learnOrientBtn.Position = UDim2.new(0, 10, 0, 370)
+    learnOrientBtn.BackgroundColor3 = Color3.new(0.8, 0.6, 0)
+    learnOrientBtn.BorderSizePixel = 0
+    learnOrientBtn.Text = "🔍 ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ"
+    learnOrientBtn.TextColor3 = Color3.new(1, 1, 1)
+    learnOrientBtn.TextScaled = true
+    learnOrientBtn.Font = Enum.Font.SourceSansBold
+    learnOrientBtn.Visible = false
+    learnOrientBtn.Parent = frame
+    
     -- Кнопка закрытия
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(1, -20, 0, 30)
-    closeBtn.Position = UDim2.new(0, 10, 0, 360)
+    closeBtn.Position = UDim2.new(0, 10, 0, 410)
     closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
     closeBtn.BorderSizePixel = 0
     closeBtn.Text = "❌ Закрыть"
