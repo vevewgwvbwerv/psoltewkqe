@@ -1,541 +1,523 @@
--- AdvancedShovelReplacer.lua
--- Основан на методах из CFrameAnimationDiagnostic и ComprehensiveEggPetAnimationAnalyzer
--- Правильно сканирует CFrame анимацию питомца в руке
+-- ModelExpansionAnalyzer.lua
+-- АНАЛИЗАТОР РАСШИРЕНИЯ МОДЕЛИ: Отслеживает КАК базовая модель превращается в полную
+-- Фиксирует каждый этап добавления частей, Motor6D, анимаций и скриптов
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 
-print("=== ADVANCED SHOVEL REPLACER ===")
+print("🔬 === MODEL EXPANSION ANALYZER ===")
+print("🎯 Цель: Проследить расширение модели от базовой до полной")
+print("=" .. string.rep("=", 60))
 
--- Глобальная переменная для хранения отсканированного питомца с анимацией
-local scannedPetData = nil
-local animationConnection = nil
+-- 📊 ДАННЫЕ АНАЛИЗАТОРА РАСШИРЕНИЯ
+local ExpansionData = {
+    baseModel = nil,
+    expandedModel = nil,
+    expansionSteps = {},
+    snapshots = {},
+    scripts = {},
+    startTime = nil,
+    isAnalyzing = false
+}
 
--- Функция поиска Shovel в руках
-local function findShovelInHands()
-    local character = player.Character
-    if not character then return nil end
-    
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            return tool
-        end
-    end
-    return nil
-end
+-- 🖥️ КОНСОЛЬ РАСШИРЕНИЯ
+local ExpansionConsole = nil
+local ConsoleLines = {}
+local MaxLines = 150
 
--- Функция поиска питомца в руках (из CFrameAnimationDiagnostic)
-local function findHandHeldPet()
-    local character = player.Character
-    if not character then return nil end
+-- Создание консоли
+local function createExpansionConsole()
+    if ExpansionConsole then ExpansionConsole:Destroy() end
     
-    local handTool = character:FindFirstChildOfClass("Tool")
-    if not handTool then return nil end
-    
-    -- Проверяем что это питомец (содержит KG и Age)
-    if string.find(handTool.Name, "%[") and string.find(handTool.Name, "KG%]") then
-        print("🎯 Найден питомец в руке:", handTool.Name)
-        return handTool
-    end
-    
-    return nil
-end
-
--- Функция получения всех анимируемых частей из Tool (из CFrameAnimationDiagnostic)
-local function getAnimatedPartsFromTool(tool)
-    local parts = {}
-    
-    if not tool then return parts end
-    
-    for _, obj in pairs(tool:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name ~= "Handle" then
-            table.insert(parts, obj)
-        end
-    end
-    
-    return parts
-end
-
--- Функция глубокого анализа частей модели (из CFrameAnimationDiagnostic)
-local function analyzeParts(model, modelName)
-    print(string.format("\n📊 === АНАЛИЗ ЧАСТЕЙ: %s ===", modelName))
-    
-    local parts = {}
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(parts, obj)
-        end
-    end
-    
-    print(string.format("📦 Всего BasePart: %d", #parts))
-    
-    -- Группируем части по типам
-    local partsByName = {}
-    for _, part in ipairs(parts) do
-        local name = part.Name
-        if not partsByName[name] then
-            partsByName[name] = 0
-        end
-        partsByName[name] = partsByName[name] + 1
-    end
-    
-    print("📋 Части по именам:")
-    for name, count in pairs(partsByName) do
-        print(string.format("  - %s: %d шт", name, count))
-    end
-    
-    return parts, partsByName
-end
-
--- НОВАЯ ФУНКЦИЯ: Сканирование питомца с отслеживанием CFrame анимации
-local function scanPetWithAnimation()
-    print("\n🔍 === СКАНИРОВАНИЕ ПИТОМЦА С АНИМАЦИЕЙ ===")
-    
-    local pet = findHandHeldPet()
-    if not pet then
-        print("❌ Питомец в руках не найден!")
-        return false
-    end
-    
-    print("✅ Найден питомец: " .. pet.Name)
-    
-    -- Получаем все анимируемые части
-    local animatedParts = getAnimatedPartsFromTool(pet)
-    print(string.format("📦 Анимируемых частей: %d", #animatedParts))
-    
-    -- Анализируем структуру
-    local allParts, partsByName = analyzeParts(pet, "ПИТОМЕЦ В РУКЕ")
-    
-    -- Инициализируем данные питомца
-    scannedPetData = {
-        name = pet.Name,
-        className = pet.ClassName,
-        properties = {},
-        children = {},
-        animatedParts = {},
-        staticCFrames = {},
-        motor6ds = {},
-        welds = {},
-        animations = {},
-        partsByName = partsByName
-    }
-    
-    -- Копируем основные свойства Tool
-    local importantProps = {"RequiresHandle", "CanBeDropped", "Enabled", "ManualActivationOnly"}
-    for _, prop in pairs(importantProps) do
-        pcall(function()
-            scannedPetData.properties[prop] = pet[prop]
-        end)
-    end
-    
-    -- Глубокое копирование детей с сохранением связей
-    for _, child in pairs(pet:GetChildren()) do
-        local childData = {
-            name = child.Name,
-            className = child.ClassName,
-            object = child:Clone()
-        }
-        
-        -- Сохраняем статические CFrame для BasePart
-        if child:IsA("BasePart") then
-            scannedPetData.staticCFrames[child.Name] = child.CFrame
-            print("   📐 Сохранен статический CFrame: " .. child.Name)
-        end
-        
-        -- Сохраняем Motor6D соединения
-        if child:IsA("Motor6D") then
-            local motor6dData = {
-                name = child.Name,
-                part0Name = child.Part0 and child.Part0.Name or nil,
-                part1Name = child.Part1 and child.Part1.Name or nil,
-                c0 = child.C0,
-                c1 = child.C1,
-                currentAngle = child.CurrentAngle,
-                desiredAngle = child.DesiredAngle
-            }
-            scannedPetData.motor6ds[child.Name] = motor6dData
-            print("   🔗 Сохранен Motor6D: " .. child.Name)
-        end
-        
-        -- Сохраняем Weld соединения
-        if child:IsA("Weld") then
-            local weldData = {
-                name = child.Name,
-                part0Name = child.Part0 and child.Part0.Name or nil,
-                part1Name = child.Part1 and child.Part1.Name or nil,
-                c0 = child.C0,
-                c1 = child.C1
-            }
-            scannedPetData.welds[child.Name] = weldData
-            print("   🔗 Сохранен Weld: " .. child.Name)
-        end
-        
-        table.insert(scannedPetData.children, childData)
-    end
-    
-    -- КЛЮЧЕВАЯ ЧАСТЬ: Отслеживание CFrame анимации в реальном времени
-    print("\n🎬 === ОТСЛЕЖИВАНИЕ CFrame АНИМАЦИИ ===")
-    print("Записываю анимацию в течение 5 секунд...")
-    
-    local previousStates = {}
-    local animationFrames = {}
-    local frameCount = 0
-    
-    -- Инициализируем начальные состояния
-    for _, part in ipairs(animatedParts) do
-        if part and part.Parent then
-            previousStates[part.Name] = part.CFrame
-            animationFrames[part.Name] = {}
-        end
-    end
-    
-    local startTime = tick()
-    
-    -- Останавливаем предыдущее отслеживание если есть
-    if animationConnection and animationConnection.Connected then
-        animationConnection:Disconnect()
-        animationConnection = nil
-    end
-    
-    animationConnection = RunService.Heartbeat:Connect(function()
-        local currentTime = tick()
-        local elapsed = currentTime - startTime
-        
-        -- Записываем кадры каждые 0.05 секунды
-        if elapsed % 0.05 < 0.016 then
-            frameCount = frameCount + 1
-            
-            for _, part in ipairs(animatedParts) do
-                if part and part.Parent then
-                    local partName = part.Name
-                    local currentCFrame = part.CFrame
-                    
-                    -- Сохраняем кадр анимации
-                    if not animationFrames[partName] then
-                        animationFrames[partName] = {}
-                    end
-                    
-                    table.insert(animationFrames[partName], {
-                        time = elapsed,
-                        cframe = currentCFrame
-                    })
-                    
-                    -- Проверяем изменения
-                    if previousStates[partName] then
-                        local prevCFrame = previousStates[partName]
-                        local positionDiff = (currentCFrame.Position - prevCFrame.Position).Magnitude
-                        local rotationDiff = math.abs(currentCFrame.LookVector:Dot(prevCFrame.LookVector) - 1)
-                        
-                        if positionDiff > 0.001 or rotationDiff > 0.001 then
-                            print(string.format("🔄 Анимация: %s (pos: %.3f, rot: %.3f)", partName, positionDiff, rotationDiff))
-                        end
-                    end
-                    
-                    previousStates[partName] = currentCFrame
-                end
-            end
-        end
-        
-        -- Останавливаем через 5 секунд
-        if elapsed > 5 then
-            animationConnection:Disconnect()
-            animationConnection = nil
-            
-            -- Сохраняем записанную анимацию
-            scannedPetData.animationFrames = animationFrames
-            scannedPetData.totalFrames = frameCount
-            
-            print(string.format("\n📊 АНИМАЦИЯ ЗАПИСАНА:"))
-            print(string.format("🎬 Всего кадров: %d", frameCount))
-            print(string.format("⏱️ Длительность: %.1f сек", elapsed))
-            
-            local animatedPartsCount = 0
-            for partName, frames in pairs(animationFrames) do
-                if #frames > 0 then
-                    animatedPartsCount = animatedPartsCount + 1
-                    print(string.format("  - %s: %d кадров", partName, #frames))
-                end
-            end
-            
-            print(string.format("🎭 Анимированных частей: %d", animatedPartsCount))
-            print("✅ Питомец отсканирован с записью анимации!")
-        end
-    end)
-    
-    return true
-end
-
--- Функция замены Shovel с воспроизведением анимации
-local function replaceShovelWithAnimation()
-    print("\n🔄 === ЗАМЕНА SHOVEL С ВОСПРОИЗВЕДЕНИЕМ АНИМАЦИИ ===")
-    
-    if not scannedPetData then
-        print("❌ Питомец не отсканирован! Сначала отсканируйте питомца.")
-        return false
-    end
-    
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Заменяю Shovel на питомца с анимацией...")
-    
-    -- Шаг 1: Меняем имя Shovel
-    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("✅ Имя изменено: " .. shovel.Name)
-    
-    -- Шаг 2: Удаляем всё содержимое Shovel
-    print("🗑️ Очищаю содержимое Shovel...")
-    for _, child in pairs(shovel:GetChildren()) do
-        child:Destroy()
-    end
-    
-    wait(0.1)
-    
-    -- Шаг 3: Добавляем содержимое питомца
-    print("📋 Добавляю содержимое питомца...")
-    local addedParts = {}
-    
-    for _, childData in pairs(scannedPetData.children) do
-        local newChild = childData.object:Clone()
-        newChild.Parent = shovel
-        
-        if newChild:IsA("BasePart") then
-            addedParts[newChild.Name] = newChild
-            -- Устанавливаем начальный CFrame
-            if scannedPetData.staticCFrames[newChild.Name] then
-                newChild.CFrame = scannedPetData.staticCFrames[newChild.Name]
-            end
-        end
-        
-        print("   ✅ Добавлен: " .. newChild.Name .. " (" .. newChild.ClassName .. ")")
-    end
-    
-    -- Шаг 4: Восстанавливаем Motor6D и Weld соединения
-    print("🔗 Восстанавливаю соединения...")
-    
-    -- Motor6D
-    for motorName, motorData in pairs(scannedPetData.motor6ds) do
-        local motor = shovel:FindFirstChild(motorName)
-        if motor and motor:IsA("Motor6D") then
-            if motorData.part0Name then
-                motor.Part0 = addedParts[motorData.part0Name]
-            end
-            if motorData.part1Name then
-                motor.Part1 = addedParts[motorData.part1Name]
-            end
-            motor.C0 = motorData.c0
-            motor.C1 = motorData.c1
-            motor.CurrentAngle = motorData.currentAngle
-            motor.DesiredAngle = motorData.desiredAngle
-            print("   🔗 Восстановлен Motor6D: " .. motorName)
-        end
-    end
-    
-    -- Weld
-    for weldName, weldData in pairs(scannedPetData.welds) do
-        local weld = shovel:FindFirstChild(weldName)
-        if weld and weld:IsA("Weld") then
-            if weldData.part0Name then
-                weld.Part0 = addedParts[weldData.part0Name]
-            end
-            if weldData.part1Name then
-                weld.Part1 = addedParts[weldData.part1Name]
-            end
-            weld.C0 = weldData.c0
-            weld.C1 = weldData.c1
-            print("   🔗 Восстановлен Weld: " .. weldName)
-        end
-    end
-    
-    -- Шаг 5: Копируем свойства
-    for property, value in pairs(scannedPetData.properties) do
-        pcall(function()
-            if property ~= "Name" and property ~= "Parent" then
-                shovel[property] = value
-            end
-        end)
-    end
-    
-    -- Шаг 6: ВОСПРОИЗВОДИМ АНИМАЦИЮ
-    if scannedPetData.animationFrames and next(scannedPetData.animationFrames) then
-        print("🎬 Запускаю воспроизведение анимации...")
-        
-        local animStartTime = tick()
-        local animConnection
-        
-        animConnection = RunService.Heartbeat:Connect(function()
-            local elapsed = tick() - animStartTime
-            
-            -- Циклически воспроизводим анимацию (5 секунд цикл)
-            local cycleTime = elapsed % 5
-            
-            for partName, frames in pairs(scannedPetData.animationFrames) do
-                local part = addedParts[partName]
-                if part and #frames > 0 then
-                    -- Находим ближайший кадр по времени
-                    local bestFrame = frames[1]
-                    local bestTimeDiff = math.abs(cycleTime - bestFrame.time)
-                    
-                    for _, frame in ipairs(frames) do
-                        local timeDiff = math.abs(cycleTime - frame.time)
-                        if timeDiff < bestTimeDiff then
-                            bestTimeDiff = timeDiff
-                            bestFrame = frame
-                        end
-                    end
-                    
-                    -- Применяем CFrame из кадра
-                    part.CFrame = bestFrame.cframe
-                end
-            end
-        end)
-        
-        print("✅ Анимация запущена в цикле!")
-    end
-    
-    print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Shovel заменен на питомца с анимацией!")
-    print("📝 Новое имя: " .. shovel.Name)
-    print("🎬 Анимация воспроизводится циклически")
-    print("🎮 Питомец должен двигаться как оригинал!")
-    
-    return true
-end
-
--- Создаем GUI
-local function createAdvancedReplacerGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "AdvancedShovelReplacerGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+    ExpansionConsole = Instance.new("ScreenGui")
+    ExpansionConsole.Name = "ModelExpansionAnalyzerConsole"
+    ExpansionConsole.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 450, 0, 350)
-    frame.Position = UDim2.new(0.5, -225, 0.5, -175)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.2, 0.3)
-    frame.BorderSizePixel = 0
-    frame.Parent = screenGui
+    frame.Size = UDim2.new(0, 850, 0, 650)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.02, 0.1, 0.05)
+    frame.BorderSizePixel = 3
+    frame.BorderColor3 = Color3.new(0.2, 1, 0.5)
+    frame.Parent = ExpansionConsole
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.4, 0.6)
+    title.Size = UDim2.new(1, 0, 0, 35)
+    title.BackgroundColor3 = Color3.new(0.2, 1, 0.5)
     title.BorderSizePixel = 0
-    title.Text = "🎬 ADVANCED SHOVEL REPLACER"
-    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Text = "🔬 MODEL EXPANSION ANALYZER"
+    title.TextColor3 = Color3.new(0, 0, 0)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
+    scrollFrame.BackgroundColor3 = Color3.new(0.01, 0.05, 0.02)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 15
+    scrollFrame.Parent = frame
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -10, 1, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = "🔬 Анализатор расширения готов..."
+    textLabel.TextColor3 = Color3.new(0.9, 1, 0.9)
+    textLabel.TextSize = 10
+    textLabel.Font = Enum.Font.SourceSans
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Parent = scrollFrame
+    
+    return textLabel
+end
+
+-- Функция логирования расширения
+local function expansionLog(category, message, data)
+    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+    local relativeTime = ExpansionData.startTime and string.format("+%.3f", tick() - ExpansionData.startTime) or "0.000"
+    
+    local prefixes = {
+        EXPANSION = "🔬", BASE = "📦", STEP = "🔧", SNAPSHOT = "📸",
+        SCRIPT = "📜", FOUND = "🎯", CRITICAL = "🔥", SUCCESS = "✅", 
+        ERROR = "❌", INFO = "ℹ️", DETAIL = "📝", COMPARE = "⚖️"
+    }
+    
+    local logLine = string.format("[%s] (%s) %s %s", timestamp, relativeTime, prefixes[category] or "ℹ️", message)
+    
+    if data and next(data) then
+        for key, value in pairs(data) do
+            logLine = logLine .. string.format("\n      %s: %s", key, tostring(value))
+        end
+    end
+    
+    table.insert(ConsoleLines, logLine)
+    
+    if #ConsoleLines > MaxLines then
+        table.remove(ConsoleLines, 1)
+    end
+    
+    -- Обновляем консоль
+    if ExpansionConsole then
+        local textLabel = ExpansionConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
+        if textLabel then
+            textLabel.Text = table.concat(ConsoleLines, "\n")
+            local scrollFrame = textLabel.Parent
+            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
+            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
+        end
+    end
+    
+    print(logLine)
+end
+
+-- 📦 ПОИСК БАЗОВОЙ МОДЕЛИ
+local function findBaseModel(petName)
+    expansionLog("BASE", "📦 Поиск базовой модели для: " .. petName)
+    
+    -- Поиск в ReplicatedStorage.Skins
+    local skins = ReplicatedStorage:FindFirstChild("Skins")
+    if skins then
+        local baseModel = skins:FindFirstChild(petName)
+        if baseModel then
+            ExpansionData.baseModel = baseModel
+            
+            expansionLog("SUCCESS", "✅ БАЗОВАЯ МОДЕЛЬ НАЙДЕНА!", {
+                Name = baseModel.Name,
+                Path = baseModel:GetFullName(),
+                Children = #baseModel:GetChildren(),
+                Descendants = #baseModel:GetDescendants(),
+                ClassName = baseModel.ClassName
+            })
+            
+            -- Детальный анализ базовой модели
+            analyzeBaseModel(baseModel)
+            return baseModel
+        end
+    end
+    
+    -- Поиск в других местах ReplicatedStorage
+    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == petName then
+            ExpansionData.baseModel = obj
+            
+            expansionLog("SUCCESS", "✅ БАЗОВАЯ МОДЕЛЬ НАЙДЕНА В ДРУГОМ МЕСТЕ!", {
+                Name = obj.Name,
+                Path = obj:GetFullName(),
+                Children = #obj:GetChildren(),
+                Descendants = #obj:GetDescendants()
+            })
+            
+            analyzeBaseModel(obj)
+            return obj
+        end
+    end
+    
+    expansionLog("ERROR", "❌ Базовая модель не найдена!")
+    return nil
+end
+
+-- 📝 АНАЛИЗ БАЗОВОЙ МОДЕЛИ
+local function analyzeBaseModel(baseModel)
+    expansionLog("DETAIL", "📝 ДЕТАЛЬНЫЙ АНАЛИЗ БАЗОВОЙ МОДЕЛИ: " .. baseModel.Name)
+    
+    local baseStructure = {}
+    local baseParts = {}
+    
+    for _, obj in pairs(baseModel:GetDescendants()) do
+        baseStructure[obj.ClassName] = (baseStructure[obj.ClassName] or 0) + 1
+        
+        if obj:IsA("BasePart") then
+            table.insert(baseParts, {
+                Name = obj.Name,
+                Size = tostring(obj.Size),
+                Material = tostring(obj.Material)
+            })
+        end
+    end
+    
+    expansionLog("DETAIL", "📝 Структура базовой модели:", baseStructure)
+    
+    if #baseParts > 0 then
+        expansionLog("DETAIL", "📝 Части базовой модели:")
+        for i, part in ipairs(baseParts) do
+            expansionLog("DETAIL", string.format("  Часть %d: %s", i, part.Name), part)
+        end
+    end
+    
+    -- Сохраняем снимок базовой модели
+    ExpansionData.snapshots["base"] = {
+        time = tick(),
+        structure = baseStructure,
+        parts = baseParts,
+        children = #baseModel:GetChildren(),
+        descendants = #baseModel:GetDescendants()
+    }
+end
+
+-- 📸 СОЗДАНИЕ СНИМКА МОДЕЛИ
+local function takeModelSnapshot(model, snapshotName)
+    local structure = {}
+    local parts = {}
+    local motor6ds = {}
+    local scripts = {}
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        structure[obj.ClassName] = (structure[obj.ClassName] or 0) + 1
+        
+        if obj:IsA("BasePart") then
+            table.insert(parts, {
+                Name = obj.Name,
+                Size = tostring(obj.Size),
+                Material = tostring(obj.Material),
+                Anchored = obj.Anchored
+            })
+        elseif obj:IsA("Motor6D") then
+            table.insert(motor6ds, {
+                Name = obj.Name,
+                Part0 = obj.Part0 and obj.Part0.Name or "NIL",
+                Part1 = obj.Part1 and obj.Part1.Name or "NIL"
+            })
+        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+            table.insert(scripts, {
+                Name = obj.Name,
+                ClassName = obj.ClassName,
+                Parent = obj.Parent and obj.Parent.Name or "NIL"
+            })
+        end
+    end
+    
+    local snapshot = {
+        time = tick(),
+        relativeTime = ExpansionData.startTime and (tick() - ExpansionData.startTime) or 0,
+        structure = structure,
+        parts = parts,
+        motor6ds = motor6ds,
+        scripts = scripts,
+        children = #model:GetChildren(),
+        descendants = #model:GetDescendants()
+    }
+    
+    ExpansionData.snapshots[snapshotName] = snapshot
+    
+    expansionLog("SNAPSHOT", "📸 СНИМОК МОДЕЛИ: " .. snapshotName, {
+        Children = snapshot.children,
+        Descendants = snapshot.descendants,
+        RelativeTime = string.format("%.3f сек", snapshot.relativeTime)
+    })
+    
+    return snapshot
+end
+
+-- ⚖️ СРАВНЕНИЕ СНИМКОВ
+local function compareSnapshots(snapshot1Name, snapshot2Name)
+    local snap1 = ExpansionData.snapshots[snapshot1Name]
+    local snap2 = ExpansionData.snapshots[snapshot2Name]
+    
+    if not snap1 or not snap2 then
+        expansionLog("ERROR", "❌ Не удалось найти снимки для сравнения")
+        return
+    end
+    
+    expansionLog("COMPARE", string.format("⚖️ СРАВНЕНИЕ: %s VS %s", snapshot1Name, snapshot2Name))
+    
+    -- Сравнение общих показателей
+    local childrenDiff = snap2.children - snap1.children
+    local descendantsDiff = snap2.descendants - snap1.descendants
+    
+    expansionLog("COMPARE", "⚖️ Изменения общих показателей:", {
+        ChildrenBefore = snap1.children,
+        ChildrenAfter = snap2.children,
+        ChildrenDiff = childrenDiff,
+        DescendantsBefore = snap1.descendants,
+        DescendantsAfter = snap2.descendants,
+        DescendantsDiff = descendantsDiff
+    })
+    
+    -- Сравнение структуры
+    local structureDiff = {}
+    
+    -- Новые типы объектов
+    for className, count in pairs(snap2.structure) do
+        local oldCount = snap1.structure[className] or 0
+        if count > oldCount then
+            structureDiff[className] = string.format("+%d (было %d, стало %d)", count - oldCount, oldCount, count)
+        end
+    end
+    
+    -- Удаленные типы объектов
+    for className, count in pairs(snap1.structure) do
+        if not snap2.structure[className] then
+            structureDiff[className] = string.format("-%d (удалено)", count)
+        end
+    end
+    
+    if next(structureDiff) then
+        expansionLog("COMPARE", "⚖️ Изменения структуры:", structureDiff)
+    else
+        expansionLog("COMPARE", "⚖️ Структура не изменилась")
+    end
+    
+    -- Сравнение Motor6D
+    if #snap2.motor6ds > #snap1.motor6ds then
+        expansionLog("COMPARE", string.format("⚖️ Добавлено Motor6D: %d", #snap2.motor6ds - #snap1.motor6ds))
+        for i = #snap1.motor6ds + 1, #snap2.motor6ds do
+            local motor = snap2.motor6ds[i]
+            expansionLog("DETAIL", string.format("  Новый Motor6D: %s", motor.Name), motor)
+        end
+    end
+    
+    -- Сравнение скриптов
+    if #snap2.scripts > #snap1.scripts then
+        expansionLog("COMPARE", string.format("⚖️ Добавлено скриптов: %d", #snap2.scripts - #snap1.scripts))
+        for i = #snap1.scripts + 1, #snap2.scripts do
+            local script = snap2.scripts[i]
+            expansionLog("DETAIL", string.format("  Новый скрипт: %s", script.Name), script)
+        end
+    end
+end
+
+-- 🔧 МОНИТОРИНГ РАСШИРЕНИЯ МОДЕЛИ
+local function monitorModelExpansion(model)
+    expansionLog("EXPANSION", "🔧 МОНИТОРИНГ РАСШИРЕНИЯ МОДЕЛИ: " .. model.Name)
+    
+    ExpansionData.expandedModel = model
+    
+    -- Начальный снимок
+    takeModelSnapshot(model, "initial")
+    
+    -- Мониторинг изменений
+    local stepCounter = 1
+    
+    local childAddedConnection = model.DescendantAdded:Connect(function(obj)
+        local relativeTime = ExpansionData.startTime and (tick() - ExpansionData.startTime) or 0
+        
+        expansionLog("STEP", string.format("🔧 ШАГ %d: Добавлен объект %s", stepCounter, obj.Name), {
+            ClassName = obj.ClassName,
+            Parent = obj.Parent and obj.Parent.Name or "NIL",
+            RelativeTime = string.format("%.3f сек", relativeTime)
+        })
+        
+        -- Создаем снимок после каждого значительного изменения
+        if obj:IsA("BasePart") or obj:IsA("Motor6D") or obj:IsA("Script") or obj:IsA("LocalScript") then
+            local snapshotName = string.format("step_%d", stepCounter)
+            takeModelSnapshot(model, snapshotName)
+            
+            -- Сравниваем с предыдущим снимком
+            if stepCounter == 1 then
+                compareSnapshots("initial", snapshotName)
+            else
+                compareSnapshots(string.format("step_%d", stepCounter - 1), snapshotName)
+            end
+        end
+        
+        stepCounter = stepCounter + 1
+    end)
+    
+    -- Финальный снимок через некоторое время
+    spawn(function()
+        wait(5) -- Ждем 5 секунд для завершения расширения
+        takeModelSnapshot(model, "final")
+        compareSnapshots("initial", "final")
+        
+        expansionLog("CRITICAL", "🔥 АНАЛИЗ РАСШИРЕНИЯ ЗАВЕРШЕН!")
+        generateExpansionReport()
+        
+        childAddedConnection:Disconnect()
+    end)
+    
+    return childAddedConnection
+end
+
+-- 📋 ГЕНЕРАЦИЯ ОТЧЕТА О РАСШИРЕНИИ
+local function generateExpansionReport()
+    expansionLog("CRITICAL", "📋 === ОТЧЕТ О РАСШИРЕНИИ МОДЕЛИ ===")
+    
+    if ExpansionData.baseModel then
+        expansionLog("INFO", "📦 Базовая модель: " .. ExpansionData.baseModel:GetFullName())
+    end
+    
+    if ExpansionData.expandedModel then
+        expansionLog("INFO", "🔧 Расширенная модель: " .. ExpansionData.expandedModel:GetFullName())
+    end
+    
+    local initialSnap = ExpansionData.snapshots["initial"]
+    local finalSnap = ExpansionData.snapshots["final"]
+    
+    if initialSnap and finalSnap then
+        expansionLog("CRITICAL", "🔥 ИТОГОВЫЕ ИЗМЕНЕНИЯ:", {
+            ChildrenBefore = initialSnap.children,
+            ChildrenAfter = finalSnap.children,
+            ChildrenIncrease = finalSnap.children - initialSnap.children,
+            DescendantsBefore = initialSnap.descendants,
+            DescendantsAfter = finalSnap.descendants,
+            DescendantsIncrease = finalSnap.descendants - initialSnap.descendants
+        })
+    end
+    
+    expansionLog("CRITICAL", string.format("📊 Всего снимков: %d", #ExpansionData.snapshots))
+    expansionLog("CRITICAL", "🔬 АНАЛИЗ РАСШИРЕНИЯ МОДЕЛИ ЗАВЕРШЕН!")
+end
+
+-- 🚀 ГЛАВНАЯ ФУНКЦИЯ АНАЛИЗА РАСШИРЕНИЯ
+local function startExpansionAnalysis()
+    expansionLog("EXPANSION", "🚀 ЗАПУСК АНАЛИЗА РАСШИРЕНИЯ МОДЕЛИ")
+    expansionLog("EXPANSION", "🔬 Отслеживание превращения базовой модели в полную")
+    
+    ExpansionData.isAnalyzing = true
+    ExpansionData.startTime = tick()
+    
+    -- Мониторинг появления модели в Visuals
+    local visuals = Workspace:FindFirstChild("Visuals")
+    if not visuals then
+        expansionLog("ERROR", "❌ Папка Visuals не найдена!")
+        return
+    end
+    
+    expansionLog("SUCCESS", "✅ Папка Visuals найдена, начинаем мониторинг...")
+    
+    local visualsConnection = visuals.ChildAdded:Connect(function(obj)
+        if obj:IsA("Model") then
+            local name = obj.Name:lower()
+            if name == "dog" or name == "bunny" or name == "golden lab" or 
+               name == "cat" or name == "rabbit" or name == "puppy" or
+               name == "goldenlab" or name:find("lab") then
+                
+                expansionLog("FOUND", "🎯 ПИТОМЕЦ ОБНАРУЖЕН В VISUALS: " .. obj.Name)
+                
+                -- Поиск базовой модели
+                local baseModel = findBaseModel(obj.Name)
+                
+                -- Запуск мониторинга расширения
+                monitorModelExpansion(obj)
+                
+                -- Отключаем мониторинг Visuals
+                visualsConnection:Disconnect()
+            end
+        end
+    end)
+    
+    expansionLog("EXPANSION", "✅ Анализ расширения активен!")
+    expansionLog("EXPANSION", "🥚 ОТКРОЙТЕ ЯЙЦО ДЛЯ АНАЛИЗА!")
+    
+    -- Автоостановка через 3 минуты
+    spawn(function()
+        wait(180)
+        if visualsConnection then
+            visualsConnection:Disconnect()
+        end
+        ExpansionData.isAnalyzing = false
+        expansionLog("EXPANSION", "⏰ Анализ завершен по таймауту")
+    end)
+end
+
+-- Создаем GUI
+local function createExpansionGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ModelExpansionAnalyzerGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 350, 0, 120)
+    frame.Position = UDim2.new(1, -370, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.02, 0.1, 0.05)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundColor3 = Color3.new(0.2, 1, 0.5)
+    title.BorderSizePixel = 0
+    title.Text = "🔬 EXPANSION ANALYZER"
+    title.TextColor3 = Color3.new(0, 0, 0)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(1, -20, 0, 40)
+    startBtn.Position = UDim2.new(0, 10, 0, 40)
+    startBtn.BackgroundColor3 = Color3.new(0.2, 1, 0.5)
+    startBtn.BorderSizePixel = 0
+    startBtn.Text = "🔬 АНАЛИЗ РАСШИРЕНИЯ"
+    startBtn.TextColor3 = Color3.new(0, 0, 0)
+    startBtn.TextScaled = true
+    startBtn.Font = Enum.Font.SourceSansBold
+    startBtn.Parent = frame
+    
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 80)
-    status.Position = UDim2.new(0, 10, 0, 50)
+    status.Size = UDim2.new(1, -20, 0, 30)
+    status.Position = UDim2.new(0, 10, 0, 90)
     status.BackgroundTransparency = 1
-    status.Text = "1. Возьмите питомца в руки\n2. Отсканируйте с записью анимации (5 сек)\n3. Возьмите Shovel\n4. Замените с воспроизведением анимации"
+    status.Text = "Готов к анализу расширения"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
-    status.TextWrapped = true
     status.Parent = frame
     
-    -- Кнопка сканирования с анимацией
-    local scanBtn = Instance.new("TextButton")
-    scanBtn.Size = UDim2.new(1, -20, 0, 50)
-    scanBtn.Position = UDim2.new(0, 10, 0, 140)
-    scanBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
-    scanBtn.BorderSizePixel = 0
-    scanBtn.Text = "🎬 Сканировать с записью анимации"
-    scanBtn.TextColor3 = Color3.new(1, 1, 1)
-    scanBtn.TextScaled = true
-    scanBtn.Font = Enum.Font.SourceSansBold
-    scanBtn.Parent = frame
-    
-    -- Кнопка замены с анимацией
-    local replaceBtn = Instance.new("TextButton")
-    replaceBtn.Size = UDim2.new(1, -20, 0, 50)
-    replaceBtn.Position = UDim2.new(0, 10, 0, 200)
-    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    replaceBtn.BorderSizePixel = 0
-    replaceBtn.Text = "🔄 Заменить с воспроизведением анимации"
-    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
-    replaceBtn.TextScaled = true
-    replaceBtn.Font = Enum.Font.SourceSansBold
-    replaceBtn.Visible = false
-    replaceBtn.Parent = frame
-    
-    -- Кнопка закрытия
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(1, -20, 0, 40)
-    closeBtn.Position = UDim2.new(0, 10, 0, 260)
-    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
-    closeBtn.BorderSizePixel = 0
-    closeBtn.Text = "❌ Закрыть"
-    closeBtn.TextColor3 = Color3.new(1, 1, 1)
-    closeBtn.TextScaled = true
-    closeBtn.Font = Enum.Font.SourceSansBold
-    closeBtn.Parent = frame
-    
-    -- События
-    scanBtn.MouseButton1Click:Connect(function()
-        status.Text = "🎬 Сканирую питомца с записью анимации...\nДержите питомца в руках 5 секунд!"
-        status.TextColor3 = Color3.new(1, 1, 0)
-        scanBtn.Text = "⏳ Сканирование..."
+    startBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔬 Анализ активен!"
+        status.TextColor3 = Color3.new(0.2, 1, 0.5)
+        startBtn.Text = "✅ АНАЛИЗ АКТИВЕН"
+        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
+        startBtn.Active = false
         
-        local success = scanPetWithAnimation()
-        
-        if success then
-            -- Ждем завершения записи через spawn
-            spawn(function()
-                wait(6)
-                if scannedPetData then
-                    status.Text = "✅ Питомец отсканирован с анимацией!\nТеперь возьмите Shovel и замените."
-                    status.TextColor3 = Color3.new(0, 1, 0)
-                    replaceBtn.Visible = true
-                    scanBtn.Text = "🎬 Сканировать с записью анимации"
-                else
-                    status.Text = "❌ Ошибка сканирования!\nВозьмите питомца в руки."
-                    status.TextColor3 = Color3.new(1, 0, 0)
-                    scanBtn.Text = "🎬 Сканировать с записью анимации"
-                end
-            end)
-        else
-            status.Text = "❌ Ошибка сканирования!\nВозьмите питомца в руки."
-            status.TextColor3 = Color3.new(1, 0, 0)
-            scanBtn.Text = "🎬 Сканировать с записью анимации"
-        end
-    end)
-    
-    replaceBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Заменяю Shovel с воспроизведением анимации..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = replaceShovelWithAnimation()
-        
-        if success then
-            status.Text = "✅ Shovel заменен с анимацией!\nПитомец должен двигаться!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки."
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    closeBtn.MouseButton1Click:Connect(function()
-        if animationConnection and animationConnection.Connected then
-            animationConnection:Disconnect()
-            animationConnection = nil
-        end
-        screenGui:Destroy()
+        startExpansionAnalysis()
     end)
 end
 
 -- Запускаем
-createAdvancedReplacerGUI()
-print("✅ AdvancedShovelReplacer готов!")
-print("🎬 Основан на методах из CFrameAnimationDiagnostic")
-print("🔍 1. Возьмите питомца в руки")
-print("🎬 2. Нажмите 'Сканировать с записью анимации'")
-print("🔄 3. Возьмите Shovel и нажмите 'Заменить с воспроизведением анимации'")
+local consoleTextLabel = createExpansionConsole()
+createExpansionGUI()
+
+expansionLog("EXPANSION", "✅ ModelExpansionAnalyzer готов!")
+expansionLog("EXPANSION", "🔬 Анализ расширения модели от базовой до полной")
+expansionLog("EXPANSION", "📸 Снимки на каждом этапе + сравнение изменений")
+expansionLog("EXPANSION", "🚀 Нажмите 'АНАЛИЗ РАСШИРЕНИЯ' и откройте яйцо!")
