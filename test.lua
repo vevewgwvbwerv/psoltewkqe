@@ -1,711 +1,508 @@
--- 🔥 PET SCALER v2.0 - Масштабирование с анимацией
--- Объединяет оригинальный PetScaler + SmartMotorCopier
--- Создает масштабированную копию И сразу включает анимацию
+-- FullModelHunter.lua
+-- ОХОТНИК ЗА ПОЛНОЙ МОДЕЛЬЮ: Ищет источник УЖЕ ГОТОВОЙ модели питомца
+-- Фокус на поиске модели с 18 частями и 14 Motor6D, а не базовой модели
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local ServerStorage = game:GetService("ServerStorage")
+local StarterGui = game:GetService("StarterGui")
+local StarterPack = game:GetService("StarterPack")
+local StarterPlayer = game:GetService("StarterPlayer")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
-print("🔥 === PET SCALER v2.0 - С АНИМАЦИЕЙ ===")
+print("🔍 === FULL MODEL HUNTER ===")
+print("🎯 Цель: Найти источник ПОЛНОЙ модели питомца (18 частей, 14 Motor6D)")
 print("=" .. string.rep("=", 60))
 
--- Конфигурация (как в оригинальном PetScaler)
-local CONFIG = {
-    SEARCH_RADIUS = 100,
-    SCALE_FACTOR = 3.0,
-    TWEEN_TIME = 3.0,
-    EASING_STYLE = Enum.EasingStyle.Quad,
-    EASING_DIRECTION = Enum.EasingDirection.Out
+-- 📊 ДАННЫЕ ОХОТНИКА ПОЛНОЙ МОДЕЛИ
+local FullHunterData = {
+    targetStructure = {
+        children = 18,
+        descendants = 34,
+        motor6ds = 14,
+        baseParts = 16
+    },
+    foundSources = {},
+    perfectMatches = {},
+    closeMatches = {},
+    targetModel = nil,
+    isHunting = false
 }
 
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
-end
+-- 🖥️ КОНСОЛЬ ОХОТНИКА
+local HunterConsole = nil
+local ConsoleLines = {}
+local MaxLines = 120
 
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
-end
-
-local playerPos = hrp.Position
-print("📍 Позиция игрока:", playerPos)
-print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
-print("📏 Коэффициент увеличения:", CONFIG.SCALE_FACTOR .. "x")
-print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
-print()
-
--- === ФУНКЦИИ ИЗ ОРИГИНАЛЬНОГО PETSCALER ===
-
--- Функция проверки визуальных элементов питомца
-local function hasPetVisuals(model)
-    local meshCount = 0
-    local petMeshes = {}
+-- Создание консоли
+local function createHunterConsole()
+    if HunterConsole then HunterConsole:Destroy() end
     
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or ""
-            }
-            if meshData.meshId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or ""
-            }
-            if meshData.meshId ~= "" or meshData.textureId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
+    HunterConsole = Instance.new("ScreenGui")
+    HunterConsole.Name = "FullModelHunterConsole"
+    HunterConsole.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 900, 0, 700)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.05, 0.02)
+    frame.BorderSizePixel = 3
+    frame.BorderColor3 = Color3.new(1, 0.5, 0.1)
+    frame.Parent = HunterConsole
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 35)
+    title.BackgroundColor3 = Color3.new(1, 0.5, 0.1)
+    title.BorderSizePixel = 0
+    title.Text = "🔍 FULL MODEL HUNTER"
+    title.TextColor3 = Color3.new(0, 0, 0)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
+    scrollFrame.BackgroundColor3 = Color3.new(0.05, 0.02, 0.01)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 15
+    scrollFrame.Parent = frame
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -10, 1, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = "🔍 Охотник за полной моделью готов..."
+    textLabel.TextColor3 = Color3.new(1, 0.9, 0.8)
+    textLabel.TextSize = 10
+    textLabel.Font = Enum.Font.SourceSans
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Parent = scrollFrame
+    
+    return textLabel
+end
+
+-- Функция логирования охотника
+local function hunterLog(category, message, data)
+    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+    
+    local prefixes = {
+        HUNTER = "🔍", SEARCH = "🔎", FOUND = "🎯", PERFECT = "💎",
+        CLOSE = "🔶", ANALYSIS = "📊", CRITICAL = "🔥", SUCCESS = "✅", 
+        ERROR = "❌", INFO = "ℹ️", DETAIL = "📝", LOCATION = "📍"
+    }
+    
+    local logLine = string.format("[%s] %s %s", timestamp, prefixes[category] or "ℹ️", message)
+    
+    if data and next(data) then
+        for key, value in pairs(data) do
+            logLine = logLine .. string.format("\n      %s: %s", key, tostring(value))
         end
     end
     
-    return meshCount > 0, petMeshes
-end
-
--- Функция глубокого копирования модели (ОРИГИНАЛЬНАЯ ВЕРСИЯ)
-local function deepCopyModel(originalModel)
-    print("📋 Создаю глубокую копию модели:", originalModel.Name)
+    table.insert(ConsoleLines, logLine)
     
-    local copy = originalModel:Clone()
-    copy.Name = originalModel.Name .. "_SCALED_COPY"
-    copy.Parent = Workspace
-    
-    -- Позиционирование копии (оригинальная логика)
-    if copy.PrimaryPart and originalModel.PrimaryPart then
-        local originalCFrame = originalModel.PrimaryPart.CFrame
-        local offset = Vector3.new(15, 0, 0)
-        
-        local targetPosition = originalCFrame.Position + offset
-        
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {copy, originalModel}
-        
-        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
-        local rayDirection = Vector3.new(0, -200, 0)
-        
-        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        
-        if raycastResult then
-            local groundY = raycastResult.Position.Y
-            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
-            -- ИСПРАВЛЕНО: Сохраняем правильную ориентацию (стоячее положение)
-            local upVector = Vector3.new(0, 1, 0) -- Вверх
-            local lookVector = originalCFrame.LookVector
-            -- Обнуляем Y-компонент чтобы питомец не наклонялся
-            lookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-            local newCFrame = CFrame.lookAt(finalPosition, finalPosition + lookVector, upVector)
-            copy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на земле в стоячем положении")
-        else
-            -- ИСПРАВЛЕНО: Правильная ориентация без земли
-            local newPosition = originalCFrame.Position + offset
-            local upVector = Vector3.new(0, 1, 0)
-            local lookVector = Vector3.new(originalCFrame.LookVector.X, 0, originalCFrame.LookVector.Z).Unit
-            local newCFrame = CFrame.lookAt(newPosition, newPosition + lookVector, upVector)
-            copy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на уровне оригинала в стоячем положении")
-        end
-    elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
-        local originalPos = originalModel.RootPart.Position
-        local offset = Vector3.new(15, 0, 0)
-        copy.RootPart.Position = originalPos + offset
-        print("📍 Копия размещена через RootPart")
-    else
-        print("⚠️ Не удалось точно позиционировать копию")
+    if #ConsoleLines > MaxLines then
+        table.remove(ConsoleLines, 1)
     end
     
-    -- ВАЖНО: НЕ устанавливаем Anchored здесь - это сделает SmartAnchoredManagement
+    -- Обновляем консоль
+    if HunterConsole then
+        local textLabel = HunterConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
+        if textLabel then
+            textLabel.Text = table.concat(ConsoleLines, "\n")
+            local scrollFrame = textLabel.Parent
+            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
+            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
+        end
+    end
     
-    print("✅ Копия создана:", copy.Name)
-    return copy
+    print(logLine)
 end
 
--- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
-
--- Функция получения всех BasePart из модели (ОРИГИНАЛЬНАЯ ЛОГИКА PETSCALER)
-local function getAllParts(model)
-    local parts = {}
+-- 📊 АНАЛИЗ СТРУКТУРЫ МОДЕЛИ
+local function analyzeModelStructure(model)
+    local structure = {
+        children = #model:GetChildren(),
+        descendants = #model:GetDescendants(),
+        baseParts = 0,
+        motor6ds = 0,
+        meshParts = 0,
+        scripts = 0,
+        animators = 0,
+        unionOperations = 0,
+        weldConstraints = 0,
+        highlights = 0
+    }
     
     for _, obj in pairs(model:GetDescendants()) do
         if obj:IsA("BasePart") then
-            table.insert(parts, obj)
+            structure.baseParts = structure.baseParts + 1
+        elseif obj:IsA("Motor6D") then
+            structure.motor6ds = structure.motor6ds + 1
+        elseif obj:IsA("MeshPart") then
+            structure.meshParts = structure.meshParts + 1
+        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+            structure.scripts = structure.scripts + 1
+        elseif obj:IsA("Animator") then
+            structure.animators = structure.animators + 1
+        elseif obj:IsA("UnionOperation") then
+            structure.unionOperations = structure.unionOperations + 1
+        elseif obj:IsA("WeldConstraint") then
+            structure.weldConstraints = structure.weldConstraints + 1
+        elseif obj:IsA("Highlight") then
+            structure.highlights = structure.highlights + 1
         end
     end
     
-    return parts
+    return structure
 end
 
--- Функция получения всех Motor6D из модели
-local function getMotor6Ds(model)
-    local motors = {}
+-- 🎯 ПРОВЕРКА СООТВЕТСТВИЯ ЦЕЛЕВОЙ СТРУКТУРЕ
+local function checkStructureMatch(structure, modelName, modelPath)
+    local target = FullHunterData.targetStructure
     
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            table.insert(motors, obj)
-        end
-    end
-    
-    return motors
-end
-
--- Функция создания карты Motor6D
-local function createMotorMap(motors)
-    local map = {}
-    
-    for _, motor in ipairs(motors) do
-        local key = motor.Name
-        if motor.Part0 then
-            key = key .. "_" .. motor.Part0.Name
-        end
-        if motor.Part1 then
-            key = key .. "_" .. motor.Part1.Name
-        end
+    -- Точное совпадение (идеальное)
+    if structure.children == target.children and 
+       structure.motor6ds == target.motor6ds and
+       structure.baseParts == target.baseParts then
         
-        map[key] = motor
-    end
-    
-    return map
-end
-
--- Функция умного управления Anchored (из SmartMotorCopier)
-local function smartAnchoredManagement(copyParts)
-    print("🧠 Умное управление Anchored...")
-    
-    -- Находим "корневую" часть
-    local rootPart = nil
-    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
-    
-    for _, candidate in ipairs(rootCandidates) do
-        for _, part in ipairs(copyParts) do
-            if part.Name == candidate then
-                rootPart = part
-                break
-            end
-        end
-        if rootPart then break end
-    end
-    
-    if not rootPart then
-        rootPart = copyParts[1]
-        print("  ⚠️ Корневая часть не найдена, использую:", rootPart.Name)
-    else
-        print("  ✅ Корневая часть:", rootPart.Name)
-    end
-    
-    -- Применяем умный Anchored
-    for _, part in ipairs(copyParts) do
-        if part == rootPart then
-            part.Anchored = true -- Только корень заякорен
-        else
-            part.Anchored = false -- Остальные могут двигаться
-        end
-    end
-    
-    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
-    return rootPart
-end
-
--- Функция копирования состояния Motor6D с масштабированием
-local function copyMotorState(originalMotor, copyMotor, scaleFactor)
-    if not originalMotor or not copyMotor then
-        return false
-    end
-    
-    -- ИСПРАВЛЕНО: Масштабируем позиционные компоненты Motor6D
-    -- Transform содержит текущее смещение - масштабируем его
-    local originalTransform = originalMotor.Transform
-    local scaledTransform = CFrame.new(originalTransform.Position * scaleFactor) * (originalTransform - originalTransform.Position)
-    copyMotor.Transform = scaledTransform
-    
-    -- C0 и C1 - базовые смещения соединения - тоже масштабируем
-    local originalC0 = originalMotor.C0
-    local scaledC0 = CFrame.new(originalC0.Position * scaleFactor) * (originalC0 - originalC0.Position)
-    copyMotor.C0 = scaledC0
-    
-    local originalC1 = originalMotor.C1
-    local scaledC1 = CFrame.new(originalC1.Position * scaleFactor) * (originalC1 - originalC1.Position)
-    copyMotor.C1 = scaledC1
-    
-    return true
-end
-
--- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
-
--- Функция плавного масштабирования модели
-local function scaleModelSmoothly(model, scaleFactor, tweenTime)
-    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
-    
-    local parts = getAllParts(model)
-    print("🧩 Найдено частей для масштабирования:", #parts)
-    
-    if #parts == 0 then
-        print("❌ Нет частей для масштабирования!")
-        return false
-    end
-    
-    -- Определяем центр масштабирования
-    local centerCFrame
-    if model.PrimaryPart then
-        centerCFrame = model.PrimaryPart.CFrame
-        print("🎯 Центр масштабирования: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
-    else
-        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            centerCFrame = modelCFrame
-            print("🎯 Центр масштабирования: Центр модели")
-        else
-            print("❌ Не удалось определить центр масштабирования!")
-            return false
-        end
-    end
-    
-    -- Сохраняем исходные данные всех частей
-    local originalData = {}
-    for _, part in ipairs(parts) do
-        originalData[part] = {
-            size = part.Size,
-            cframe = part.CFrame
+        FullHunterData.perfectMatches[modelPath] = {
+            model = modelName,
+            path = modelPath,
+            structure = structure,
+            matchType = "PERFECT"
         }
-    end
-    
-    -- Создаем TweenInfo
-    local tweenInfo = TweenInfo.new(
-        tweenTime,
-        CONFIG.EASING_STYLE,
-        CONFIG.EASING_DIRECTION,
-        0, -- Повторений
-        false, -- Обратная анимация
-        0 -- Задержка
-    )
-    
-    -- Масштабирование через CFrame (ОРИГИНАЛЬНАЯ ЛОГИКА)
-    local tweens = {}
-    local completedTweens = 0
-    
-    for _, part in ipairs(parts) do
-        local originalSize = originalData[part].size
-        local originalCFrame = originalData[part].cframe
         
-        -- Вычисляем новый размер
-        local newSize = originalSize * scaleFactor
-        
-        -- Вычисляем новый CFrame относительно центра
-        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
-        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
-        local newCFrame = centerCFrame * scaledRelativeCFrame
-        
-        -- Создаем твин для размера и CFrame
-        local tween = TweenService:Create(part, tweenInfo, {
-            Size = newSize,
-            CFrame = newCFrame
+        hunterLog("PERFECT", "💎 ИДЕАЛЬНОЕ СОВПАДЕНИЕ НАЙДЕНО!", {
+            Model = modelName,
+            Path = modelPath,
+            Children = structure.children,
+            Motor6Ds = structure.motor6ds,
+            BaseParts = structure.baseParts,
+            MatchType = "PERFECT"
         })
         
-        -- Обработчик завершения твина
-        tween.Completed:Connect(function()
-            completedTweens = completedTweens + 1
-            if completedTweens == #parts then
-                print("✅ Масштабирование завершено!")
-                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
+        return "PERFECT"
+    end
+    
+    -- Близкое совпадение
+    local childrenDiff = math.abs(structure.children - target.children)
+    local motor6dDiff = math.abs(structure.motor6ds - target.motor6ds)
+    local partsDiff = math.abs(structure.baseParts - target.baseParts)
+    
+    if childrenDiff <= 3 and motor6dDiff <= 3 and partsDiff <= 3 then
+        FullHunterData.closeMatches[modelPath] = {
+            model = modelName,
+            path = modelPath,
+            structure = structure,
+            matchType = "CLOSE",
+            differences = {
+                children = childrenDiff,
+                motor6ds = motor6dDiff,
+                baseParts = partsDiff
+            }
+        }
+        
+        hunterLog("CLOSE", "🔶 БЛИЗКОЕ СОВПАДЕНИЕ НАЙДЕНО!", {
+            Model = modelName,
+            Path = modelPath,
+            Children = string.format("%d (diff: %d)", structure.children, childrenDiff),
+            Motor6Ds = string.format("%d (diff: %d)", structure.motor6ds, motor6dDiff),
+            BaseParts = string.format("%d (diff: %d)", structure.baseParts, partsDiff),
+            MatchType = "CLOSE"
+        })
+        
+        return "CLOSE"
+    end
+    
+    return "NO_MATCH"
+end
+
+-- 🔎 ГЛУБОКИЙ ПОИСК ВО ВСЕХ СЕРВИСАХ
+local function deepSearchAllServices()
+    hunterLog("HUNTER", "🔍 ГЛУБОКИЙ ПОИСК ПОЛНОЙ МОДЕЛИ ВО ВСЕХ СЕРВИСАХ")
+    
+    local services = {
+        {name = "ReplicatedStorage", service = ReplicatedStorage},
+        {name = "ReplicatedFirst", service = ReplicatedFirst},
+        {name = "Workspace", service = Workspace},
+        {name = "StarterGui", service = StarterGui},
+        {name = "StarterPack", service = StarterPack},
+        {name = "StarterPlayer", service = StarterPlayer}
+    }
+    
+    -- Попытка получить ServerStorage
+    local success, serverStorage = pcall(function() return game:GetService("ServerStorage") end)
+    if success and serverStorage then
+        table.insert(services, {name = "ServerStorage", service = serverStorage})
+    end
+    
+    local totalFound = 0
+    local perfectCount = 0
+    local closeCount = 0
+    
+    for _, serviceData in ipairs(services) do
+        hunterLog("LOCATION", "📍 Поиск в " .. serviceData.name .. "...")
+        local foundInService = 0
+        
+        local success, result = pcall(function()
+            for _, obj in pairs(serviceData.service:GetDescendants()) do
+                if obj:IsA("Model") then
+                    local name = obj.Name:lower()
+                    
+                    -- Расширенный поиск по именам питомцев
+                    if name:find("dog") or name:find("bunny") or name:find("lab") or
+                       name:find("cat") or name:find("rabbit") or name:find("puppy") or
+                       name:find("pet") or name:find("animal") or name:find("golden") or
+                       name == "dog" or name == "bunny" or name == "golden lab" or
+                       name == "goldenlab" then
+                        
+                        local structure = analyzeModelStructure(obj)
+                        local matchType = checkStructureMatch(structure, obj.Name, obj:GetFullName())
+                        
+                        FullHunterData.foundSources[obj:GetFullName()] = {
+                            model = obj,
+                            name = obj.Name,
+                            path = obj:GetFullName(),
+                            location = serviceData.name,
+                            structure = structure,
+                            matchType = matchType
+                        }
+                        
+                        foundInService = foundInService + 1
+                        totalFound = totalFound + 1
+                        
+                        if matchType == "PERFECT" then
+                            perfectCount = perfectCount + 1
+                        elseif matchType == "CLOSE" then
+                            closeCount = closeCount + 1
+                        else
+                            hunterLog("FOUND", "🎯 Модель найдена: " .. obj.Name, {
+                                Location = serviceData.name,
+                                Path = obj:GetFullName(),
+                                Children = structure.children,
+                                Motor6Ds = structure.motor6ds,
+                                BaseParts = structure.baseParts,
+                                Match = "NO_MATCH"
+                            })
+                        end
+                    end
+                end
             end
         end)
         
-        table.insert(tweens, tween)
-        tween:Play()
-    end
-    
-    print("🚀 Запущено " .. #tweens .. " твинов для плавного масштабирования")
-    return true
-end
-
--- === ФУНКЦИЯ ЗАПУСКА ЖИВОГО КОПИРОВАНИЯ ===
-
-local function startLiveMotorCopying(original, copy)
-    print("🔄 Запуск живого копирования Motor6D...")
-    
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
-    
-    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
-    
-    if #originalMotors == 0 or #copyMotors == 0 then
-        print("❌ Недостаточно Motor6D для копирования")
-        return nil
-    end
-    
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
-    
-    local connection = nil
-    local isRunning = true
-    local frameCount = 0
-    
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRunning then
-            connection:Disconnect()
-            return
-        end
-        
-        frameCount = frameCount + 1
-        
-        -- Проверяем существование моделей
-        if not original.Parent or not copy.Parent then
-            print("⚠️ Модель удалена, останавливаю копирование")
-            isRunning = false
-            return
-        end
-        
-        -- Копируем состояния Motor6D с масштабированием
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                copyMotorState(originalMotor, copyMotor, CONFIG.SCALE_FACTOR)
-            end
-        end
-        
-        -- Статус каждые 3 секунды
-        if frameCount % 180 == 0 then
-            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
-        end
-    end)
-    
-    print("✅ Живое копирование Motor6D запущено!")
-    print("💡 Копия будет повторять движения оригинала")
-    
-    return connection
-end
-
--- === ОСНОВНЫЕ ФУНКЦИИ ===
-
--- Функция поиска и масштабирования (из оригинального PetScaler)
-local function findAndScalePet()
-    print("🔍 Поиск UUID моделей питомцев...")
-    
-    local foundPets = {}
-    
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
-                        table.insert(foundPets, {
-                            model = obj,
-                            distance = distance,
-                            meshes = meshes
-                        })
-                    end
-                end
-            end
-        end
-    end
-    
-    if #foundPets == 0 then
-        print("❌ Питомцы не найдены!")
-        return nil
-    end
-    
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец:", targetPet.model.Name)
-    
-    return targetPet.model
-end
-
--- Главная функция v2.0
-local function main()
-    print("🚀 PetScaler v2.0 запущен!")
-    
-    -- Шаг 1: Найти питомца
-    local petModel = findAndScalePet()
-    if not petModel then
-        return
-    end
-    
-    -- Шаг 2: Создать копию (оригинальная логика)
-    local petCopy = deepCopyModel(petModel)
-    if not petCopy then
-        print("❌ Не удалось создать копию!")
-        return
-    end
-    
-    -- Шаг 3: СНАЧАЛА масштабируем с закрепленными частями (как в оригинале)
-    print("\n📏 === МАСШТАБИРОВАНИЕ ===")
-    -- Убеждаемся что все части закреплены для стабильного масштабирования
-    for _, part in pairs(petCopy:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Anchored = true
-        end
-    end
-    
-    wait(0.5)
-    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
-    
-    if not scaleSuccess then
-        print("❌ Масштабирование не удалось!")
-        return
-    end
-    
-    -- Шаг 4: ПОСЛЕ масштабирования настраиваем Anchored для анимации
-    print("\n🧠 === НАСТРОЙКА ANCHORED ДЛЯ АНИМАЦИИ ===")
-    wait(CONFIG.TWEEN_TIME + 1) -- Ждем завершения масштабирования
-    
-    local copyParts = getAllParts(petCopy)
-    local rootPart = smartAnchoredManagement(copyParts)
-    
-    -- Шаг 5: Запуск живого копирования Motor6D
-    print("\n🎭 === ЗАПУСК АНИМАЦИИ ===")
-    
-    local connection = startLiveMotorCopying(petModel, petCopy)
-    
-    -- Шаг 6: КОНТРОЛЬ ОРИГИНАЛЬНОГО ПИТОМЦА (останавливаем его)
-    print("\n🎯 === КОНТРОЛЬ ОРИГИНАЛА ===")
-    
-    -- Находим оригинального питомца
-    local originalRoot = petModel:FindFirstChild("RootPart") or 
-                        petModel:FindFirstChild("Torso") or 
-                        petModel:FindFirstChild("HumanoidRootPart")
-    
-    local originalHumanoid = petModel:FindFirstChildOfClass("Humanoid")
-    
-    if originalRoot then
-        print("🐕 Нашел оригинального питомца:", petModel.Name)
-        
-        -- НОВЫЙ ПОДХОД: Принудительно зацикливаем IDLE анимацию!
-        
-        -- Заякориваем только корень (чтобы не ходил, но мог анимироваться)
-        originalRoot.Anchored = true
-        print("⚓ Корень оригинала заякорен (не будет ходить)")
-        
-        -- Находим Animator для принудительного запуска idle анимации
-        local originalAnimator = petModel:FindFirstChildOfClass("Animator")
-        
-        if originalAnimator then
-            print("🎭 Нашел Animator - ПЕРЕКЛЮЧАЕМ НА IDLE АНИМАЦИЮ!")
-            
-            -- Отключаем AI сначала (чтобы не мешал)
-            if originalHumanoid then
-                originalHumanoid.WalkSpeed = 0
-                originalHumanoid.JumpPower = 0
-                -- НЕ ставим PlatformStand - пусть анимируется!
-                print("🤖 AI отключен, но анимация разрешена")
-            end
-            
-            -- ПОИСК IDLE АНИМАЦИИ: смотрим все доступные анимации
-            local idleTrack = nil
-            local allTracks = originalAnimator:GetPlayingAnimationTracks()
-            
-            -- Проверяем все текущие анимации
-            for _, track in pairs(allTracks) do
-                local trackName = track.Name:lower()
-                print("🔍 Нашел анимацию:", track.Name, "(скорость:", track.Speed, ")")
-                
-                if trackName:find("idle") or trackName:find("stand") or trackName:find("breath") then
-                    idleTrack = track
-                    print("✨ Нашел IDLE анимацию:", track.Name)
-                elseif trackName:find("walk") or trackName:find("run") or trackName:find("move") then
-                    print("🚫 Останавливаю анимацию ходьбы:", track.Name)
-                    track:Stop()
-                end
-            end
-            
-            -- Если нашли idle анимацию - АГРЕССИВНО зацикливаем!
-            if idleTrack then
-                idleTrack.Looped = true
-                idleTrack:Play()
-                print("🔄 ЗАЦИКЛИЛ IDLE анимацию:", idleTrack.Name, "- теперь будет бесконечно анимироваться!")
-                
-                -- АГРЕССИВНОЕ ЗАЦИКЛИВАНИЕ: принудительно перезапускаем каждые 3 секунды
-                spawn(function()
-                    while originalAnimator and originalAnimator.Parent and idleTrack and idleTrack.Parent then
-                        wait(3) -- Каждые 3 секунды
-                        
-                        -- Проверяем что idle анимация все еще играет
-                        if not idleTrack.IsPlaying then
-                            idleTrack.Looped = true
-                            idleTrack:Play()
-                            print("🔄 ПРИНУДИТЕЛЬНО перезапустил idle анимацию:", idleTrack.Name)
-                        end
-                        
-                        -- Дополнительно: блокируем любые walking анимации
-                        for _, track in pairs(originalAnimator:GetPlayingAnimationTracks()) do
-                            local trackName = track.Name:lower()
-                            if trackName:find("walk") or trackName:find("run") or trackName:find("move") then
-                                track:Stop()
-                                print("🚫 АГРЕССИВНО заблокировал:", track.Name)
-                                
-                                -- Сразу же перезапускаем idle
-                                if idleTrack then
-                                    idleTrack.Looped = true
-                                    idleTrack:Play()
-                                    print("🔄 Немедленно восстановил idle анимацию")
-                                end
-                            end
-                        end
-                    end
-                end)
-            else
-                print("⚠️ IDLE анимация не найдена - попробуем создать свою")
-                
-                -- Попытка создать простую idle анимацию через Motor6D
-                spawn(function()
-                    while originalAnimator and originalAnimator.Parent do
-                        wait(2) -- Каждые 2 секунды легкое покачивание
-                        
-                        -- Находим голову для легкого покачивания
-                        local headMotor = petModel:FindFirstChild("Neck") or petModel:FindFirstChild("Head")
-                        if headMotor and headMotor:IsA("Motor6D") then
-                            local originalC0 = headMotor.C0
-                            -- Легкое покачивание головы
-                            headMotor.C0 = originalC0 * CFrame.Angles(0, math.rad(5), 0)
-                            wait(0.5)
-                            headMotor.C0 = originalC0 * CFrame.Angles(0, math.rad(-5), 0)
-                            wait(0.5)
-                            headMotor.C0 = originalC0
-                        end
-                    end
-                end)
-                print("🔄 Запустил самодельную idle анимацию (покачивание головы)")
-            end
-            
-            -- ДОПОЛНИТЕЛЬНЫЙ МОНИТОРИНГ: еще более частая проверка
-            spawn(function()
-                while originalAnimator and originalAnimator.Parent do
-                    wait(0.2) -- Очень частая проверка каждые 0.2 секунды
-                    
-                    -- Убеждаемся что idle анимация играет
-                    if idleTrack and not idleTrack.IsPlaying then
-                        idleTrack.Looped = true
-                        idleTrack:Play()
-                        print("🔄 ЭКСТРЕННО восстановил idle анимацию!")
-                    end
-                    
-                    -- Блокируем любые walking анимации
-                    for _, track in pairs(originalAnimator:GetPlayingAnimationTracks()) do
-                        local trackName = track.Name:lower()
-                        if trackName:find("walk") or trackName:find("run") or trackName:find("move") then
-                            track:Stop()
-                            print("🚫 ЭКСТРЕННО заблокировал:", track.Name)
-                            
-                            -- Немедленно восстанавливаем idle
-                            if idleTrack then
-                                idleTrack.Looped = true
-                                idleTrack:Play()
-                                print("🔄 НЕМЕДЛЕННО восстановил idle")
-                            end
-                        end
-                    end
-                end
-            end)
+        if not success then
+            hunterLog("ERROR", "❌ Ошибка доступа к " .. serviceData.name .. ": " .. tostring(result))
         else
-            print("⚠️ Animator не найден - просто останавливаем AI")
-            if originalHumanoid then
-                originalHumanoid.WalkSpeed = 0
-                originalHumanoid.JumpPower = 0
-                originalHumanoid.PlatformStand = true
-            end
+            hunterLog("LOCATION", string.format("📍 В %s найдено: %d моделей", serviceData.name, foundInService))
         end
-        
-        print("✅ Оригинал переведен в бесконечный IDLE режим!")
-    else
-        print("⚠️ Не нашел корень оригинального питомца")
     end
     
-    if connection then
-        print("\n🎉 === ПОЛНЫЙ УСПЕХ! ===")
-        print("✅ Масштабированная копия создана")
-        print("✅ Анимация запущена")
-        print("✅ Оригинальный питомец остановлен")
-        print("💡 Копия стоит на месте с живой анимацией!")
+    hunterLog("HUNTER", string.format("🔍 ИТОГИ ПОИСКА: %d моделей найдено", totalFound))
+    hunterLog("HUNTER", string.format("💎 Идеальных совпадений: %d", perfectCount))
+    hunterLog("HUNTER", string.format("🔶 Близких совпадений: %d", closeCount))
+    
+    return {total = totalFound, perfect = perfectCount, close = closeCount}
+end
+
+-- 📊 СРАВНЕНИЕ С ЦЕЛЕВОЙ МОДЕЛЬЮ
+local function compareWithTarget(targetModel)
+    hunterLog("ANALYSIS", "📊 СРАВНЕНИЕ С ЦЕЛЕВОЙ МОДЕЛЬЮ: " .. targetModel.Name)
+    
+    FullHunterData.targetModel = targetModel
+    local targetStructure = analyzeModelStructure(targetModel)
+    
+    hunterLog("ANALYSIS", "📊 Структура целевой модели:", targetStructure)
+    
+    -- Обновляем целевую структуру на основе реальной модели
+    FullHunterData.targetStructure = targetStructure
+    
+    -- Ищем точные совпадения среди найденных источников
+    local exactMatches = {}
+    
+    for path, sourceData in pairs(FullHunterData.foundSources) do
+        local source = sourceData.structure
+        
+        if source.children == targetStructure.children and
+           source.motor6ds == targetStructure.motor6ds and
+           source.baseParts == targetStructure.baseParts then
+            
+            exactMatches[path] = sourceData
+            
+            hunterLog("SUCCESS", "✅ ТОЧНОЕ СОВПАДЕНИЕ С ЦЕЛЕВОЙ МОДЕЛЬЮ!", {
+                Source = sourceData.name,
+                Location = sourceData.location,
+                Path = path,
+                Children = source.children,
+                Motor6Ds = source.motor6ds,
+                BaseParts = source.baseParts
+            })
+        end
+    end
+    
+    if next(exactMatches) then
+        hunterLog("CRITICAL", string.format("🔥 НАЙДЕНО %d ТОЧНЫХ СОВПАДЕНИЙ!", #exactMatches))
+        return exactMatches
     else
-        print("⚠️ Масштабирование успешно, но анимация не запустилась")
-        print("💡 Возможно проблема с Motor6D соединениями")
+        hunterLog("ERROR", "❌ НИ ОДНОГО ТОЧНОГО СОВПАДЕНИЯ НЕ НАЙДЕНО")
+        return {}
     end
 end
 
--- Создание GUI
-local function createGUI()
-    local playerGui = player:WaitForChild("PlayerGui")
+-- 📋 ГЕНЕРАЦИЯ ОТЧЕТА ОХОТЫ
+local function generateHuntingReport()
+    hunterLog("CRITICAL", "📋 === ОТЧЕТ ОХОТЫ ЗА ПОЛНОЙ МОДЕЛЬЮ ===")
     
-    local oldGui = playerGui:FindFirstChild("PetScalerV2GUI")
-    if oldGui then
-        oldGui:Destroy()
+    hunterLog("INFO", string.format("🔍 Всего найдено моделей: %d", #FullHunterData.foundSources))
+    hunterLog("INFO", string.format("💎 Идеальных совпадений: %d", #FullHunterData.perfectMatches))
+    hunterLog("INFO", string.format("🔶 Близких совпадений: %d", #FullHunterData.closeMatches))
+    
+    -- Показываем лучшие совпадения
+    if next(FullHunterData.perfectMatches) then
+        hunterLog("CRITICAL", "🔥 ИДЕАЛЬНЫЕ СОВПАДЕНИЯ:")
+        for path, match in pairs(FullHunterData.perfectMatches) do
+            hunterLog("PERFECT", string.format("💎 %s", match.model), {
+                Path = path,
+                Children = match.structure.children,
+                Motor6Ds = match.structure.motor6ds,
+                BaseParts = match.structure.baseParts
+            })
+        end
     end
     
+    if next(FullHunterData.closeMatches) then
+        hunterLog("CRITICAL", "🔥 БЛИЗКИЕ СОВПАДЕНИЯ:")
+        for path, match in pairs(FullHunterData.closeMatches) do
+            hunterLog("CLOSE", string.format("🔶 %s", match.model), {
+                Path = path,
+                ChildrenDiff = match.differences.children,
+                Motor6DsDiff = match.differences.motor6ds,
+                PartsDiff = match.differences.baseParts
+            })
+        end
+    end
+    
+    hunterLog("CRITICAL", "🔍 ОХОТА ЗА ПОЛНОЙ МОДЕЛЬЮ ЗАВЕРШЕНА!")
+end
+
+-- 🚀 ГЛАВНАЯ ФУНКЦИЯ ОХОТЫ
+local function startFullModelHunt()
+    hunterLog("HUNTER", "🚀 ЗАПУСК ОХОТЫ ЗА ПОЛНОЙ МОДЕЛЬЮ")
+    hunterLog("HUNTER", "🎯 Цель: Найти источник модели с 18 частями и 14 Motor6D")
+    
+    FullHunterData.isHunting = true
+    
+    -- Глубокий поиск во всех сервисах
+    local searchResults = deepSearchAllServices()
+    
+    if searchResults.total == 0 then
+        hunterLog("ERROR", "❌ НИ ОДНОЙ МОДЕЛИ НЕ НАЙДЕНО!")
+        return
+    end
+    
+    -- Мониторинг появления целевой модели в Visuals
+    local visuals = Workspace:FindFirstChild("Visuals")
+    if visuals then
+        hunterLog("SUCCESS", "✅ Мониторинг Visuals для сравнения...")
+        
+        local visualsConnection = visuals.ChildAdded:Connect(function(obj)
+            if obj:IsA("Model") then
+                local name = obj.Name:lower()
+                if name == "dog" or name == "bunny" or name == "golden lab" or 
+                   name == "cat" or name == "rabbit" or name == "puppy" or
+                   name == "goldenlab" or name:find("lab") then
+                    
+                    hunterLog("FOUND", "🎯 ЦЕЛЕВАЯ МОДЕЛЬ В VISUALS: " .. obj.Name)
+                    
+                    -- Сравниваем с найденными источниками
+                    local exactMatches = compareWithTarget(obj)
+                    
+                    -- Генерируем отчет
+                    generateHuntingReport()
+                    
+                    -- Отключаем мониторинг
+                    visualsConnection:Disconnect()
+                    FullHunterData.isHunting = false
+                end
+            end
+        end)
+    else
+        -- Если нет Visuals, просто генерируем отчет
+        generateHuntingReport()
+        FullHunterData.isHunting = false
+    end
+    
+    hunterLog("HUNTER", "✅ Охота за полной моделью активна!")
+    hunterLog("HUNTER", "🥚 ОТКРОЙТЕ ЯЙЦО ДЛЯ СРАВНЕНИЯ!")
+end
+
+-- Создаем GUI
+local function createHunterGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetScalerV2GUI"
-    screenGui.Parent = playerGui
+    screenGui.Name = "FullModelHunterGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 250, 0, 80)
-    frame.Position = UDim2.new(0, 50, 0, 150) -- Под оригинальным PetScaler
-    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(0, 255, 0) -- Зеленая рамка
+    frame.Size = UDim2.new(0, 350, 0, 120)
+    frame.Position = UDim2.new(1, -370, 0, 10)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.05, 0.02)
+    frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
-    local button = Instance.new("TextButton")
-    button.Name = "ScaleButton"
-    button.Size = UDim2.new(0, 230, 0, 40)
-    button.Position = UDim2.new(0, 10, 0, 20)
-    button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    button.BorderSizePixel = 0
-    button.Text = "🔥 PetScaler v2.0 + Анимация"
-    button.TextColor3 = Color3.fromRGB(0, 0, 0)
-    button.TextSize = 14
-    button.Font = Enum.Font.SourceSansBold
-    button.Parent = frame
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundColor3 = Color3.new(1, 0.5, 0.1)
+    title.BorderSizePixel = 0
+    title.Text = "🔍 FULL MODEL HUNTER"
+    title.TextColor3 = Color3.new(0, 0, 0)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
     
-    button.MouseButton1Click:Connect(function()
-        button.Text = "⏳ Создаю с анимацией..."
-        button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(1, -20, 0, 40)
+    startBtn.Position = UDim2.new(0, 10, 0, 40)
+    startBtn.BackgroundColor3 = Color3.new(1, 0.5, 0.1)
+    startBtn.BorderSizePixel = 0
+    startBtn.Text = "🔍 ОХОТА ЗА ПОЛНОЙ МОДЕЛЬЮ"
+    startBtn.TextColor3 = Color3.new(0, 0, 0)
+    startBtn.TextScaled = true
+    startBtn.Font = Enum.Font.SourceSansBold
+    startBtn.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 30)
+    status.Position = UDim2.new(0, 10, 0, 90)
+    status.BackgroundTransparency = 1
+    status.Text = "Готов к охоте за полной моделью"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.Parent = frame
+    
+    startBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔍 Охота активна!"
+        status.TextColor3 = Color3.new(1, 0.5, 0.1)
+        startBtn.Text = "✅ ОХОТА АКТИВНА"
+        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
+        startBtn.Active = false
         
-        spawn(function()
-            main()
-            
-            wait(3)
-            button.Text = "🔥 PetScaler v2.0 + Анимация"
-            button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-        end)
+        startFullModelHunt()
     end)
-    
-    button.MouseEnter:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(0, 255, 0) then
-            button.BackgroundColor3 = Color3.fromRGB(0, 220, 0)
-        end
-    end)
-    
-    button.MouseLeave:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(0, 220, 0) then
-            button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-        end
-    end)
-    
-    print("🖥️ PetScaler v2.0 GUI создан!")
 end
 
--- Запуск
-createGUI()
-print("=" .. string.rep("=", 60))
-print("💡 PETSCALER v2.0 - ВСЕ В ОДНОМ:")
-print("   1. Создает масштабированную копию")
-print("   2. Настраивает правильные Anchored состояния")
-print("   3. Автоматически запускает живое копирование анимации")
-print("🎯 Нажмите зеленую кнопку для запуска!")
-print("=" .. string.rep("=", 60))
+-- Запускаем
+local consoleTextLabel = createHunterConsole()
+createHunterGUI()
+
+hunterLog("HUNTER", "✅ FullModelHunter готов!")
+hunterLog("HUNTER", "🔍 Охота за источником ПОЛНОЙ модели питомца")
+hunterLog("HUNTER", "🎯 Цель: 18 частей, 14 Motor6D, 34 потомка")
+hunterLog("HUNTER", "🚀 Нажмите 'ОХОТА ЗА ПОЛНОЙ МОДЕЛЬЮ' для поиска!")
