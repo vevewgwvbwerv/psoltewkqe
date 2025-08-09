@@ -7,9 +7,11 @@ local player = game.Players.LocalPlayer
 print("=== DIRECT SHOVEL FIX ===")
 
 -- Глобальные переменные
+local player = game.Players.LocalPlayer
 local petTool = nil
 local savedPetGripC0 = nil
 local savedPetGripC1 = nil
+local weldProtectionActive = false
 
 -- Поиск питомца в руках
 local function findPetInHands()
@@ -214,55 +216,129 @@ local function alternativeReplace()
             local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
             
             if handle and rightHand then
-                print("🔧 Критическое крепление Handle к руке...")
+                print(" Критическое крепление Handle к руке...")
                 
-                -- КРИТИЧЕСКИ ВАЖНО: Настройка Handle как у настоящего питомца
-                handle.Anchored = false
+                -- СНАЧАЛА НАСТРАИВАЕМ HANDLE ДЛЯ ПРЕДОТВРАЩЕНИЯ ПАДЕНИЯ
+                handle.Anchored = true -- КРИТИЧЕСКИ ВАЖНО: Заякориваем СРАЗУ!
                 handle.CanCollide = false
-                handle.CanTouch = false
                 handle.TopSurface = Enum.SurfaceType.Smooth
                 handle.BottomSurface = Enum.SurfaceType.Smooth
+                print("🔒 Handle заякорен для предотвращения падения!")
                 
-                -- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Создаем правильное крепление к руке
-                local rightGrip = rightHand:FindFirstChild("RightGrip")
-                if rightGrip then
-                    rightGrip:Destroy() -- Удаляем старое крепление
+                -- Удаляем старое крепление Handle (если есть)
+                local oldGrip = rightHand:FindFirstChild("RightGrip")
+                if oldGrip then
+                    oldGrip:Destroy()
+                    print(" Удалено старое крепление")
                 end
                 
-                -- Создаем новое крепление Handle к руке (как у настоящего питомца)
-                local newGrip = Instance.new("Weld")
-                newGrip.Name = "RightGrip"
-                newGrip.Part0 = rightHand
-                newGrip.Part1 = handle
-                newGrip.Parent = rightHand
+                -- НОВЫЙ ПОДХОД: КОПИРУЕМ WELD ОТ ОРИГИНАЛЬНОГО ПИТОМЦА
+                local newGrip = nil
                 
-                -- КРИТИЧЕСКИ ВАЖНО: Устанавливаем правильный CFrame для крепления
-                -- Копируем CFrame от настоящего питомца (если он в руках)
-                local petHandle = petTool:FindFirstChild("Handle")
-                local cframeSet = false
-                
-                if petHandle and petTool.Parent == character then
-                    -- Питомец В РУКАХ - копируем его крепление
-                    local petRightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-                    if petRightHand then
-                        local petGrip = petRightHand:FindFirstChild("RightGrip")
-                        if petGrip then
-                            -- Копируем ТОЧНЫЙ CFrame крепления от питомца В РУКАХ!
-                            newGrip.C0 = petGrip.C0
-                            newGrip.C1 = petGrip.C1
-                            print("📍 Скопирован CFrame от питомца В РУКАХ!")
-                            cframeSet = true
+                -- Ищем оригинальный питомец в Visuals для копирования его Weld
+                local visuals = workspace:FindFirstChild("Visuals")
+                if visuals then
+                    for _, child in pairs(visuals:GetChildren()) do
+                        if child.Name:find("Dragonfly") or child.Name:find("KG]") then
+                            local originalHandle = child:FindFirstChild("Handle")
+                            if originalHandle then
+                                local originalWeld = originalHandle:FindFirstChild("RightGrip")
+                                if originalWeld then
+                                    -- КОПИРУЕМ ЗНАЧЕНИЯ ОТ ОРИГИНАЛЬНОГО WELD + ИСПРАВЛЯЕМ ПОВОРОТ
+                                    newGrip = Instance.new("Weld")
+                                    newGrip.Name = "RightGrip"
+                                    newGrip.Part0 = rightHand
+                                    newGrip.Part1 = handle
+                                    -- ПРОБУЕМ РАЗНЫЕ ВАРИАНТЫ ПОВОРОТА ДЛЯ ПРАВИЛЬНОГО НАПРАВЛЕНИЯ
+                                    -- Вариант 1: Поворот на 180° по Y-оси
+                                    newGrip.C0 = originalWeld.C0 * CFrame.Angles(0, math.rad(180), 0)
+                                    newGrip.C1 = originalWeld.C1
+                                    
+                                    print("🔄 ПРИМЕНЕН поворот на 180° по Y-оси")
+                                    print("🔧 Если направление неправильное - используйте кнопку 'ИСПРАВИТЬ ОРИЕНТАЦИЮ'")
+                                    newGrip.Parent = rightHand
+                                    
+                                    print(" СКОПИРОВАНА ориентация от оригинального питомца!")
+                                    print(" Оригинальный C0:", originalWeld.C0)
+                                    print(" Оригинальный C1:", originalWeld.C1)
+                                    print(" Используется ТОЧНАЯ копия оригинального Weld!")
+                                    break
+                                end
+                            end
                         end
                     end
                 end
                 
-                if not cframeSet then
-                    -- Если питомец не в руках, используем стандартную ориентацию для питомцев
-                    -- Эта ориентация подходит для большинства питомцев
-                    newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0))
-                    newGrip.C1 = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0))
-                    print("📍 Установлено стандартное крепление для питомца")
+                -- Если не нашли оригинальный Weld - используем стандартное крепление
+                if not newGrip then
+                    newGrip = Instance.new("Weld")
+                    newGrip.Name = "RightGrip"
+                    newGrip.Part0 = rightHand
+                    newGrip.Part1 = handle
+                    newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
+                    newGrip.C1 = CFrame.new(0, 0, 0)
+                    newGrip.Parent = rightHand
+                    print(" Оригинальный Weld не найден - используется стандартное крепление")
                 end
+                
+                -- ПОСЛЕ СОЗДАНИЯ WELD убираем Anchored
+                wait() -- Ждем один кадр для стабилизации Weld
+                handle.Anchored = false
+                print("✅ Handle освобожден от Anchored - теперь держится Weld!")
+                
+                -- Запускаем фоновую защиту Weld от игры (ОЧЕНЬ КОРОТКОЕ время)
+                weldProtectionActive = true
+                spawn(function()
+                    local protectionTime = 0
+                    local maxProtectionCycles = 10 -- Максимум 0.1 секунды защиты (СОКРАЩЕНО!)
+                    
+                    while newGrip and newGrip.Parent and weldProtectionActive and protectionTime < maxProtectionCycles do
+                        wait(0.01)
+                        protectionTime = protectionTime + 1
+                        
+                        -- Проверяем, не создала ли игра свой RightGrip
+                        local gameGrip = rightHand:FindFirstChild("RightGrip")
+                        if gameGrip and gameGrip ~= newGrip then
+                            print("🛡️ Обнаружен автоматический RightGrip от игры! Удаляем...")
+                            gameGrip:Destroy()
+                            
+                            -- Восстанавливаем наш Weld с правильными параметрами
+                            if not newGrip or not newGrip.Parent then
+                                local restoredGrip = Instance.new("Weld")
+                                restoredGrip.Name = "RightGrip"
+                                restoredGrip.Part0 = rightHand
+                                restoredGrip.Part1 = handle
+                                restoredGrip.Parent = rightHand
+                                
+                                -- Используем правильную ориентацию при восстановлении
+                                restoredGrip.C0 = CFrame.new(0, -1, 0)
+                                restoredGrip.C1 = CFrame.new(-0.0670368001, 0, 0)
+                                print("🔧 Восстановлен Weld с правильной ориентацией!")
+                                
+                                print("🔧 Weld восстановлен с правильной ориентацией!")
+                            end
+                        end
+                    end
+                    
+                    -- Автоматически отключаем защиту через КОРОТКОЕ время
+                    weldProtectionActive = false
+                    print("🛡️ Защита Weld автоматически отключена через", protectionTime * 0.01, "секунд")
+                    print("🎮 ИГРА ТЕПЕРЬ МОЖЕТ ИСПРАВИТЬ ОРИЕНТАЦИЮ! Попробуйте убрать и взять питомца обратно.")
+                    
+                    -- Дополнительная задержка для стабилизации
+                    wait(0.1)
+                    print("✅ Система готова к естественной коррекции ориентации игрой")
+                    
+                    -- АВТОМАТИЧЕСКОЕ ИЗУЧЕНИЕ ОТКЛЮЧЕНО - ТОЛЬКО РУЧНОЕ!
+                    print("⚠️ Автоматическое изучение ориентации ОТКЛЮЧЕНО")
+                    print("🔍 Используйте кнопку 'ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ' вручную!")
+                    print("📋 ИНСТРУКЦИЯ:")
+                    print("   1. Уберите питомца в инвентарь")
+                    print("   2. Возьмите питомца обратно в руки")
+                    print("   3. Убедитесь, что питомец в ПРАВИЛЬНОЙ позе")
+                    print("   4. Нажмите 'ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ'")
+                    print("   5. Теперь можно делать новые замены")
+                end)
                 
                 print("✅ Handle ЖЕСТКО закреплен к руке через Weld!")
                 print("🎯 Падение исключено!")
@@ -335,19 +411,92 @@ local function fixPetOrientation()
     
     print("🔧 Применяю СОХРАНЕННУЮ ориентацию питомца...")
     
-    -- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Используем сохраненную ориентацию
-    if savedPetGripC0 and savedPetGripC1 then
-        rightGrip.C0 = savedPetGripC0
-        rightGrip.C1 = savedPetGripC1
-        print("📍 Применена СОХРАНЕННАЯ ориентация крепления!")
-        print("📍 C0:", savedPetGripC0)
-        print("📍 C1:", savedPetGripC1)
-        return true
+    -- ЦИКЛИЧЕСКОЕ ПЕРЕКЛЮЧЕНИЕ разных ориентаций для питомцев
+    local orientations = {
+        {name = "Стандартная", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая вправо", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая влево", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(-90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Перевернутая", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(180), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная вперед", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная назад", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(-45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Сохраненная (если есть)", c0 = savedPetGripC0 or CFrame.new(0, -1, -0.5), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Переворот головой вниз", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(math.rad(180), 0, 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот вправо", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот влево", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(-90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+    }
+    
+    -- Инициализируем индекс ориентации
+    if not _G.currentOrientationIndex then
+        _G.currentOrientationIndex = 1
     else
-        print("❌ Ориентация не была сохранена!")
-        print("💡 Сначала возьмите питомца в руки и нажмите 'Сохранить питомца'")
+        _G.currentOrientationIndex = _G.currentOrientationIndex + 1
+        if _G.currentOrientationIndex > #orientations then
+            _G.currentOrientationIndex = 1
+        end
+    end
+    
+    local currentOrientation = orientations[_G.currentOrientationIndex]
+    
+    rightGrip.C0 = currentOrientation.c0
+    rightGrip.C1 = currentOrientation.c1
+    
+    print("📍 Применена ориентация: " .. currentOrientation.name)
+    print("📍 C0:", currentOrientation.c0)
+    print("📍 C1:", currentOrientation.c1)
+    print("🔄 Нажмите еще раз для следующей ориентации (" .. _G.currentOrientationIndex .. "/" .. #orientations .. ")")
+    
+    return true
+end
+
+-- ИЗУЧЕНИЕ ТЕКУЩЕЙ ОРИЕНТАЦИИ питомца в руках
+local function learnCurrentOrientation()
+    print("\n🔍 === ИЗУЧЕНИЕ ТЕКУЩЕЙ ОРИЕНТАЦИИ ===")
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
         return false
     end
+    
+    -- Ищем Tool питомца в руках (замененный Dragonfly)
+    local petToolInHands = nil
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
+            petToolInHands = tool
+            break
+        end
+    end
+    
+    if not petToolInHands then
+        print("❌ Питомец в руках не найден!")
+        print("💡 Сначала возьмите замененного питомца в руки")
+        return false
+    end
+    
+    print("✅ Найден питомец в руках: " .. petToolInHands.Name)
+    
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+    if not rightHand then
+        print("❌ Right Arm не найдена!")
+        return false
+    end
+    
+    local rightGrip = rightHand:FindFirstChild("RightGrip")
+    if not rightGrip then
+        print("❌ RightGrip не найден!")
+        return false
+    end
+    
+    -- СОХРАНЯЕМ ТЕКУЩУЮ ОРИЕНТАЦИЮ как "правильную"
+    savedPetGripC0 = rightGrip.C0
+    savedPetGripC1 = rightGrip.C1
+    
+    print("🔍 ИЗУЧЕНА и СОХРАНЕНА текущая ориентация!")
+    print("📍 Новая сохраненная C0:", savedPetGripC0)
+    print("📍 Новая сохраненная C1:", savedPetGripC1)
+    print("✅ Теперь эта ориентация будет использоваться при следующих заменах!")
+    
+    return true
 end
 
 -- Создаем GUI
@@ -357,8 +506,8 @@ local function createDirectFixGUI()
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 400, 0, 400)
-    frame.Position = UDim2.new(0.5, -200, 0.5, -200)
+    frame.Size = UDim2.new(0, 400, 0, 500)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -250)
     frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
@@ -435,10 +584,36 @@ local function createDirectFixGUI()
     fixOrientBtn.Visible = false
     fixOrientBtn.Parent = frame
     
+    -- Кнопка изучения текущей ориентации
+    local learnOrientBtn = Instance.new("TextButton")
+    learnOrientBtn.Size = UDim2.new(1, -20, 0, 40)
+    learnOrientBtn.Position = UDim2.new(0, 10, 0, 370)
+    learnOrientBtn.BackgroundColor3 = Color3.new(0.8, 0.6, 0)
+    learnOrientBtn.BorderSizePixel = 0
+    learnOrientBtn.Text = "🔍 ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ"
+    learnOrientBtn.TextColor3 = Color3.new(1, 1, 1)
+    learnOrientBtn.TextScaled = true
+    learnOrientBtn.Font = Enum.Font.SourceSansBold
+    learnOrientBtn.Visible = false
+    learnOrientBtn.Parent = frame
+    
+    -- Кнопка отключения защиты Weld
+    local disableProtectionBtn = Instance.new("TextButton")
+    disableProtectionBtn.Size = UDim2.new(1, -20, 0, 30)
+    disableProtectionBtn.Position = UDim2.new(0, 10, 0, 420)
+    disableProtectionBtn.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
+    disableProtectionBtn.BorderSizePixel = 0
+    disableProtectionBtn.Text = "🛡️ ОТКЛЮЧИТЬ ЗАЩИТУ WELD"
+    disableProtectionBtn.TextColor3 = Color3.new(1, 1, 1)
+    disableProtectionBtn.TextScaled = true
+    disableProtectionBtn.Font = Enum.Font.SourceSansBold
+    disableProtectionBtn.Visible = false
+    disableProtectionBtn.Parent = frame
+    
     -- Кнопка закрытия
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(1, -20, 0, 30)
-    closeBtn.Position = UDim2.new(0, 10, 0, 360)
+    closeBtn.Position = UDim2.new(0, 10, 0, 460)
     closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
     closeBtn.BorderSizePixel = 0
     closeBtn.Text = "❌ Закрыть"
@@ -490,6 +665,8 @@ local function createDirectFixGUI()
             status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
             status.TextColor3 = Color3.new(0, 1, 0)
             fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
+            learnOrientBtn.Visible = true -- Показываем кнопку изучения ориентации
+            disableProtectionBtn.Visible = true -- Показываем кнопку отключения защиты
         else
             status.Text = "❌ Ошибка альтернативы!"
             status.TextColor3 = Color3.new(1, 0, 0)
@@ -509,6 +686,30 @@ local function createDirectFixGUI()
             status.Text = "❌ Ошибка исправления ориентации!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
+    end)
+    
+    learnOrientBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔍 Изучаю текущую ориентацию..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = learnCurrentOrientation()
+        
+        if success then
+            status.Text = "✅ ОРИЕНТАЦИЯ ИЗУЧЕНА!\nТеперь она будет использоваться"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка изучения ориентации!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    disableProtectionBtn.MouseButton1Click:Connect(function()
+        weldProtectionActive = false
+        status.Text = "🛡️ ЗАЩИТА WELD ОТКЛЮЧЕНА!\nИгра может корректировать ориентацию"
+        status.TextColor3 = Color3.new(1, 0.5, 0)
+        disableProtectionBtn.Text = "✅ ЗАЩИТА ОТКЛЮЧЕНА"
+        disableProtectionBtn.BackgroundColor3 = Color3.new(0.2, 0.8, 0.2)
+        print("🛡️ Защита Weld принудительно отключена пользователем")
     end)
     
     closeBtn.MouseButton1Click:Connect(function()
