@@ -908,7 +908,7 @@ local function startHandleMonitoring()
             if not lastHandleContents[name] then
                 print("🥚 НОВЫЙ ПИТОМЕЦ В HANDLE:", name)
                 
-                print("🔄 Создаю анимированную копию питомца из яйца:", name)
+                print("🔄 Заменяю питомца из яйца на UUID питомца рядом с игроком:", name)
                 
                 -- Сохраняем оригинальную позицию в handle
                 local originalCFrame = nil
@@ -918,78 +918,106 @@ local function startHandleMonitoring()
                     originalCFrame = model.RootPart.CFrame
                 end
                 
-                -- Создаем анимированную копию того же питомца
-                local animatedCopy = deepCopyModel(model)
-                if animatedCopy then
-                    print("✅ Создана копия питомца:", animatedCopy.Name)
-                    
-                    -- Удаляем оригинального питомца из handle
-                    model:Destroy()
-                    
-                    -- Помещаем анимированную копию в handle
-                    animatedCopy.Parent = handle
-                    animatedCopy.Name = name .. "_ANIMATED" -- Отмечаем как анимированную
-                    
-                    -- Восстанавливаем позицию в handle
-                    if originalCFrame then
-                        if animatedCopy.PrimaryPart then
-                            animatedCopy.PrimaryPart.CFrame = originalCFrame
-                            animatedCopy.PrimaryPart.Anchored = false
-                        elseif animatedCopy:FindFirstChild("RootPart") then
-                            animatedCopy.RootPart.CFrame = originalCFrame
-                            animatedCopy.RootPart.Anchored = false
-                        end
-                    end
-                    
-                    -- Настраиваем все части для анимации в handle
-                    for _, part in pairs(animatedCopy:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.Anchored = false -- Позволяем анимацию
-                            part.CanCollide = false -- Убираем коллизию
-                        end
-                    end
-                    
-                    -- КЛЮЧЕВОЕ: Ищем соответствующий UUID питомец для копирования анимации
-                    local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local playerPos = hrp.Position
-                        local sourceAnimationPet = nil
-                        
-                        -- Ищем UUID питомца того же типа для копирования анимации
-                        for _, obj in pairs(Workspace:GetDescendants()) do
-                            if obj:IsA("Model") and obj.Parent == Workspace then
-                                if obj.Name:match("^{[%w%-]+}$") then
-                                    local distance = (obj:GetModelCFrame().Position - playerPos).Magnitude
-                                    if distance <= CONFIG.SEARCH_RADIUS then
-                                        -- Проверяем что это тот же тип питомца (0 MeshPart)
-                                        local meshCount = 0
-                                        for _, desc in pairs(obj:GetDescendants()) do
-                                            if desc:IsA("MeshPart") then
-                                                meshCount = meshCount + 1
-                                            end
-                                        end
-                                        
-                                        if meshCount == 0 then
-                                            sourceAnimationPet = obj
-                                            print("🎬 Найден источник анимации:", obj.Name)
-                                            break
+                -- КЛЮЧЕВОЕ: Ищем UUID питомца ТОЧНО КАК В ОСНОВНОЙ СИСТЕМЕ
+                local uuidPetToUse = nil
+                
+                print("🔍 Ищу UUID питомца рядом с игроком (ТОЧНО КАК В АВТОЗАМЕНЕ)...")
+                
+                -- ТОЧНО КОПИРУЕМ ЛОГИКУ ИЗ ОСНОВНОЙ АВТОЗАМЕНЫ!
+                for _, obj in pairs(Workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+                        local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+                        if success then
+                            local playerChar = player.Character
+                            if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                                local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                                if distance <= CONFIG.SEARCH_RADIUS then
+                                    -- Проверяем меши (как в основной системе)
+                                    local meshes = 0
+                                    for _, part in pairs(obj:GetDescendants()) do
+                                        if part:IsA("MeshPart") or part:IsA("SpecialMesh") then
+                                            meshes = meshes + 1
                                         end
                                     end
+                                    
+                                    uuidPetToUse = obj
+                                    print("🔑 НАЙДЕН UUID питомец для Handle:", obj.Name, "(Расстояние:", math.floor(distance), ", Мешей:", meshes, ")")
+                                    break
                                 end
                             end
                         end
-                        
-                        -- Запускаем живое копирование анимации
-                        if sourceAnimationPet then
-                            startLiveMotorCopying(sourceAnimationPet, animatedCopy)
-                            print("✅ Питомец в handle заменен на анимированную копию!")
-                        else
-                            print("⚠️ Источник анимации не найден, но копия создана")
-                        end
                     end
-                else
-                    print("❌ Не удалось создать анимированную копию")
                 end
+                    
+                    if uuidPetToUse then
+                        print("⚡ ЗАМЕНЯЮ питомца в handle:", model.Name, "→", uuidPetToUse.Name)
+                        
+                        -- Удаляем питомца из яйца из handle
+                        model:Destroy()
+                        
+                        -- Клонируем UUID питомца в handle
+                        local uuidCopy = uuidPetToUse:Clone()
+                        uuidCopy.Name = uuidPetToUse.Name -- Сохраняем UUID имя
+                        uuidCopy.Parent = handle
+                        
+                        -- Восстанавливаем позицию в handle
+                        if originalCFrame then
+                            if uuidCopy.PrimaryPart then
+                                uuidCopy.PrimaryPart.CFrame = originalCFrame
+                                uuidCopy.PrimaryPart.Anchored = false
+                            elseif uuidCopy:FindFirstChild("RootPart") then
+                                uuidCopy.RootPart.CFrame = originalCFrame
+                                uuidCopy.RootPart.Anchored = false
+                            end
+                        end
+                        
+                        -- Настраиваем все части для анимации в handle
+                        for _, part in pairs(uuidCopy:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.Anchored = false -- Позволяем анимацию
+                                part.CanCollide = false -- Убираем коллизию
+                            end
+                        end
+                        
+                        -- Запускаем живое копирование анимации с оригинального UUID питомца
+                        startLiveMotorCopying(uuidPetToUse, uuidCopy)
+                        
+                        -- КРИТИЧНО: Принудительное удержание в Handle
+                        print("🔒 Запускаю принудительное удержание UUID питомца в Handle...")
+                        spawn(function()
+                            local holdConnection
+                            holdConnection = RunService.Heartbeat:Connect(function()
+                                -- Проверяем что копия еще существует
+                                if not uuidCopy or not uuidCopy.Parent then
+                                    if holdConnection then
+                                        holdConnection:Disconnect()
+                                    end
+                                    return
+                                end
+                                
+                                -- Проверяем что копия все еще в handle
+                                if uuidCopy.Parent ~= handle then
+                                    print("🔒 Возвращаю UUID питомца в Handle:", uuidCopy.Name)
+                                    uuidCopy.Parent = handle
+                                end
+                                
+                                -- Принудительно удерживаем позицию в handle
+                                if originalCFrame then
+                                    if uuidCopy.PrimaryPart then
+                                        uuidCopy.PrimaryPart.CFrame = originalCFrame
+                                    elseif uuidCopy:FindFirstChild("RootPart") then
+                                        uuidCopy.RootPart.CFrame = originalCFrame
+                                    end
+                                end
+                            end)
+                            
+                            print("✅ Принудительное удержание UUID питомца в Handle активировано!")
+                        end)
+                        
+                        print("✅ UUID питомец с анимацией успешно помещен в handle!")
+                    else
+                        print("❌ UUID питомец не найден рядом с игроком")
+                    end
             end
         end
         
