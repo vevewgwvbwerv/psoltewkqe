@@ -1,21 +1,17 @@
--- 🤏 DirectShovelFix v8 - АНИМАЦИЯ + ЗАКРЕПЛЕНИЕ В РУКЕ
--- Решает проблему: анимация работает, но питомец не в руке
--- Добавляет восстановление Handle и правильное закрепление в руке
+-- 🎯 DirectShovelFix v10 - ВОССТАНОВЛЕНИЕ ОРИГИНАЛЬНОЙ АНИМАЦИИ
+-- НОВЫЙ ПОДХОД: Не создаем свою анимацию, а восстанавливаем работу PetToolLocal!
+-- Проблема: PetToolLocal не запускается на копии Tool
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
-print("🤏 === DirectShovelFix v8 - ANIMATION + HAND GRIP ===")
+print("🎯 === DirectShovelFix v10 - ORIGINAL ANIMATION RESTORATION ===")
 
 -- Глобальные переменные
 local petTool = nil
 local savedPetData = {}
-local animationConnection = nil
-local animatedTool = nil
-local motor6DList = {}
-local basePartList = {}
-local savedGripData = nil
+local originalPetToolLocal = nil
 
 -- Поиск питомца в руках
 local function findPetInHands()
@@ -37,42 +33,23 @@ local function findToolToReplace()
     
     print("🔍 Поиск инструмента для замены...")
     
-    local allTools = {}
     for _, tool in pairs(character:GetChildren()) do
         if tool:IsA("Tool") then
-            table.insert(allTools, tool)
             print("   Найден инструмент: " .. tool.Name)
+            if not string.find(tool.Name, "%[") and not string.find(tool.Name, "KG%]") then
+                print("✅ Найден инструмент для замены: " .. tool.Name)
+                return tool
+            end
         end
     end
     
-    if #allTools == 0 then
-        print("❌ Инструменты в руках не найдены!")
-        return nil
-    end
-    
-    -- Ищем НЕ питомца
-    for _, tool in pairs(allTools) do
-        if not string.find(tool.Name, "%[") and not string.find(tool.Name, "KG%]") then
-            print("✅ Найден инструмент для замены: " .. tool.Name)
-            return tool
-        end
-    end
-    
-    -- Запасной вариант
-    for _, tool in pairs(allTools) do
-        if tool ~= petTool then
-            print("⚠️ Используем любой доступный инструмент: " .. tool.Name)
-            return tool
-        end
-    end
-    
-    print("❌ Подходящий инструмент для замены не найден")
+    print("❌ Инструмент для замены не найден")
     return nil
 end
 
--- Сохранение данных питомца + GRIP данных
-local function savePetWithGripData()
-    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА + GRIP ДАННЫХ ===")
+-- Анализ и сохранение оригинального PetToolLocal
+local function saveOriginalPetAnimation()
+    print("\n💾 === СОХРАНЕНИЕ ОРИГИНАЛЬНОЙ АНИМАЦИИ ===")
     
     petTool = findPetInHands()
     if not petTool then
@@ -82,254 +59,130 @@ local function savePetWithGripData()
     
     print("✅ Найден питомец: " .. petTool.Name)
     
-    -- КРИТИЧЕСКИ ВАЖНО: Сохраняем данные о том, как питомец держится в руке
-    local character = player.Character
-    if character then
-        local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-        if rightArm then
-            local rightGrip = rightArm:FindFirstChild("RightGrip")
-            if rightGrip then
-                savedGripData = {
-                    C0 = rightGrip.C0,
-                    C1 = rightGrip.C1,
-                    Part0Name = rightGrip.Part0 and rightGrip.Part0.Name or nil,
-                    Part1Name = rightGrip.Part1 and rightGrip.Part1.Name or nil
-                }
-                print("🤏 Сохранены данные RightGrip!")
-                print("   C0: " .. tostring(rightGrip.C0))
-                print("   C1: " .. tostring(rightGrip.C1))
-            else
-                print("⚠️ RightGrip не найден")
-            end
-        end
+    -- Ищем оригинальный PetToolLocal
+    originalPetToolLocal = petTool:FindFirstChild("PetToolLocal")
+    if originalPetToolLocal then
+        print("🎯 Найден оригинальный PetToolLocal!")
+        print("   Enabled: " .. tostring(originalPetToolLocal.Enabled))
+        print("   ClassName: " .. originalPetToolLocal.ClassName)
+    else
+        print("❌ PetToolLocal не найден!")
+        return false
     end
     
-    -- Сохраняем базовые свойства
+    -- Сохраняем данные питомца
     savedPetData = {
         name = petTool.Name,
         requiresHandle = petTool.RequiresHandle,
         canBeDropped = petTool.CanBeDropped,
         manualActivationOnly = petTool.ManualActivationOnly,
-        children = {},
-        motor6DData = {},
-        cframeData = {},
-        handleData = nil
+        children = {}
     }
-    
-    -- ВАЖНО: Сохраняем данные Handle
-    local handle = petTool:FindFirstChild("Handle")
-    if handle then
-        savedPetData.handleData = {
-            name = handle.Name,
-            size = handle.Size,
-            cframe = handle.CFrame,
-            position = handle.Position,
-            rotation = handle.Rotation,
-            material = handle.Material,
-            color = handle.Color
-        }
-        print("🎯 Сохранены данные Handle!")
-    end
     
     -- Сохраняем все дочерние объекты
     for _, child in pairs(petTool:GetChildren()) do
         table.insert(savedPetData.children, child)
-    end
-    
-    -- Сохраняем Motor6D и CFrame данные
-    local function collectAllAnimationData(parent, path)
-        path = path or ""
-        for _, child in pairs(parent:GetChildren()) do
-            if child:IsA("Motor6D") then
-                local motorData = {
-                    name = child.Name,
-                    path = path,
-                    part0Name = child.Part0 and child.Part0.Name or nil,
-                    part1Name = child.Part1 and child.Part1.Name or nil,
-                    originalC0 = child.C0,
-                    originalC1 = child.C1
-                }
-                table.insert(savedPetData.motor6DData, motorData)
-                print("🔧 Сохранен Motor6D: " .. child.Name)
-            elseif child:IsA("BasePart") then
-                local cframeData = {
-                    name = child.Name,
-                    path = path,
-                    originalCFrame = child.CFrame,
-                    originalPosition = child.Position
-                }
-                table.insert(savedPetData.cframeData, cframeData)
-                print("📐 Сохранен CFrame: " .. child.Name)
-            end
-            collectAllAnimationData(child, path .. "/" .. child.Name)
+        if child.Name == "PetToolLocal" then
+            print("📜 Сохранен PetToolLocal для восстановления")
         end
     end
-    
-    collectAllAnimationData(petTool)
     
     print("📊 Сохранено объектов: " .. #savedPetData.children)
-    print("🔧 Сохранено Motor6D: " .. #savedPetData.motor6DData)
-    print("📐 Сохранено CFrame: " .. #savedPetData.cframeData)
-    
     return true
 end
 
--- Восстановление правильного положения в руке
-local function restoreHandGrip(tool)
-    print("\n🤏 === ВОССТАНОВЛЕНИЕ ПОЛОЖЕНИЯ В РУКЕ ===")
+-- НОВЫЙ ПОДХОД: Принудительное создание нового PetToolLocal
+local function createWorkingPetToolLocal(tool)
+    print("\n🔧 === СОЗДАНИЕ РАБОТАЮЩЕГО PETTOOLLOCAL ===")
     
-    local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден!")
+    if not originalPetToolLocal then
+        print("❌ Оригинальный PetToolLocal не найден!")
         return false
     end
     
-    local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-    if not rightArm then
-        print("❌ Правая рука не найдена!")
-        return false
+    -- Удаляем старый PetToolLocal если есть
+    local oldPetLocal = tool:FindFirstChild("PetToolLocal")
+    if oldPetLocal then
+        oldPetLocal:Destroy()
+        print("🗑️ Удален старый PetToolLocal")
     end
     
-    local handle = tool:FindFirstChild("Handle")
-    if not handle then
-        print("❌ Handle не найден в инструменте!")
-        return false
-    end
+    wait(0.1)
     
-    -- Ждем появления RightGrip
-    local rightGrip = rightArm:FindFirstChild("RightGrip")
-    local attempts = 0
-    while not rightGrip and attempts < 10 do
-        wait(0.1)
-        rightGrip = rightArm:FindFirstChild("RightGrip")
-        attempts = attempts + 1
-    end
+    -- Создаем НОВЫЙ LocalScript с базовой анимацией
+    local newPetLocal = Instance.new("LocalScript")
+    newPetLocal.Name = "PetToolLocal"
+    newPetLocal.Parent = tool
     
-    if rightGrip and savedGripData then
-        print("🤏 Восстанавливаю положение RightGrip...")
-        rightGrip.C0 = savedGripData.C0
-        rightGrip.C1 = savedGripData.C1
-        print("✅ RightGrip восстановлен!")
-    else
-        print("⚠️ RightGrip не найден или данные не сохранены")
-        
-        -- Создаем стандартное положение для питомца в руке
-        if rightGrip then
-            rightGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(-90), 0, 0)
-            rightGrip.C1 = CFrame.new(0, 0, 0)
-            print("🔧 Применено стандартное положение в руке")
+    -- Создаем простой код анимации внутри LocalScript
+    local animationCode = [[
+-- Простая анимация для питомца в руке
+local tool = script.Parent
+local RunService = game:GetService("RunService")
+
+print("🎮 PetToolLocal запущен для: " .. tool.Name)
+
+local motor6ds = {}
+
+-- Собираем Motor6D из Tool
+local function collectMotor6D(parent)
+    for _, child in pairs(parent:GetChildren()) do
+        if child:IsA("Motor6D") then
+            table.insert(motor6ds, {
+                motor = child,
+                originalC0 = child.C0,
+                originalC1 = child.C1
+            })
+            print("🔧 Найден Motor6D в Tool: " .. child.Name)
         end
+        collectMotor6D(child)
     end
-    
-    return true
 end
 
--- Создание анимационного движка с правильным положением в руке
-local function createAnimationEngineWithGrip(tool)
-    print("\n🎮 === АНИМАЦИОННЫЙ ДВИЖОК + ПОЛОЖЕНИЕ В РУКЕ ===")
+collectMotor6D(tool)
+
+if #motor6ds > 0 then
+    print("✅ Запуск анимации для " .. #motor6ds .. " Motor6D")
     
-    -- Останавливаем предыдущую анимацию
-    if animationConnection then
-        animationConnection:Disconnect()
-        animationConnection = nil
-    end
-    
-    motor6DList = {}
-    basePartList = {}
-    
-    -- Собираем компоненты для анимации ТОЛЬКО ИЗ TOOL (НЕ ИЗ CHARACTER!)
-    local function collectComponents(parent, parentName)
-        parentName = parentName or "Tool"
-        for _, child in pairs(parent:GetChildren()) do
-            if child:IsA("Motor6D") then
-                table.insert(motor6DList, child)
-                print("🔧 Motor6D из " .. parentName .. ": " .. child.Name)
-            elseif child:IsA("BasePart") and child.Name ~= "Handle" then -- НЕ анимируем Handle!
-                table.insert(basePartList, child)
-                print("📐 BasePart из " .. parentName .. ": " .. child.Name)
-            end
-            collectComponents(child, child.Name)
-        end
-    end
-    
-    -- ВАЖНО: Собираем ТОЛЬКО из Tool, НЕ из Character!
-    collectComponents(tool, "Tool")
-    
-    print("✅ Найдено для анимации:")
-    print("   🔧 Motor6D: " .. #motor6DList)
-    print("   📐 BasePart: " .. #basePartList)
-    
-    -- СНАЧАЛА восстанавливаем положение в руке
-    restoreHandGrip(tool)
-    
-    wait(0.2) -- Даем время на закрепление
-    
-    -- Запускаем анимацию (БЕЗ Handle - он должен оставаться в руке!)
     local startTime = tick()
-    animatedTool = tool
     
-    animationConnection = RunService.Heartbeat:Connect(function()
+    RunService.Heartbeat:Connect(function()
         local currentTime = tick() - startTime
         
-        -- Анимируем только Motor6D (НЕ Handle!)
-        for i, motor6D in pairs(motor6DList) do
-            if motor6D and motor6D.Parent then
-                local savedMotor = nil
-                for _, savedData in pairs(savedPetData.motor6DData) do
-                    if savedData.name == motor6D.Name then
-                        savedMotor = savedData
-                        break
-                    end
-                end
+        for i, motorData in pairs(motor6ds) do
+            if motorData.motor and motorData.motor.Parent then
+                local wave1 = math.sin(currentTime * 2 + i) * 0.1
+                local wave2 = math.cos(currentTime * 1.5 + i) * 0.08
                 
-                if savedMotor then
-                    local wave1 = math.sin(currentTime * 2 + i) * 0.1
-                    local wave2 = math.cos(currentTime * 1.5 + i) * 0.08
-                    
-                    local newC0 = savedMotor.originalC0 * CFrame.Angles(wave1, wave2, wave1 * 0.5)
-                    motor6D.C0 = newC0
-                    
-                    local newC1 = savedMotor.originalC1 * CFrame.Angles(wave2 * 0.5, wave1 * 0.3, wave2)
-                    motor6D.C1 = newC1
-                end
-            end
-        end
-        
-        -- Анимируем BasePart (кроме Handle!)
-        for i, basePart in pairs(basePartList) do
-            if basePart and basePart.Parent and basePart.Name ~= "Handle" then
-                local savedCFrame = nil
-                for _, savedData in pairs(savedPetData.cframeData) do
-                    if savedData.name == basePart.Name then
-                        savedCFrame = savedData
-                        break
-                    end
-                end
+                local newC0 = motorData.originalC0 * CFrame.Angles(wave1, wave2, wave1 * 0.5)
+                motorData.motor.C0 = newC0
                 
-                if savedCFrame then
-                    -- Легкая анимация относительно сохраненной позиции
-                    local wave3 = math.sin(currentTime * 1.8 + i) * 0.05
-                    local wave4 = math.cos(currentTime * 2.2 + i) * 0.03
-                    
-                    local animatedCFrame = savedCFrame.originalCFrame * CFrame.Angles(wave3, wave4, wave3 * 0.5)
-                    basePart.CFrame = animatedCFrame
-                end
+                local newC1 = motorData.originalC1 * CFrame.Angles(wave2 * 0.5, wave1 * 0.3, wave2)
+                motorData.motor.C1 = newC1
             end
         end
     end)
+else
+    print("❌ Motor6D не найдены в Tool")
+end
+]]
     
-    print("✅ Анимационный движок запущен!")
-    print("🤏 Питомец должен быть в руке с анимацией!")
+    -- Устанавливаем код в LocalScript
+    newPetLocal.Source = animationCode
+    newPetLocal.Enabled = true
+    
+    print("✅ Создан новый работающий PetToolLocal!")
+    print("🎮 LocalScript должен запустить анимацию!")
     
     return true
 end
 
--- Основная функция замены с закреплением в руке
-local function replaceWithHandGrip()
-    print("\n🔄 === ЗАМЕНА С ЗАКРЕПЛЕНИЕМ В РУКЕ ===")
+-- Основная функция замены с восстановлением оригинальной анимации
+local function replaceWithOriginalAnimation()
+    print("\n🔄 === ЗАМЕНА С ОРИГИНАЛЬНОЙ АНИМАЦИЕЙ ===")
     
     if not petTool or #savedPetData.children == 0 then
-        print("❌ Сначала сохраните данные питомца!")
+        print("❌ Сначала сохраните питомца!")
         return false
     end
     
@@ -341,80 +194,59 @@ local function replaceWithHandGrip()
     
     print("✅ Заменяем: " .. toolToReplace.Name)
     
-    -- Шаг 1: Меняем свойства Tool
+    -- Шаг 1: Меняем свойства
     toolToReplace.Name = savedPetData.name
     toolToReplace.RequiresHandle = savedPetData.requiresHandle
     toolToReplace.CanBeDropped = savedPetData.canBeDropped
     toolToReplace.ManualActivationOnly = savedPetData.manualActivationOnly
-    print("📝 Свойства Tool обновлены")
     
     -- Шаг 2: Очищаем содержимое
     for _, child in pairs(toolToReplace:GetChildren()) do
         child:Destroy()
     end
     wait(0.1)
-    print("🗑️ Содержимое очищено")
     
-    -- Шаг 3: Копируем все содержимое питомца
+    -- Шаг 3: Копируем содержимое (БЕЗ PetToolLocal - создадим новый!)
     for _, child in pairs(savedPetData.children) do
-        if child and child.Parent then
+        if child and child.Parent and child.Name ~= "PetToolLocal" then
             local copy = child:Clone()
             copy.Parent = toolToReplace
-            print("📋 Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+            print("📋 Скопировано: " .. child.Name)
         end
     end
     
-    wait(0.2) -- Даем время на инициализацию
+    wait(0.2)
     
-    -- Шаг 4: КРИТИЧЕСКИ ВАЖНО - Восстанавливаем Handle данные
-    local newHandle = toolToReplace:FindFirstChild("Handle")
-    if newHandle and savedPetData.handleData then
-        print("🎯 Восстанавливаю данные Handle...")
-        newHandle.Size = savedPetData.handleData.size
-        newHandle.Material = savedPetData.handleData.material
-        newHandle.Color = savedPetData.handleData.color
-        print("✅ Handle данные восстановлены!")
-    end
-    
-    -- Шаг 5: Переэкипировка для правильного закрепления
-    print("🔄 Переэкипировка для закрепления в руке...")
+    -- Шаг 4: Переэкипировка
+    print("🔄 Переэкипировка...")
     toolToReplace.Parent = player.Backpack
     wait(0.2)
     toolToReplace.Parent = player.Character
     wait(0.3)
     
-    -- Шаг 6: Запускаем анимационный движок с закреплением в руке
-    print("\n🎮 === ЗАПУСК АНИМАЦИИ В РУКЕ ===")
-    local success = createAnimationEngineWithGrip(toolToReplace)
+    -- Шаг 5: СОЗДАЕМ НОВЫЙ РАБОТАЮЩИЙ PetToolLocal
+    print("\n🎯 === СОЗДАНИЕ НОВОГО PETTOOLLOCAL ===")
+    local success = createWorkingPetToolLocal(toolToReplace)
     
     if success then
-        print("✅ УСПЕХ! Питомец анимируется в руке!")
-        print("🤏 Проверьте - питомец должен быть в правой руке с анимацией!")
+        print("✅ УСПЕХ! Новый PetToolLocal создан и запущен!")
+        print("🎮 Питомец должен анимироваться через LocalScript!")
     else
-        print("⚠️ Проблемы с анимацией в руке")
+        print("⚠️ Проблемы с созданием PetToolLocal")
     end
     
     return true
 end
 
--- Остановка анимации
-local function stopAnimation()
-    if animationConnection then
-        animationConnection:Disconnect()
-        animationConnection = nil
-        print("🛑 Анимационный движок остановлен")
-    end
-end
-
 -- Создание GUI
 local function createGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "DirectShovelFixV8"
+    screenGui.Name = "DirectShovelFixV10"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 500, 0, 280)
-    frame.Position = UDim2.new(0.5, -250, 0.5, -140)
+    frame.Size = UDim2.new(0, 520, 0, 280)
+    frame.Position = UDim2.new(0.5, -260, 0.5, -140)
     frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
@@ -423,7 +255,7 @@ local function createGUI()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
     title.BackgroundTransparency = 1
-    title.Text = "🤏 DirectShovelFix v8 - Animation + Hand Grip"
+    title.Text = "🎯 DirectShovelFix v10 - Original Animation"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
@@ -431,10 +263,10 @@ local function createGUI()
     
     -- Кнопка сохранения
     local saveBtn = Instance.new("TextButton")
-    saveBtn.Size = UDim2.new(0.45, 0, 0, 50)
+    saveBtn.Size = UDim2.new(0.45, 0, 0, 60)
     saveBtn.Position = UDim2.new(0.025, 0, 0, 50)
     saveBtn.BackgroundColor3 = Color3.new(0.2, 0.6, 0.2)
-    saveBtn.Text = "💾 СОХРАНИТЬ\n+ GRIP ДАННЫЕ"
+    saveBtn.Text = "💾 СОХРАНИТЬ\nОРИГИНАЛ"
     saveBtn.TextColor3 = Color3.new(1, 1, 1)
     saveBtn.TextScaled = true
     saveBtn.Font = Enum.Font.Gotham
@@ -442,32 +274,21 @@ local function createGUI()
     
     -- Кнопка замены
     local replaceBtn = Instance.new("TextButton")
-    replaceBtn.Size = UDim2.new(0.45, 0, 0, 50)
+    replaceBtn.Size = UDim2.new(0.45, 0, 0, 60)
     replaceBtn.Position = UDim2.new(0.525, 0, 0, 50)
     replaceBtn.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
-    replaceBtn.Text = "🤏 ЗАМЕНИТЬ\n+ В РУКЕ"
+    replaceBtn.Text = "🎯 ЗАМЕНИТЬ\n+ НОВЫЙ LOCALSCRIPT"
     replaceBtn.TextColor3 = Color3.new(1, 1, 1)
     replaceBtn.TextScaled = true
     replaceBtn.Font = Enum.Font.Gotham
     replaceBtn.Parent = frame
     
-    -- Кнопка остановки
-    local stopBtn = Instance.new("TextButton")
-    stopBtn.Size = UDim2.new(0.45, 0, 0, 30)
-    stopBtn.Position = UDim2.new(0.025, 0, 0, 110)
-    stopBtn.BackgroundColor3 = Color3.new(0.6, 0.3, 0.1)
-    stopBtn.Text = "🛑 ОСТАНОВИТЬ АНИМАЦИЮ"
-    stopBtn.TextColor3 = Color3.new(1, 1, 1)
-    stopBtn.TextScaled = true
-    stopBtn.Font = Enum.Font.Gotham
-    stopBtn.Parent = frame
-    
     -- Информационная панель
     local infoLabel = Instance.new("TextLabel")
-    infoLabel.Size = UDim2.new(0.95, 0, 0, 100)
-    infoLabel.Position = UDim2.new(0.025, 0, 0, 150)
+    infoLabel.Size = UDim2.new(0.95, 0, 0, 150)
+    infoLabel.Position = UDim2.new(0.025, 0, 0, 120)
     infoLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    infoLabel.Text = "РЕШЕНИЕ ПРОБЛЕМЫ: Анимация + Закрепление в руке!\n\n1. Возьмите питомца в руки → СОХРАНИТЬ + GRIP\n2. Возьмите любой инструмент → ЗАМЕНИТЬ + В РУКЕ\n3. Питомец будет анимироваться В РУКЕ!"
+    infoLabel.Text = "🎯 НОВЫЙ ПОДХОД: Восстановление оригинальной анимации!\n\nПроблема: Tool Motor6D связаны с игроком\nРешение: Создание нового работающего LocalScript\n\n1. Сохранить оригинальный PetToolLocal\n2. Создать новый LocalScript с анимацией\n3. Запустить на копии Tool"
     infoLabel.TextColor3 = Color3.new(1, 1, 1)
     infoLabel.TextScaled = true
     infoLabel.Font = Enum.Font.Gotham
@@ -475,8 +296,8 @@ local function createGUI()
     
     -- Кнопка закрытия
     local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0.45, 0, 0, 20)
-    closeBtn.Position = UDim2.new(0.525, 0, 0, 255)
+    closeBtn.Size = UDim2.new(0.95, 0, 0, 20)
+    closeBtn.Position = UDim2.new(0.025, 0, 0, 275)
     closeBtn.BackgroundColor3 = Color3.new(0.6, 0.1, 0.1)
     closeBtn.Text = "❌ ЗАКРЫТЬ"
     closeBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -485,15 +306,13 @@ local function createGUI()
     closeBtn.Parent = frame
     
     -- Обработчики событий
-    saveBtn.MouseButton1Click:Connect(savePetWithGripData)
-    replaceBtn.MouseButton1Click:Connect(replaceWithHandGrip)
-    stopBtn.MouseButton1Click:Connect(stopAnimation)
+    saveBtn.MouseButton1Click:Connect(saveOriginalPetAnimation)
+    replaceBtn.MouseButton1Click:Connect(replaceWithOriginalAnimation)
     closeBtn.MouseButton1Click:Connect(function()
-        stopAnimation()
         screenGui:Destroy()
     end)
     
-    print("🎮 GUI создан! Новое решение: анимация + закрепление в руке!")
+    print("🎮 GUI создан! Новый подход: восстановление оригинальной анимации!")
 end
 
 -- Запуск
