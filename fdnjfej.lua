@@ -1,593 +1,716 @@
--- VisualsToToolTransformAnalyzer.lua
--- АНАЛИЗАТОР ПРЕВРАЩЕНИЯ: Отслеживает превращение модели из Visuals в Tool в руках игрока
--- Анализирует процесс: Visuals (19 частей) → PlayerCharacter Tool (3 части, 15 Motor6D)
+-- DirectShovelFix.lua
+-- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local HttpService = game:GetService("HttpService")
+local player = game.Players.LocalPlayer
 
-local player = Players.LocalPlayer
+print("=== DIRECT SHOVEL FIX ===")
 
-print("🔄 === VISUALS TO TOOL TRANSFORM ANALYZER ===")
-print("🎯 Цель: Отследить превращение модели Visuals → Tool в руках")
-print("=" .. string.rep("=", 70))
+-- Глобальные переменные
+local player = game.Players.LocalPlayer
+local petTool = nil
+local savedPetGripC0 = nil
+local savedPetGripC1 = nil
+local weldProtectionActive = false
 
--- 📊 ДАННЫЕ АНАЛИЗАТОРА ПРЕВРАЩЕНИЯ
-local TransformData = {
-    visualsModel = nil,
-    playerTool = nil,
-    worldModel = nil,
-    transformSequence = {},
-    snapshots = {},
-    isAnalyzing = false,
-    startTime = 0,
-    connections = {},
-    transformStages = {
-        "VISUALS_APPEARED",
-        "VISUALS_DISAPPEARED", 
-        "TOOL_CREATED",
-        "TOOL_EQUIPPED",
-        "WORLD_MODEL_CREATED"
-    }
-}
-
--- 🖥️ КОНСОЛЬ АНАЛИЗАТОРА
-local TransformConsole = nil
-local ConsoleLines = {}
-local MaxLines = 180
-
--- Создание консоли
-local function createTransformConsole()
-    if TransformConsole then TransformConsole:Destroy() end
+-- Поиск питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    TransformConsole = Instance.new("ScreenGui")
-    TransformConsole.Name = "VisualsToToolTransformConsole"
-    TransformConsole.Parent = player:WaitForChild("PlayerGui")
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 1050, 0, 850)
-    frame.Position = UDim2.new(0, 10, 0, 10)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.02, 0.05)
-    frame.BorderSizePixel = 3
-    frame.BorderColor3 = Color3.new(1, 0.2, 0.5)
-    frame.Parent = TransformConsole
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 35)
-    title.BackgroundColor3 = Color3.new(1, 0.2, 0.5)
-    title.BorderSizePixel = 0
-    title.Text = "🔄 VISUALS → TOOL TRANSFORM ANALYZER"
-    title.TextColor3 = Color3.new(1, 1, 1)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
-    local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
-    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
-    scrollFrame.BackgroundColor3 = Color3.new(0.05, 0.01, 0.02)
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.ScrollBarThickness = 15
-    scrollFrame.Parent = frame
-    
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -10, 1, 0)
-    textLabel.Position = UDim2.new(0, 5, 0, 0)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = "🔄 Анализатор превращения готов к работе..."
-    textLabel.TextColor3 = Color3.new(1, 0.9, 0.95)
-    textLabel.TextSize = 10
-    textLabel.Font = Enum.Font.SourceSans
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.TextYAlignment = Enum.TextYAlignment.Top
-    textLabel.TextWrapped = true
-    textLabel.Parent = scrollFrame
-    
-    return textLabel
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
+        end
+    end
+    return nil
 end
 
--- Функция логирования анализатора
-local function transformLog(category, message, data)
-    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
-    local relativeTime = TransformData.startTime > 0 and string.format("(+%.3f)", tick() - TransformData.startTime) or ""
+-- Поиск Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    local prefixes = {
-        TRANSFORM = "🔄", VISUALS = "🎭", TOOL = "🔧", PLAYER = "👤",
-        WORLD = "🌍", STAGE = "📍", SNAPSHOT = "📸", COMPARE = "⚖️",
-        CRITICAL = "🔥", SUCCESS = "✅", ERROR = "❌", INFO = "ℹ️", 
-        DETAIL = "📝", SEQUENCE = "🔄", CREATION = "⚡", DISAPPEAR = "💨"
-    }
-    
-    local logLine = string.format("[%s] %s %s %s", timestamp, relativeTime, prefixes[category] or "ℹ️", message)
-    
-    if data and next(data) then
-        for key, value in pairs(data) do
-            logLine = logLine .. string.format("\n      %s: %s", key, tostring(value))
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
         end
     end
-    
-    table.insert(ConsoleLines, logLine)
-    
-    if #ConsoleLines > MaxLines then
-        table.remove(ConsoleLines, 1)
-    end
-    
-    -- Обновляем консоль
-    if TransformConsole then
-        local textLabel = TransformConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
-        if textLabel then
-            textLabel.Text = table.concat(ConsoleLines, "\n")
-            local scrollFrame = textLabel.Parent
-            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
-            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
-        end
-    end
-    
-    print(logLine)
+    return nil
 end
 
--- 📸 СОЗДАНИЕ ДЕТАЛЬНОГО СНИМКА ОБЪЕКТА
-local function createDetailedSnapshot(obj, snapshotName, stage)
-    if not obj or not obj.Parent then
-        return nil
-    end
+-- Функция сохранения питомца
+local function savePet()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
     
-    local snapshot = {
-        name = snapshotName,
-        stage = stage,
-        timestamp = tick(),
-        relativeTime = tick() - TransformData.startTime,
-        object = {
-            name = obj.Name,
-            className = obj.ClassName,
-            parent = obj.Parent and obj.Parent.Name or "nil",
-            fullPath = obj:GetFullName()
-        },
-        structure = {
-            children = #obj:GetChildren(),
-            descendants = #obj:GetDescendants()
-        },
-        components = {},
-        properties = {}
-    }
-    
-    -- Анализ компонентов
-    local componentCounts = {}
-    local importantObjects = {}
-    
-    for _, child in pairs(obj:GetDescendants()) do
-        local className = child.ClassName
-        componentCounts[className] = (componentCounts[className] or 0) + 1
+    local foundPet = findPetInHands()
+    if foundPet then
+        petTool = foundPet:Clone()
+        print("✅ Питомец сохранен: " .. foundPet.Name)
         
-        -- Сохраняем важные объекты
-        if className == "Motor6D" or className == "Weld" or className == "WeldConstraint" or 
-           className == "Handle" or className == "Tool" or className == "Animator" then
-            table.insert(importantObjects, {
-                name = child.Name,
-                className = className,
-                parent = child.Parent and child.Parent.Name or "nil"
-            })
-        end
-    end
-    
-    snapshot.components = componentCounts
-    snapshot.importantObjects = importantObjects
-    
-    -- Анализ свойств для Tool
-    if obj:IsA("Tool") then
-        snapshot.properties = {
-            RequiresHandle = obj.RequiresHandle,
-            CanBeDropped = obj.CanBeDropped,
-            ManualActivationOnly = obj.ManualActivationOnly,
-            Enabled = obj.Enabled
-        }
-        
-        -- Поиск Handle
-        local handle = obj:FindFirstChild("Handle")
-        if handle then
-            snapshot.handle = {
-                name = handle.Name,
-                className = handle.ClassName,
-                size = tostring(handle.Size),
-                material = tostring(handle.Material),
-                shape = tostring(handle.Shape)
-            }
-        end
-    end
-    
-    transformLog("SNAPSHOT", string.format("📸 СНИМОК: %s (%s)", snapshotName, stage), {
-        Object = obj.Name,
-        Path = obj:GetFullName(),
-        Children = snapshot.structure.children,
-        Descendants = snapshot.structure.descendants,
-        RelativeTime = string.format("%.3f сек", snapshot.relativeTime)
-    })
-    
-    -- Показываем компоненты
-    for className, count in pairs(componentCounts) do
-        if count > 0 then
-            transformLog("DETAIL", string.format("  %s: %d", className, count))
-        end
-    end
-    
-    -- Показываем важные объекты
-    if #importantObjects > 0 then
-        transformLog("DETAIL", "  Важные объекты:")
-        for _, obj in ipairs(importantObjects) do
-            transformLog("DETAIL", string.format("    %s (%s) в %s", obj.name, obj.className, obj.parent))
-        end
-    end
-    
-    return snapshot
-end
-
--- ⚖️ СРАВНЕНИЕ СНИМКОВ
-local function compareSnapshots(before, after, comparisonName)
-    if not before or not after then return end
-    
-    transformLog("COMPARE", string.format("⚖️ СРАВНЕНИЕ: %s", comparisonName))
-    transformLog("COMPARE", string.format("  %s → %s", before.name, after.name))
-    
-    local childrenDiff = after.structure.children - before.structure.children
-    local descendantsDiff = after.structure.descendants - before.structure.descendants
-    local timeDiff = after.relativeTime - before.relativeTime
-    
-    transformLog("COMPARE", "📊 Изменения структуры:", {
-        ChildrenDiff = string.format("%+d (%d → %d)", childrenDiff, before.structure.children, after.structure.children),
-        DescendantsDiff = string.format("%+d (%d → %d)", descendantsDiff, before.structure.descendants, after.structure.descendants),
-        TimeDiff = string.format("%.3f сек", timeDiff)
-    })
-    
-    -- Сравнение компонентов
-    local allComponents = {}
-    for className, _ in pairs(before.components) do allComponents[className] = true end
-    for className, _ in pairs(after.components) do allComponents[className] = true end
-    
-    transformLog("COMPARE", "🔧 Изменения компонентов:")
-    for className, _ in pairs(allComponents) do
-        local beforeCount = before.components[className] or 0
-        local afterCount = after.components[className] or 0
-        local diff = afterCount - beforeCount
-        
-        if diff ~= 0 then
-            transformLog("DETAIL", string.format("  %s: %+d (%d → %d)", className, diff, beforeCount, afterCount))
-        end
-    end
-end
-
--- 🎭 МОНИТОРИНГ VISUALS
-local function monitorVisuals()
-    transformLog("VISUALS", "🎭 МОНИТОРИНГ VISUALS")
-    
-    local visuals = Workspace:FindFirstChild("Visuals")
-    if not visuals then
-        transformLog("ERROR", "❌ Папка Visuals не найдена")
-        return
-    end
-    
-    -- Мониторинг появления модели в Visuals
-    local visualsAddedConnection = visuals.ChildAdded:Connect(function(obj)
-        if obj:IsA("Model") then
-            local name = obj.Name:lower()
-            if name == "dog" or name == "bunny" or name == "golden lab" or 
-               name == "cat" or name == "rabbit" or name == "puppy" or
-               name == "goldenlab" or name:find("lab") then
-                
-                transformLog("STAGE", "📍 ЭТАП: VISUALS_APPEARED")
-                transformLog("VISUALS", string.format("🎭 МОДЕЛЬ В VISUALS: %s", obj.Name))
-                
-                TransformData.visualsModel = obj
-                local visualsSnapshot = createDetailedSnapshot(obj, "visuals_model", "VISUALS_APPEARED")
-                TransformData.snapshots["visuals"] = visualsSnapshot
-                
-                table.insert(TransformData.transformSequence, {
-                    stage = "VISUALS_APPEARED",
-                    timestamp = tick(),
-                    relativeTime = tick() - TransformData.startTime,
-                    object = obj,
-                    snapshot = visualsSnapshot
-                })
-            end
-        end
-    end)
-    
-    -- Мониторинг исчезновения модели из Visuals
-    local visualsRemovedConnection = visuals.ChildRemoved:Connect(function(obj)
-        if obj == TransformData.visualsModel then
-            transformLog("STAGE", "📍 ЭТАП: VISUALS_DISAPPEARED")
-            transformLog("DISAPPEAR", string.format("💨 МОДЕЛЬ ИСЧЕЗЛА ИЗ VISUALS: %s", obj.Name))
-            
-            table.insert(TransformData.transformSequence, {
-                stage = "VISUALS_DISAPPEARED",
-                timestamp = tick(),
-                relativeTime = tick() - TransformData.startTime,
-                object = obj
-            })
-        end
-    end)
-    
-    table.insert(TransformData.connections, visualsAddedConnection)
-    table.insert(TransformData.connections, visualsRemovedConnection)
-end
-
--- 👤 МОНИТОРИНГ ПЕРСОНАЖА ИГРОКА
-local function monitorPlayerCharacter()
-    transformLog("PLAYER", "👤 МОНИТОРИНГ ПЕРСОНАЖА ИГРОКА")
-    
-    local function setupCharacterMonitoring(character)
-        if not character then return end
-        
-        transformLog("PLAYER", "👤 Настройка мониторинга персонажа: " .. character.Name)
-        
-        -- Мониторинг появления Tool в персонаже
-        local characterAddedConnection = character.ChildAdded:Connect(function(obj)
-            if obj:IsA("Tool") then
-                local name = obj.Name:lower()
-                if name:find("bunny") or name:find("dog") or name:find("lab") or 
-                   name:find("cat") or name:find("rabbit") or name:find("kg") or name:find("age") then
-                    
-                    transformLog("STAGE", "📍 ЭТАП: TOOL_CREATED")
-                    transformLog("TOOL", string.format("🔧 TOOL СОЗДАН В ПЕРСОНАЖЕ: %s", obj.Name))
-                    
-                    TransformData.playerTool = obj
-                    local toolSnapshot = createDetailedSnapshot(obj, "player_tool", "TOOL_CREATED")
-                    TransformData.snapshots["tool"] = toolSnapshot
-                    
-                    table.insert(TransformData.transformSequence, {
-                        stage = "TOOL_CREATED",
-                        timestamp = tick(),
-                        relativeTime = tick() - TransformData.startTime,
-                        object = obj,
-                        snapshot = toolSnapshot
-                    })
-                    
-                    -- Сравниваем с моделью из Visuals
-                    if TransformData.snapshots["visuals"] then
-                        compareSnapshots(TransformData.snapshots["visuals"], toolSnapshot, "VISUALS → TOOL")
-                    end
-                    
-                    -- Мониторинг экипировки Tool
-                    obj.Equipped:Connect(function()
-                        transformLog("STAGE", "📍 ЭТАП: TOOL_EQUIPPED")
-                        transformLog("TOOL", string.format("🔧 TOOL ЭКИПИРОВАН: %s", obj.Name))
-                        
-                        table.insert(TransformData.transformSequence, {
-                            stage = "TOOL_EQUIPPED",
-                            timestamp = tick(),
-                            relativeTime = tick() - TransformData.startTime,
-                            object = obj
-                        })
-                    end)
-                    
-                    obj.Unequipped:Connect(function()
-                        transformLog("TOOL", string.format("🔧 TOOL СНЯТ: %s", obj.Name))
-                    end)
+        -- КРИТИЧЕСКИ ВАЖНО: Сохраняем ориентацию крепления питомца
+        local character = player.Character
+        if character then
+            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+            if rightHand then
+                local rightGrip = rightHand:FindFirstChild("RightGrip")
+                if rightGrip then
+                    savedPetGripC0 = rightGrip.C0
+                    savedPetGripC1 = rightGrip.C1
+                    print("📍 СОХРАНЕНА ориентация крепления питомца!")
+                    print("📍 C0:", savedPetGripC0)
+                    print("📍 C1:", savedPetGripC1)
+                else
+                    print("⚠️ RightGrip не найден при сохранении")
                 end
             end
-        end)
+        end
         
-        table.insert(TransformData.connections, characterAddedConnection)
+        return true
+    else
+        print("❌ Питомец в руках не найден!")
+        return false
     end
-    
-    -- Настройка для текущего персонажа
-    if player.Character then
-        setupCharacterMonitoring(player.Character)
-    end
-    
-    -- Настройка для будущих персонажей
-    local characterAddedConnection = player.CharacterAdded:Connect(function(character)
-        setupCharacterMonitoring(character)
-    end)
-    
-    table.insert(TransformData.connections, characterAddedConnection)
 end
 
--- 🌍 МОНИТОРИНГ МИРА ИГРОКА
-local function monitorPlayerWorld()
-    transformLog("WORLD", "🌍 МОНИТОРИНГ МИРА ИГРОКА")
+-- ПРЯМАЯ ЗАМЕНА содержимого
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
     
-    -- Мониторинг появления модели в мире игрока
-    local workspaceConnection = Workspace.ChildAdded:Connect(function(obj)
-        if obj:IsA("Model") and obj.Name:find(player.Name) then
-            -- Мониторим содержимое папки игрока
-            local playerFolderConnection = obj.ChildAdded:Connect(function(child)
-                if child:IsA("Model") then
-                    local name = child.Name:lower()
-                    if name:find("bunny") or name:find("dog") or name:find("lab") or 
-                       name:find("cat") or name:find("rabbit") or name:find("kg") or name:find("age") then
-                        
-                        transformLog("STAGE", "📍 ЭТАП: WORLD_MODEL_CREATED")
-                        transformLog("WORLD", string.format("🌍 МОДЕЛЬ В МИРЕ: %s", child.Name))
-                        
-                        TransformData.worldModel = child
-                        local worldSnapshot = createDetailedSnapshot(child, "world_model", "WORLD_MODEL_CREATED")
-                        TransformData.snapshots["world"] = worldSnapshot
-                        
-                        table.insert(TransformData.transformSequence, {
-                            stage = "WORLD_MODEL_CREATED",
-                            timestamp = tick(),
-                            relativeTime = tick() - TransformData.startTime,
-                            object = child,
-                            snapshot = worldSnapshot
-                        })
-                        
-                        -- Сравниваем с Tool
-                        if TransformData.snapshots["tool"] then
-                            compareSnapshots(TransformData.snapshots["tool"], worldSnapshot, "TOOL → WORLD")
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
+    
+    -- Шаг 1: Меняем имя
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 3: Удаляем все содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+    end
+    
+    wait(0.1)
+    
+    -- Шаг 4: Копируем все содержимое питомца
+    print("📋 Копирую содержимое питомца...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+    end
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 В руках должен быть питомец с именем Dragonfly!")
+    
+    return true
+end
+
+-- АЛЬТЕРНАТИВА: Замена содержимого существующего Tool БЕЗ создания нового
+local function alternativeReplace()
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Замена содержимого существующего Tool...")
+    
+    -- КАРДИНАЛЬНО НОВЫЙ ПОДХОД: НЕ создаем новый Tool, а меняем содержимое существующего!
+    
+    -- Шаг 1: Меняем имя Tool (остается в том же слоте)
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя Tool изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool от питомца
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped  
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    shovel.Enabled = petTool.Enabled
+    print("🔧 Свойства Tool обновлены от питомца")
+    
+    -- Шаг 3: Сохраняем позицию Handle ПЕРЕД очисткой
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local savedPosition = nil
+    local savedOrientation = nil
+    
+    if shovelHandle then
+        savedPosition = shovelHandle.Position
+        savedOrientation = shovelHandle.Orientation
+        print("📍 Сохранена позиция Handle: " .. tostring(savedPosition))
+    end
+    
+    -- Шаг 4: ПОЛНАЯ очистка содержимого Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+        print("   🗑️ Удалено: " .. child.Name)
+    end
+    
+    wait(0.05) -- Минимальная пауза для очистки
+    
+    -- Шаг 5: Копируем ВСЕ содержимое питомца в существующий Tool
+    print("📋 Копирую содержимое питомца в существующий Tool...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel  -- В существующий Tool!
+        
+        -- КРИТИЧЕСКИ ВАЖНО: Правильная настройка физики
+        if copy:IsA("BasePart") then
+            copy.Anchored = false
+            copy.CanCollide = false
+            
+            -- Если это Handle - восстанавливаем позицию
+            if copy.Name == "Handle" and savedPosition then
+                copy.Position = savedPosition
+                copy.Orientation = savedOrientation
+                print("   📍 Восстановлена позиция Handle")
+            end
+            
+            print("   ✅ Скопировано: " .. child.Name .. " (BasePart)")
+        else
+            print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+        end
+    end
+    
+    -- Шаг 6: КРИТИЧЕСКОЕ КРЕПЛЕНИЕ Tool к руке как настоящий питомец
+    spawn(function()
+        wait(0.1)
+        
+        -- Проверяем что Tool все еще в руках
+        if shovel.Parent == character then
+            local handle = shovel:FindFirstChild("Handle")
+            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+            
+            if handle and rightHand then
+                print(" Критическое крепление Handle к руке...")
+                
+                -- КРИТИЧЕСКИ ВАЖНО: Удаляем старое крепление перед созданием нового
+                local oldGrip = rightHand:FindFirstChild("RightGrip")
+                if oldGrip then
+                    oldGrip:Destroy()
+                    print(" Удалено старое крепление")
+                end
+                
+                -- НОВЫЙ ПОДХОД: КОПИРУЕМ WELD ОТ ОРИГИНАЛЬНОГО ПИТОМЦА
+                local newGrip = nil
+                
+                -- Ищем оригинальный питомец в Visuals для копирования его Weld
+                local visuals = workspace:FindFirstChild("Visuals")
+                if visuals then
+                    for _, child in pairs(visuals:GetChildren()) do
+                        if child.Name:find("Dragonfly") or child.Name:find("KG]") then
+                            local originalHandle = child:FindFirstChild("Handle")
+                            if originalHandle then
+                                local originalWeld = originalHandle:FindFirstChild("RightGrip")
+                                if originalWeld then
+                                    -- КОПИРУЕМ ЗНАЧЕНИЯ ОТ ОРИГИНАЛЬНОГО WELD + ИСПРАВЛЯЕМ ПОВОРОТ
+                                    newGrip = Instance.new("Weld")
+                                    newGrip.Name = "RightGrip"
+                                    newGrip.Part0 = rightHand
+                                    newGrip.Part1 = handle
+                                    -- ПРИМЕНЯЕМ ПОВОРОТ НА 180 ГРАДУСОВ ПО Y-ОСИ ДЛЯ ПРАВИЛЬНОГО НАПРАВЛЕНИЯ
+                                    newGrip.C0 = originalWeld.C0 * CFrame.Angles(0, math.rad(180), 0)
+                                    newGrip.C1 = originalWeld.C1
+                                    newGrip.Parent = rightHand
+                                    
+                                    print(" СКОПИРОВАНА ориентация от оригинального питомца!")
+                                    print(" Оригинальный C0:", originalWeld.C0)
+                                    print(" Оригинальный C1:", originalWeld.C1)
+                                    print(" Используется ТОЧНАЯ копия оригинального Weld!")
+                                    break
+                                end
+                            end
                         end
                     end
                 end
-            end)
-            
-            table.insert(TransformData.connections, playerFolderConnection)
+                
+                -- Если не нашли оригинальный Weld - используем стандартное крепление
+                if not newGrip then
+                    newGrip = Instance.new("Weld")
+                    newGrip.Name = "RightGrip"
+                    newGrip.Part0 = rightHand
+                    newGrip.Part1 = handle
+                    newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
+                    newGrip.C1 = CFrame.new(0, 0, 0)
+                    newGrip.Parent = rightHand
+                    print(" Оригинальный Weld не найден - используется стандартное крепление")
+                end
+                
+                -- Настраиваем Handle как у настоящего питомца (ПОСЛЕ крепления)
+                handle.Anchored = false
+                handle.CanCollide = false
+                handle.CanTouch = false
+                handle.TopSurface = Enum.SurfaceType.Smooth
+                handle.BottomSurface = Enum.SurfaceType.Smooth
+                
+                -- Запускаем фоновую защиту Weld от игры (ОЧЕНЬ КОРОТКОЕ время)
+                weldProtectionActive = true
+                spawn(function()
+                    local protectionTime = 0
+                    local maxProtectionCycles = 10 -- Максимум 0.1 секунды защиты (СОКРАЩЕНО!)
+                    
+                    while newGrip and newGrip.Parent and weldProtectionActive and protectionTime < maxProtectionCycles do
+                        wait(0.01)
+                        protectionTime = protectionTime + 1
+                        
+                        -- Проверяем, не создала ли игра свой RightGrip
+                        local gameGrip = rightHand:FindFirstChild("RightGrip")
+                        if gameGrip and gameGrip ~= newGrip then
+                            print("🛡️ Обнаружен автоматический RightGrip от игры! Удаляем...")
+                            gameGrip:Destroy()
+                            
+                            -- Восстанавливаем наш Weld с правильными параметрами
+                            if not newGrip or not newGrip.Parent then
+                                local restoredGrip = Instance.new("Weld")
+                                restoredGrip.Name = "RightGrip"
+                                restoredGrip.Part0 = rightHand
+                                restoredGrip.Part1 = handle
+                                restoredGrip.Parent = rightHand
+                                
+                                -- Используем правильную ориентацию при восстановлении
+                                restoredGrip.C0 = CFrame.new(0, -1, 0)
+                                restoredGrip.C1 = CFrame.new(-0.0670368001, 0, 0)
+                                print("🔧 Восстановлен Weld с правильной ориентацией!")
+                                
+                                print("🔧 Weld восстановлен с правильной ориентацией!")
+                            end
+                        end
+                    end
+                    
+                    -- Автоматически отключаем защиту через КОРОТКОЕ время
+                    weldProtectionActive = false
+                    print("🛡️ Защита Weld автоматически отключена через", protectionTime * 0.01, "секунд")
+                    print("🎮 ИГРА ТЕПЕРЬ МОЖЕТ ИСПРАВИТЬ ОРИЕНТАЦИЮ! Попробуйте убрать и взять питомца обратно.")
+                    
+                    -- Дополнительная задержка для стабилизации
+                    wait(0.1)
+                    print("✅ Система готова к естественной коррекции ориентации игрой")
+                    
+                    -- АВТОМАТИЧЕСКОЕ ИЗУЧЕНИЕ ОТКЛЮЧЕНО - ТОЛЬКО РУЧНОЕ!
+                    print("⚠️ Автоматическое изучение ориентации ОТКЛЮЧЕНО")
+                    print("🔍 Используйте кнопку 'ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ' вручную!")
+                    print("📋 ИНСТРУКЦИЯ:")
+                    print("   1. Уберите питомца в инвентарь")
+                    print("   2. Возьмите питомца обратно в руки")
+                    print("   3. Убедитесь, что питомец в ПРАВИЛЬНОЙ позе")
+                    print("   4. Нажмите 'ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ'")
+                    print("   5. Теперь можно делать новые замены")
+                end)
+                
+                print("✅ Handle ЖЕСТКО закреплен к руке через Weld!")
+                print("🎯 Падение исключено!")
+                
+                -- Дополнительная стабилизация - принудительная активация Tool
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    -- Имитируем "взятие" Tool для активации системы
+                    shovel.Parent = character.Backpack
+                    wait(0.02)
+                    shovel.Parent = character
+                    print("⚡ Tool принудительно активирован с новым креплением")
+                end
+            else
+                print("❌ Handle или Right Arm не найдены!")
+            end
         end
     end)
     
-    table.insert(TransformData.connections, workspaceConnection)
+    print("✅ Замена содержимого завершена!")
+    print("🎯 Tool остается в том же слоте с новым содержимым!")
+    print("📍 Позиция сохранена, падения быть не должно!")
+    return true
 end
 
--- 🚀 ЗАПУСК АНАЛИЗА ПРЕВРАЩЕНИЯ
-local function startTransformAnalysis()
-    transformLog("TRANSFORM", "🚀 ЗАПУСК АНАЛИЗА ПРЕВРАЩЕНИЯ")
-    transformLog("TRANSFORM", "🎯 Отслеживание: Visuals → Tool → World")
+-- ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ питомца в руках
+local function fixPetOrientation()
+    print("\n🔧 === ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ ===")
     
-    TransformData.isAnalyzing = true
-    TransformData.startTime = tick()
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
     
-    -- Запускаем все мониторы
-    monitorVisuals()
-    monitorPlayerCharacter()
-    monitorPlayerWorld()
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
     
-    transformLog("TRANSFORM", "✅ Анализ превращения активен!")
-    transformLog("TRANSFORM", "🥚 ОТКРОЙТЕ ЯЙЦО ДЛЯ АНАЛИЗА ПРЕВРАЩЕНИЯ!")
-end
-
--- 📋 ГЕНЕРАЦИЯ ОТЧЕТА О ПРЕВРАЩЕНИИ
-local function generateTransformReport()
-    transformLog("CRITICAL", "📋 === ОТЧЕТ О ПРЕВРАЩЕНИИ ===")
-    
-    transformLog("INFO", string.format("🔄 Всего этапов превращения: %d", #TransformData.transformSequence))
-    
-    if #TransformData.transformSequence > 0 then
-        transformLog("CRITICAL", "🔄 ПОСЛЕДОВАТЕЛЬНОСТЬ ПРЕВРАЩЕНИЯ:")
-        
-        for i, stage in ipairs(TransformData.transformSequence) do
-            transformLog("SEQUENCE", string.format("🔄 %d. %s", i, stage.stage), {
-                Object = stage.object and stage.object.Name or "nil",
-                Time = string.format("%.3f сек", stage.relativeTime)
-            })
+    -- Ищем Tool питомца в руках (замененный Shovel)
+    local petToolInHands = nil
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
+            petToolInHands = tool
+            break
         end
     end
     
-    -- Сравнение всех снимков
-    if TransformData.snapshots["visuals"] and TransformData.snapshots["tool"] then
-        transformLog("CRITICAL", "🔥 КЛЮЧЕВОЕ СРАВНЕНИЕ: VISUALS → TOOL")
-        compareSnapshots(TransformData.snapshots["visuals"], TransformData.snapshots["tool"], "ПОЛНОЕ ПРЕВРАЩЕНИЕ")
+    if not petToolInHands then
+        print("❌ Питомец в руках не найден!")
+        return false
     end
     
-    if TransformData.snapshots["tool"] and TransformData.snapshots["world"] then
-        transformLog("CRITICAL", "🔥 КЛЮЧЕВОЕ СРАВНЕНИЕ: TOOL → WORLD")
-        compareSnapshots(TransformData.snapshots["tool"], TransformData.snapshots["world"], "РАЗМЕЩЕНИЕ В МИРЕ")
+    print("✅ Найден питомец в руках: " .. petToolInHands.Name)
+    
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+    local handle = petToolInHands:FindFirstChild("Handle")
+    
+    if not rightHand or not handle then
+        print("❌ Right Arm или Handle не найдены!")
+        return false
     end
     
-    transformLog("CRITICAL", "🔄 АНАЛИЗ ПРЕВРАЩЕНИЯ ЗАВЕРШЕН!")
-end
-
--- 🛑 ОСТАНОВКА АНАЛИЗА
-local function stopTransformAnalysis()
-    transformLog("TRANSFORM", "🛑 ОСТАНОВКА АНАЛИЗА ПРЕВРАЩЕНИЯ")
+    local rightGrip = rightHand:FindFirstChild("RightGrip")
+    if not rightGrip then
+        print("❌ RightGrip не найден!")
+        return false
+    end
     
-    for _, connection in ipairs(TransformData.connections) do
-        if connection then
-            connection:Disconnect()
+    print("🔧 Применяю СОХРАНЕННУЮ ориентацию питомца...")
+    
+    -- ЦИКЛИЧЕСКОЕ ПЕРЕКЛЮЧЕНИЕ разных ориентаций для питомцев
+    local orientations = {
+        {name = "Стандартная", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая вправо", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая влево", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(-90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Перевернутая", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(180), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная вперед", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная назад", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(-45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Сохраненная (если есть)", c0 = savedPetGripC0 or CFrame.new(0, -1, -0.5), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Переворот головой вниз", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(math.rad(180), 0, 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот вправо", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот влево", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(-90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+    }
+    
+    -- Инициализируем индекс ориентации
+    if not _G.currentOrientationIndex then
+        _G.currentOrientationIndex = 1
+    else
+        _G.currentOrientationIndex = _G.currentOrientationIndex + 1
+        if _G.currentOrientationIndex > #orientations then
+            _G.currentOrientationIndex = 1
         end
     end
     
-    TransformData.connections = {}
-    TransformData.isAnalyzing = false
+    local currentOrientation = orientations[_G.currentOrientationIndex]
     
-    transformLog("TRANSFORM", "✅ Анализ остановлен")
+    rightGrip.C0 = currentOrientation.c0
+    rightGrip.C1 = currentOrientation.c1
+    
+    print("📍 Применена ориентация: " .. currentOrientation.name)
+    print("📍 C0:", currentOrientation.c0)
+    print("📍 C1:", currentOrientation.c1)
+    print("🔄 Нажмите еще раз для следующей ориентации (" .. _G.currentOrientationIndex .. "/" .. #orientations .. ")")
+    
+    return true
+end
+
+-- ИЗУЧЕНИЕ ТЕКУЩЕЙ ОРИЕНТАЦИИ питомца в руках
+local function learnCurrentOrientation()
+    print("\n🔍 === ИЗУЧЕНИЕ ТЕКУЩЕЙ ОРИЕНТАЦИИ ===")
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    -- Ищем Tool питомца в руках (замененный Dragonfly)
+    local petToolInHands = nil
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
+            petToolInHands = tool
+            break
+        end
+    end
+    
+    if not petToolInHands then
+        print("❌ Питомец в руках не найден!")
+        print("💡 Сначала возьмите замененного питомца в руки")
+        return false
+    end
+    
+    print("✅ Найден питомец в руках: " .. petToolInHands.Name)
+    
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+    if not rightHand then
+        print("❌ Right Arm не найдена!")
+        return false
+    end
+    
+    local rightGrip = rightHand:FindFirstChild("RightGrip")
+    if not rightGrip then
+        print("❌ RightGrip не найден!")
+        return false
+    end
+    
+    -- СОХРАНЯЕМ ТЕКУЩУЮ ОРИЕНТАЦИЮ как "правильную"
+    savedPetGripC0 = rightGrip.C0
+    savedPetGripC1 = rightGrip.C1
+    
+    print("🔍 ИЗУЧЕНА и СОХРАНЕНА текущая ориентация!")
+    print("📍 Новая сохраненная C0:", savedPetGripC0)
+    print("📍 Новая сохраненная C1:", savedPetGripC1)
+    print("✅ Теперь эта ориентация будет использоваться при следующих заменах!")
+    
+    return true
 end
 
 -- Создаем GUI
-local function createTransformGUI()
+local function createDirectFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "VisualsToToolTransformGUI"
+    screenGui.Name = "DirectShovelFixGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 420, 0, 200)
-    frame.Position = UDim2.new(1, -440, 0, 10)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.02, 0.05)
+    frame.Size = UDim2.new(0, 400, 0, 500)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -250)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 30)
-    title.BackgroundColor3 = Color3.new(1, 0.2, 0.5)
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
     title.BorderSizePixel = 0
-    title.Text = "🔄 VISUALS → TOOL ANALYZER"
+    title.Text = "🎯 DIRECT SHOVEL FIX"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
-    local startBtn = Instance.new("TextButton")
-    startBtn.Size = UDim2.new(1, -20, 0, 40)
-    startBtn.Position = UDim2.new(0, 10, 0, 40)
-    startBtn.BackgroundColor3 = Color3.new(1, 0.2, 0.5)
-    startBtn.BorderSizePixel = 0
-    startBtn.Text = "🔄 АНАЛИЗ ПРЕВРАЩЕНИЯ"
-    startBtn.TextColor3 = Color3.new(1, 1, 1)
-    startBtn.TextScaled = true
-    startBtn.Font = Enum.Font.SourceSansBold
-    startBtn.Parent = frame
-    
-    local reportBtn = Instance.new("TextButton")
-    reportBtn.Size = UDim2.new(0.48, 0, 0, 30)
-    reportBtn.Position = UDim2.new(0, 10, 0, 90)
-    reportBtn.BackgroundColor3 = Color3.new(0.6, 0.1, 0.3)
-    reportBtn.BorderSizePixel = 0
-    reportBtn.Text = "📋 ОТЧЕТ"
-    reportBtn.TextColor3 = Color3.new(1, 1, 1)
-    reportBtn.TextScaled = true
-    reportBtn.Font = Enum.Font.SourceSans
-    reportBtn.Parent = frame
-    
-    local stopBtn = Instance.new("TextButton")
-    stopBtn.Size = UDim2.new(0.48, 0, 0, 30)
-    stopBtn.Position = UDim2.new(0.52, 0, 0, 90)
-    stopBtn.BackgroundColor3 = Color3.new(0.6, 0.1, 0.1)
-    stopBtn.BorderSizePixel = 0
-    stopBtn.Text = "🛑 СТОП"
-    stopBtn.TextColor3 = Color3.new(1, 1, 1)
-    stopBtn.TextScaled = true
-    stopBtn.Font = Enum.Font.SourceSans
-    stopBtn.Parent = frame
-    
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 70)
-    status.Position = UDim2.new(0, 10, 0, 130)
+    status.Size = UDim2.new(1, -20, 0, 80)
+    status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "Готов к анализу превращения\nVisuals → Tool → World\nОткройте яйцо для анализа"
+    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
     status.Parent = frame
     
-    startBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Анализ активен!\nОтслеживание превращения..."
-        status.TextColor3 = Color3.new(1, 0.2, 0.5)
-        startBtn.Text = "✅ АНАЛИЗ АКТИВЕН"
-        startBtn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-        startBtn.Active = false
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить питомца"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
+    
+    -- Кнопка прямой замены
+    local directBtn = Instance.new("TextButton")
+    directBtn.Size = UDim2.new(1, -20, 0, 50)
+    directBtn.Position = UDim2.new(0, 10, 0, 200)
+    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    directBtn.BorderSizePixel = 0
+    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
+    directBtn.TextColor3 = Color3.new(1, 1, 1)
+    directBtn.TextScaled = true
+    directBtn.Font = Enum.Font.SourceSansBold
+    directBtn.Visible = false
+    directBtn.Parent = frame
+    
+    -- Кнопка альтернативы
+    local altBtn = Instance.new("TextButton")
+    altBtn.Size = UDim2.new(1, -20, 0, 50)
+    altBtn.Position = UDim2.new(0, 10, 0, 260)
+    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    altBtn.BorderSizePixel = 0
+    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.TextColor3 = Color3.new(1, 1, 1)
+    altBtn.TextScaled = true
+    altBtn.Font = Enum.Font.SourceSansBold
+    altBtn.Visible = false
+    altBtn.Parent = frame
+    
+    -- Кнопка исправления ориентации
+    local fixOrientBtn = Instance.new("TextButton")
+    fixOrientBtn.Size = UDim2.new(1, -20, 0, 40)
+    fixOrientBtn.Position = UDim2.new(0, 10, 0, 320)
+    fixOrientBtn.BackgroundColor3 = Color3.new(0, 0.6, 0.8)
+    fixOrientBtn.BorderSizePixel = 0
+    fixOrientBtn.Text = "🔧 ИСПРАВИТЬ ОРИЕНТАЦИЮ"
+    fixOrientBtn.TextColor3 = Color3.new(1, 1, 1)
+    fixOrientBtn.TextScaled = true
+    fixOrientBtn.Font = Enum.Font.SourceSansBold
+    fixOrientBtn.Visible = false
+    fixOrientBtn.Parent = frame
+    
+    -- Кнопка изучения текущей ориентации
+    local learnOrientBtn = Instance.new("TextButton")
+    learnOrientBtn.Size = UDim2.new(1, -20, 0, 40)
+    learnOrientBtn.Position = UDim2.new(0, 10, 0, 370)
+    learnOrientBtn.BackgroundColor3 = Color3.new(0.8, 0.6, 0)
+    learnOrientBtn.BorderSizePixel = 0
+    learnOrientBtn.Text = "🔍 ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ"
+    learnOrientBtn.TextColor3 = Color3.new(1, 1, 1)
+    learnOrientBtn.TextScaled = true
+    learnOrientBtn.Font = Enum.Font.SourceSansBold
+    learnOrientBtn.Visible = false
+    learnOrientBtn.Parent = frame
+    
+    -- Кнопка отключения защиты Weld
+    local disableProtectionBtn = Instance.new("TextButton")
+    disableProtectionBtn.Size = UDim2.new(1, -20, 0, 30)
+    disableProtectionBtn.Position = UDim2.new(0, 10, 0, 420)
+    disableProtectionBtn.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
+    disableProtectionBtn.BorderSizePixel = 0
+    disableProtectionBtn.Text = "🛡️ ОТКЛЮЧИТЬ ЗАЩИТУ WELD"
+    disableProtectionBtn.TextColor3 = Color3.new(1, 1, 1)
+    disableProtectionBtn.TextScaled = true
+    disableProtectionBtn.Font = Enum.Font.SourceSansBold
+    disableProtectionBtn.Visible = false
+    disableProtectionBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 460)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
+    
+    -- События
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
         
-        startTransformAnalysis()
+        local success = savePet()
+        
+        if success then
+            status.Text = "✅ ПИТОМЕЦ СОХРАНЕН!\nТеперь возьмите Shovel"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            altBtn.Visible = true
+            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
+        else
+            status.Text = "❌ Ошибка сохранения!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
     end)
     
-    reportBtn.MouseButton1Click:Connect(function()
-        generateTransformReport()
+    directBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Прямая замена содержимого..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = directReplace()
+        
+        if success then
+            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
     end)
     
-    stopBtn.MouseButton1Click:Connect(function()
-        stopTransformAnalysis()
-        status.Text = "🛑 Анализ остановлен"
-        status.TextColor3 = Color3.new(1, 0.5, 0.5)
-        startBtn.Text = "🔄 АНАЛИЗ ПРЕВРАЩЕНИЯ"
-        startBtn.BackgroundColor3 = Color3.new(1, 0.2, 0.5)
-        startBtn.Active = true
+    altBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Альтернативная замена..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = alternativeReplace()
+        
+        if success then
+            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
+            learnOrientBtn.Visible = true -- Показываем кнопку изучения ориентации
+            disableProtectionBtn.Visible = true -- Показываем кнопку отключения защиты
+        else
+            status.Text = "❌ Ошибка альтернативы!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    fixOrientBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔧 Исправляю ориентацию..."
+        status.TextColor3 = Color3.new(0, 1, 1)
+        
+        local success = fixPetOrientation()
+        
+        if success then
+            status.Text = "✅ ОРИЕНТАЦИЯ ИСПРАВЛЕНА!\nНажмите еще раз для другой позиции"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка исправления ориентации!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    learnOrientBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔍 Изучаю текущую ориентацию..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = learnCurrentOrientation()
+        
+        if success then
+            status.Text = "✅ ОРИЕНТАЦИЯ ИЗУЧЕНА!\nТеперь она будет использоваться"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка изучения ориентации!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    disableProtectionBtn.MouseButton1Click:Connect(function()
+        weldProtectionActive = false
+        status.Text = "🛡️ ЗАЩИТА WELD ОТКЛЮЧЕНА!\nИгра может корректировать ориентацию"
+        status.TextColor3 = Color3.new(1, 0.5, 0)
+        disableProtectionBtn.Text = "✅ ЗАЩИТА ОТКЛЮЧЕНА"
+        disableProtectionBtn.BackgroundColor3 = Color3.new(0.2, 0.8, 0.2)
+        print("🛡️ Защита Weld принудительно отключена пользователем")
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
     end)
 end
 
 -- Запускаем
-local consoleTextLabel = createTransformConsole()
-createTransformGUI()
-
-transformLog("TRANSFORM", "✅ VisualsToToolTransformAnalyzer готов!")
-transformLog("TRANSFORM", "🔄 Анализатор превращения модели")
-transformLog("TRANSFORM", "🎯 Отслеживание: Visuals → Tool → World")
-transformLog("TRANSFORM", "📊 Детальное сравнение структур")
-transformLog("TRANSFORM", "🚀 Нажмите 'АНАЛИЗ ПРЕВРАЩЕНИЯ' для запуска!")
+createDirectFixGUI()
+print("✅ DirectShovelFix готов!")
+print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
+print("💾 1. Сохранить питомца")
+print("🔄 2. Заменить Shovel")
