@@ -1,623 +1,378 @@
--- 🔥 PERFECT PET SCANNER v1.0
--- Полное сканирование питомца из руки и замена Shovel на 1:1 копию
--- Сохраняет ВСЕ: CFrame, Motor6D, анимации, части, структуру
+-- DirectShovelFix_v5_HOTBAR.lua
+-- ПРАВИЛЬНОЕ РЕШЕНИЕ: Превращаем Shovel В питомца прямо в его слоте
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-
 local player = Players.LocalPlayer
 
-print("🔥 === PERFECT PET SCANNER v1.0 ===")
-print("=" .. string.rep("=", 60))
+print("=== DIRECT SHOVEL FIX V5 - HOTBAR PRESERVATION ===")
 
--- Глобальные переменные для сохранения данных
-local scannedPetData = {
-    toolName = nil,
-    handleData = nil,
-    petModel = nil,
-    allParts = {},
-    allMotor6Ds = {},
-    allCFrames = {},
-    allProperties = {},
-    weldData = nil,
-    animationStates = {}
+-- Глобальные переменные для сохранения данных питомца
+local petData = {
+    name = nil,
+    properties = {},
+    children = {},
+    gripC0 = nil,
+    gripC1 = nil,
+    animations = {}
 }
 
-local currentReplacedTool = nil
-local animationConnection = nil
-
--- === ФУНКЦИИ ГЛУБОКОГО СКАНИРОВАНИЯ ===
-
--- Функция сканирования всех свойств объекта
-local function scanObjectProperties(obj)
-    local properties = {}
-    
-    -- Базовые свойства для всех объектов
-    properties.Name = obj.Name
-    properties.ClassName = obj.ClassName
-    properties.Parent = obj.Parent and obj.Parent.Name or "nil"
-    
-    -- Специфичные свойства для BasePart
-    if obj:IsA("BasePart") then
-        properties.Size = obj.Size
-        properties.CFrame = obj.CFrame
-        properties.Material = obj.Material
-        properties.BrickColor = obj.BrickColor
-        properties.Transparency = obj.Transparency
-        properties.CanCollide = obj.CanCollide
-        properties.Anchored = obj.Anchored
-        properties.Shape = obj.Shape
-        properties.TopSurface = obj.TopSurface
-        properties.BottomSurface = obj.BottomSurface
-        properties.FrontSurface = obj.FrontSurface
-        properties.BackSurface = obj.BackSurface
-        properties.LeftSurface = obj.LeftSurface
-        properties.RightSurface = obj.RightSurface
-    end
-    
-    -- Специфичные свойства для Motor6D
-    if obj:IsA("Motor6D") then
-        properties.Part0 = obj.Part0 and obj.Part0.Name or "nil"
-        properties.Part1 = obj.Part1 and obj.Part1.Name or "nil"
-        properties.C0 = obj.C0
-        properties.C1 = obj.C1
-        properties.CurrentAngle = obj.CurrentAngle
-        properties.DesiredAngle = obj.DesiredAngle
-        properties.MaxVelocity = obj.MaxVelocity
-    end
-    
-    -- Специфичные свойства для Weld
-    if obj:IsA("Weld") or obj:IsA("WeldConstraint") then
-        properties.Part0 = obj.Part0 and obj.Part0.Name or "nil"
-        properties.Part1 = obj.Part1 and obj.Part1.Name or "nil"
-        if obj:IsA("Weld") then
-            properties.C0 = obj.C0
-            properties.C1 = obj.C1
-        end
-    end
-    
-    return properties
-end
-
--- Функция глубокого клонирования объекта
-local function deepCloneObject(original, parent)
-    if not original then return nil end
-    
-    local clone = Instance.new(original.ClassName)
-    clone.Name = original.Name
-    
-    -- Копируем все свойства
-    local properties = scanObjectProperties(original)
-    
-    for propName, propValue in pairs(properties) do
-        if propName ~= "Parent" and propName ~= "Part0" and propName ~= "Part1" then
-            local success, err = pcall(function()
-                clone[propName] = propValue
-            end)
-            if not success then
-                print("⚠️ Не удалось скопировать свойство", propName, ":", err)
-            end
-        end
-    end
-    
-    clone.Parent = parent
-    return clone
-end
-
--- Функция сканирования питомца из руки
-local function scanPetFromHand()
-    print("\n🔍 === СКАНИРОВАНИЕ ПИТОМЦА ИЗ РУКИ ===")
-    
+-- Поиск питомца в руках
+local function findPetInHands()
     local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден!")
+    if not character then return nil end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
+        end
+    end
+    return nil
+end
+
+-- Поиск Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
+        end
+    end
+    return nil
+end
+
+-- ГЛУБОКОЕ сканирование и сохранение ВСЕХ данных питомца
+local function deepScanPetData(obj, path)
+    local fullPath = path == "" and obj.Name or (path .. "." .. obj.Name)
+    
+    -- Сохраняем BasePart с полными данными
+    if obj:IsA("BasePart") then
+        petData.animations[fullPath] = {
+            CFrame = obj.CFrame,
+            Position = obj.Position,
+            Rotation = obj.Rotation,
+            Size = obj.Size,
+            Material = obj.Material,
+            Color = obj.Color,
+            Transparency = obj.Transparency,
+            CanCollide = obj.CanCollide,
+            Anchored = obj.Anchored,
+            Name = obj.Name,
+            ClassName = obj.ClassName
+        }
+        print("🎭 " .. fullPath .. " (" .. obj.ClassName .. ") данные сохранены")
+    end
+    
+    -- Сканируем все дочерние объекты
+    for _, child in pairs(obj:GetChildren()) do
+        deepScanPetData(child, fullPath)
+    end
+end
+
+-- ПОЛНОЕ сканирование питомца
+local function scanCompletePet()
+    print("\n💾 === ПОЛНОЕ СКАНИРОВАНИЕ ПИТОМЦА ===")
+    
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
         return false
     end
     
-    -- Ищем Tool в руках
-    local tool = character:FindFirstChildOfClass("Tool")
-    if not tool then
-        print("❌ Возьмите питомца в руки перед сканированием!")
-        return false
-    end
+    print("✅ Найден питомец: " .. pet.Name)
     
-    -- Проверяем что это питомец (используем ту же логику что в DirectShovelFix)
-    if not (string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]")) then
-        print("❌ В руках не питомец! Найден:", tool.Name)
-        print("🔍 Ищем питомца с паттерном '[...KG]'")
-        return false
-    end
-    
-    print("🎯 Найден питомец:", tool.Name)
-    
-    -- Очищаем предыдущие данные
-    scannedPetData = {
-        toolName = nil,
-        handleData = nil,
-        petModel = nil,
-        allParts = {},
-        allMotor6Ds = {},
-        allCFrames = {},
-        allProperties = {},
-        weldData = nil,
-        animationStates = {}
+    -- Очищаем старые данные
+    petData = {
+        name = pet.Name,
+        properties = {},
+        children = {},
+        gripC0 = nil,
+        gripC1 = nil,
+        animations = {}
     }
     
-    -- Сохраняем имя Tool
-    scannedPetData.toolName = tool.Name
+    -- Сохраняем свойства Tool
+    petData.properties = {
+        RequiresHandle = pet.RequiresHandle,
+        CanBeDropped = pet.CanBeDropped,
+        ManualActivationOnly = pet.ManualActivationOnly,
+        Enabled = pet.Enabled
+    }
     
-    -- Сканируем Handle
-    local handle = tool:FindFirstChild("Handle")
-    if handle then
-        scannedPetData.handleData = scanObjectProperties(handle)
-        print("✅ Handle отсканирован")
-    end
-    
-    -- Ищем модель питомца в Tool (проверяем все дочерние объекты)
-    local petModel = nil
-    
-    -- Сначала ищем Model
-    for _, child in pairs(tool:GetChildren()) do
-        if child:IsA("Model") and child ~= handle then
-            petModel = child
-            print("🎯 Найдена модель питомца:", child.Name)
-            break
-        end
-    end
-    
-    -- Если Model не найден, создаем из всех объектов Tool
-    if not petModel then
-        print("🔧 Модель не найдена, создаем из содержимого Tool...")
-        petModel = Instance.new("Model")
-        petModel.Name = "PetModel"
-        petModel.Parent = tool
+    -- Сохраняем позицию в руке
+    local character = player.Character
+    if character then
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local petHandle = pet:FindFirstChild("Handle")
         
-        -- Перемещаем ВСЕ объекты кроме Handle в модель
-        local objects = {}
-        for _, child in pairs(tool:GetChildren()) do
-            if child ~= handle and child ~= petModel then
-                table.insert(objects, child)
+        if rightHand and petHandle then
+            local petGrip = rightHand:FindFirstChild("RightGrip")
+            if petGrip then
+                petData.gripC0 = petGrip.C0
+                petData.gripC1 = petGrip.C1
+                print("📍 Позиция в руке сохранена!")
             end
         end
-        
-        print("🔍 Найдено объектов для модели:", #objects)
-        for i, obj in pairs(objects) do
-            print("   " .. i .. ". " .. obj.Name .. " (" .. obj.ClassName .. ")")
-        end
-        
-        -- Перемещаем объекты в модель
-        for _, obj in pairs(objects) do
-            obj.Parent = petModel
-        end
-        
-        if #objects > 0 then
-            -- Ищем BasePart для PrimaryPart
-            for _, obj in pairs(objects) do
-                if obj:IsA("BasePart") then
-                    petModel.PrimaryPart = obj
-                    break
-                end
-            end
-            print("✅ Создана модель из", #objects, "объектов")
-        else
-            print("⚠️ Нет объектов кроме Handle, используем сам Handle как модель")
-            -- Если нет других объектов, создаем простую модель с Handle
-            local handleCopy = handle:Clone()
-            handleCopy.Name = "PetPart"
-            handleCopy.Parent = petModel
-            petModel.PrimaryPart = handleCopy
-        end
     end
     
-    print("🎯 Найдена модель питомца:", petModel.Name)
+    -- ПОЛНОЕ сканирование структуры и анимаций
+    print("🎬 === СКАНИРОВАНИЕ СТРУКТУРЫ ===")
+    local animCount = 0
     
-    -- Глубокое сканирование модели питомца
-    scannedPetData.petModel = petModel:Clone()
-    scannedPetData.petModel.Parent = nil -- Храним в памяти
-    
-    -- Сканируем все части
-    local partCount = 0
-    for _, obj in pairs(petModel:GetDescendants()) do
+    local function countAndScan(obj, path)
         if obj:IsA("BasePart") then
-            local partData = {
-                object = obj,
-                properties = scanObjectProperties(obj),
-                cframe = obj.CFrame,
-                worldPosition = obj.Position
-            }
-            table.insert(scannedPetData.allParts, partData)
-            partCount = partCount + 1
+            animCount = animCount + 1
         end
+        deepScanPetData(obj, path)
     end
     
-    -- Сканируем все Motor6D
-    local motor6dCount = 0
-    for _, obj in pairs(petModel:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            local motorData = {
-                object = obj,
-                properties = scanObjectProperties(obj),
-                c0 = obj.C0,
-                c1 = obj.C1,
-                currentAngle = obj.CurrentAngle,
-                desiredAngle = obj.DesiredAngle
-            }
-            table.insert(scannedPetData.allMotor6Ds, motorData)
-            motor6dCount = motor6dCount + 1
-        end
-    end
+    countAndScan(pet, "")
     
-    -- Сканируем Weld крепления к руке
-    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-    if rightHand then
-        local rightGrip = rightHand:FindFirstChild("RightGrip")
-        if rightGrip then
-            scannedPetData.weldData = {
-                c0 = rightGrip.C0,
-                c1 = rightGrip.C1,
-                properties = scanObjectProperties(rightGrip)
-            }
-            print("✅ Weld крепления отсканирован")
-        end
+    -- Сохраняем ПОЛНУЮ копию всех детей для воссоздания
+    petData.children = {}
+    for _, child in pairs(pet:GetChildren()) do
+        table.insert(petData.children, child:Clone())
+        print("📦 Сохранен компонент: " .. child.Name .. " (" .. child.ClassName .. ")")
     end
     
     print("✅ СКАНИРОВАНИЕ ЗАВЕРШЕНО!")
-    print("📊 Отсканировано частей:", partCount)
-    print("📊 Отсканировано Motor6D:", motor6dCount)
-    print("📊 Размер модели:", #scannedPetData.petModel:GetDescendants())
+    print("📊 Частей тела: " .. animCount)
+    print("📦 Компонентов: " .. #petData.children)
     
     return true
 end
 
--- === ФУНКЦИИ СОЗДАНИЯ КОПИИ ===
-
--- Функция создания точной копии Tool
-local function createExactPetTool()
-    if not scannedPetData.toolName then
-        print("❌ Данные питомца не найдены! Сначала отсканируйте питомца.")
-        return nil
+-- ПРЕВРАЩЕНИЕ Shovel в питомца (БЕЗ смены слота!)
+local function transformShovelToPet()
+    print("\n🔄 === ПРЕВРАЩЕНИЕ SHOVEL В ПИТОМЦА ===")
+    
+    if not petData.name then
+        print("❌ Сначала отсканируйте питомца!")
+        return false
     end
     
-    print("\n🔧 === СОЗДАНИЕ ТОЧНОЙ КОПИИ TOOL ===")
-    
-    -- Создаем новый Tool
-    local newTool = Instance.new("Tool")
-    newTool.Name = scannedPetData.toolName
-    newTool.RequiresHandle = true
-    newTool.CanBeDropped = false
-    
-    -- Создаем Handle с точными свойствами
-    local handle = Instance.new("Part")
-    handle.Name = "Handle"
-    
-    if scannedPetData.handleData then
-        for propName, propValue in pairs(scannedPetData.handleData) do
-            if propName ~= "Parent" and propName ~= "CFrame" then
-                local success, err = pcall(function()
-                    handle[propName] = propValue
-                end)
-                if not success then
-                    print("⚠️ Не удалось установить свойство Handle", propName, ":", err)
-                end
-            end
-        end
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
     end
     
-    handle.Anchored = false
-    handle.CanCollide = false
-    handle.Parent = newTool
-    
-    -- Клонируем модель питомца
-    if scannedPetData.petModel then
-        local petCopy = scannedPetData.petModel:Clone()
-        petCopy.Name = "PetModel"
-        petCopy.Parent = newTool
-        
-        -- Настраиваем все части
-        for _, part in pairs(petCopy:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Anchored = false
-                part.CanCollide = false
-                
-                -- Создаем WeldConstraint для крепления к Handle
-                local weld = Instance.new("WeldConstraint")
-                weld.Part0 = handle
-                weld.Part1 = part
-                weld.Parent = handle
-            end
-        end
-        
-        print("✅ Модель питомца клонирована с", #petCopy:GetDescendants(), "объектами")
-    end
-    
-    print("✅ Точная копия Tool создана!")
-    return newTool
-end
-
--- Функция замены Shovel на отсканированного питомца
-local function replaceShovelWithScannedPet()
-    print("\n🔄 === ЗАМЕНА SHOVEL НА ОТСКАНИРОВАННОГО ПИТОМЦА ===")
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔄 Превращаю Shovel в питомца ПРЯМО В ЕГО СЛОТЕ...")
     
     local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден!")
-        return false
+    
+    -- Шаг 1: Меняем имя и свойства Tool (Shovel остается в том же слоте!)
+    shovel.Name = petData.name
+    shovel.RequiresHandle = petData.properties.RequiresHandle
+    shovel.CanBeDropped = petData.properties.CanBeDropped
+    shovel.ManualActivationOnly = petData.properties.ManualActivationOnly
+    shovel.Enabled = petData.properties.Enabled
+    print("🏷️ Shovel переименован в: " .. shovel.Name)
+    
+    -- Шаг 2: Удаляем содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
     end
     
-    -- Ищем Shovel в руках
-    local shovelTool = character:FindFirstChildOfClass("Tool")
-    if not shovelTool or not shovelTool.Name:find("Shovel") then
-        print("❌ Возьмите Shovel в руки перед заменой!")
-        return false
+    wait(0.2)
+    
+    -- Шаг 3: Добавляем ВСЕ компоненты питомца
+    print("📦 Добавляю компоненты питомца...")
+    for _, childCopy in pairs(petData.children) do
+        local newChild = childCopy:Clone()
+        newChild.Parent = shovel
+        print("   ✅ " .. newChild.Name .. " (" .. newChild.ClassName .. ")")
     end
     
-    -- Создаем точную копию питомца
-    local petTool = createExactPetTool()
-    if not petTool then
-        print("❌ Не удалось создать копию питомца!")
-        return false
-    end
+    wait(0.3)
     
-    -- Удаляем Shovel
-    shovelTool:Destroy()
+    -- Шаг 4: Восстанавливаем все анимации
+    print("🎬 === ВОССТАНОВЛЕНИЕ АНИМАЦИЙ ===")
     
-    -- Добавляем Pet Tool в Backpack и экипируем
-    petTool.Parent = player.Backpack
-    wait(0.1)
-    
-    -- Принудительно экипируем Tool
-    character.Humanoid:EquipTool(petTool)
-    
-    currentReplacedTool = petTool
-    
-    -- Применяем сохраненную позицию Weld
-    if scannedPetData.weldData then
-        spawn(function()
-            wait(0.5) -- Ждем пока Tool появится в руках
+    local function restoreAnimations(obj, path)
+        local fullPath = path == "" and obj.Name or (path .. "." .. obj.Name)
+        
+        if obj:IsA("BasePart") and petData.animations[fullPath] then
+            local saved = petData.animations[fullPath]
             
-            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-            if rightHand then
-                local rightGrip = rightHand:FindFirstChild("RightGrip")
-                if rightGrip then
-                    rightGrip.C0 = scannedPetData.weldData.c0
-                    rightGrip.C1 = scannedPetData.weldData.c1
-                    print("✅ Позиция Weld восстановлена!")
-                end
-            end
-        end)
-    end
-    
-    print("✅ Shovel заменен на отсканированного питомца!")
-    return true
-end
-
--- === СИСТЕМА LIVE АНИМАЦИИ ===
-
--- Функция запуска live анимации с сохраненными данными
-local function startLiveAnimationFromScan()
-    if animationConnection then
-        animationConnection:Disconnect()
-    end
-    
-    if not currentReplacedTool or not scannedPetData.allMotor6Ds then
-        print("❌ Нет данных для анимации!")
-        return
-    end
-    
-    print("\n🎬 === ЗАПУСК LIVE АНИМАЦИИ ИЗ СКАНА ===")
-    
-    animationConnection = RunService.Heartbeat:Connect(function()
-        if not currentReplacedTool or not currentReplacedTool.Parent then
-            return
+            -- Восстанавливаем все свойства
+            obj.CFrame = saved.CFrame
+            obj.Position = saved.Position
+            obj.Rotation = saved.Rotation
+            obj.Size = saved.Size
+            obj.Material = saved.Material
+            obj.Color = saved.Color
+            obj.Transparency = saved.Transparency
+            obj.CanCollide = saved.CanCollide
+            obj.Anchored = saved.Anchored
+            
+            print("🎯 " .. fullPath .. " анимация восстановлена")
         end
         
-        local petModel = currentReplacedTool:FindFirstChild("PetModel")
-        if not petModel then
-            return
+        -- Рекурсивно для всех детей
+        for _, child in pairs(obj:GetChildren()) do
+            restoreAnimations(child, fullPath)
         end
+    end
+    
+    if next(petData.animations) then
+        restoreAnimations(shovel, "")
+        print("✅ Все анимации восстановлены!")
+    end
+    
+    -- Шаг 5: Исправляем позицию в руке
+    if petData.gripC0 and petData.gripC1 then
+        wait(0.3)
         
-        -- Применяем сохраненные состояния Motor6D
-        for _, motorData in ipairs(scannedPetData.allMotor6Ds) do
-            local motorName = motorData.properties.Name
-            local motor6d = petModel:FindFirstChild(motorName, true)
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local newHandle = shovel:FindFirstChild("Handle")
+        
+        if rightHand and newHandle then
+            print("🔧 Восстанавливаю позицию в руке...")
             
-            if motor6d and motor6d:IsA("Motor6D") then
-                local success, err = pcall(function()
-                    -- Применяем сохраненные углы с небольшой анимацией
-                    motor6d.DesiredAngle = motorData.desiredAngle + math.sin(tick() * 2) * 0.1
-                    motor6d.C0 = motorData.c0
-                    motor6d.C1 = motorData.c1
-                end)
-                
-                if not success then
-                    print("⚠️ Ошибка анимации Motor6D", motorName, ":", err)
-                end
+            local oldGrip = rightHand:FindFirstChild("RightGrip")
+            if oldGrip then oldGrip:Destroy() end
+            
+            local newGrip = Instance.new("Weld")
+            newGrip.Name = "RightGrip"
+            newGrip.Part0 = rightHand
+            newGrip.Part1 = newHandle
+            newGrip.C0 = petData.gripC0
+            newGrip.C1 = petData.gripC1
+            newGrip.Parent = rightHand
+            
+            print("✅ Позиция в руке восстановлена!")
+        end
+    end
+    
+    -- Шаг 6: Активируем анимационные скрипты
+    spawn(function()
+        wait(0.5)
+        
+        -- Активируем все скрипты
+        for _, obj in pairs(shovel:GetDescendants()) do
+            if (obj:IsA("LocalScript") or obj:IsA("Script")) and obj.Disabled then
+                obj.Disabled = false
+                print("📜 Активирован: " .. obj.Name)
             end
         end
+        
+        -- Разблокируем анимированные части
+        for _, part in pairs(shovel:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "Handle" then
+                part.Anchored = false
+            end
+        end
+        
+        print("🎬 Все анимации активированы!")
     end)
     
-    print("✅ Live анимация запущена!")
-end
-
--- Функция остановки анимации
-local function stopLiveAnimation()
-    if animationConnection then
-        animationConnection:Disconnect()
-        animationConnection = nil
-        print("⏹️ Live анимация остановлена")
-    end
-end
-
--- === ГЛАВНЫЕ ФУНКЦИИ ===
-
--- Функция полного процесса
-local function fullScanAndReplace()
-    print("\n🚀 === ПОЛНЫЙ ПРОЦЕСС СКАНИРОВАНИЯ И ЗАМЕНЫ ===")
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel превращен в питомца С АНИМАЦИЯМИ!")
+    print("🎮 Остался в ТОМ ЖЕ СЛОТЕ hotbar!")
+    print("📍 Позиция в руке правильная!")
     
-    -- Проверяем что в руках питомец для сканирования
-    local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден!")
-        return false
-    end
-    
-    local tool = character:FindFirstChildOfClass("Tool")
-    if not tool then
-        print("❌ Возьмите питомца в руки для сканирования!")
-        return false
-    end
-    
-    if not (tool.Name:find("Dragonfly") or tool.Name:find("KG]")) then
-        print("❌ В руках должен быть питомец для сканирования!")
-        return false
-    end
-    
-    -- Шаг 1: Сканируем питомца
-    if not scanPetFromHand() then
-        print("❌ Ошибка сканирования!")
-        return false
-    end
-    
-    print("✅ Питомец отсканирован! Теперь возьмите Shovel для замены.")
     return true
 end
 
--- === СОЗДАНИЕ GUI ===
-
-local function createGUI()
-    local playerGui = player:WaitForChild("PlayerGui")
-    
-    -- Удаляем старый GUI
-    local oldGui = playerGui:FindFirstChild("PerfectPetScannerGUI")
-    if oldGui then
-        oldGui:Destroy()
-    end
-    
+-- Создаем GUI
+local function createHotbarFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PerfectPetScannerGUI"
-    screenGui.Parent = playerGui
+    screenGui.Name = "HotbarShovelFixGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 400, 0, 300)
-    frame.Position = UDim2.new(0, 50, 0, 50)
-    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    frame.Size = UDim2.new(0, 350, 0, 200)
+    frame.Position = UDim2.new(0.5, -175, 0.5, -100)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
     frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(255, 0, 255)
+    frame.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
-    title.Name = "Title"
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.Position = UDim2.new(0, 0, 0, 0)
-    title.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+    title.BackgroundColor3 = Color3.new(0.2, 0.6, 0.2)
     title.BorderSizePixel = 0
-    title.Text = "🔥 PERFECT PET SCANNER"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 18
+    title.Text = "🎯 HOTBAR PRESERVATION FIX"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
-    local instructions = Instance.new("TextLabel")
-    instructions.Name = "Instructions"
-    instructions.Size = UDim2.new(1, -20, 0, 120)
-    instructions.Position = UDim2.new(0, 10, 0, 50)
-    instructions.BackgroundTransparency = 1
-    instructions.Text = "ИНСТРУКЦИЯ:\n\n1. Возьмите ПИТОМЦА в руки\n2. Нажмите 'СКАНИРОВАТЬ ПИТОМЦА'\n3. Возьмите SHOVEL в руки\n4. Нажмите 'ЗАМЕНИТЬ НА ПИТОМЦА'\n\n✨ Получите точную 1:1 копию!"
-    instructions.TextColor3 = Color3.fromRGB(255, 255, 255)
-    instructions.TextSize = 14
-    instructions.Font = Enum.Font.SourceSans
-    instructions.TextWrapped = true
-    instructions.TextYAlignment = Enum.TextYAlignment.Top
-    instructions.Parent = frame
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 50)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "СОХРАНЕНИЕ СЛОТА:\n1. Питомец → Сканировать\n2. Shovel → Превратить"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
     
+    -- Кнопка сканирования
     local scanBtn = Instance.new("TextButton")
-    scanBtn.Name = "ScanButton"
-    scanBtn.Size = UDim2.new(0, 380, 0, 40)
-    scanBtn.Position = UDim2.new(0, 10, 0, 180)
-    scanBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    scanBtn.Size = UDim2.new(1, -20, 0, 40)
+    scanBtn.Position = UDim2.new(0, 10, 0, 110)
+    scanBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
     scanBtn.BorderSizePixel = 0
-    scanBtn.Text = "🔍 СКАНИРОВАТЬ ПИТОМЦА"
-    scanBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-    scanBtn.TextSize = 16
+    scanBtn.Text = "💾 СКАНИРОВАТЬ питомца"
+    scanBtn.TextColor3 = Color3.new(1, 1, 1)
+    scanBtn.TextScaled = true
     scanBtn.Font = Enum.Font.SourceSansBold
     scanBtn.Parent = frame
     
-    local replaceBtn = Instance.new("TextButton")
-    replaceBtn.Name = "ReplaceButton"
-    replaceBtn.Size = UDim2.new(0, 380, 0, 40)
-    replaceBtn.Position = UDim2.new(0, 10, 0, 230)
-    replaceBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    replaceBtn.BorderSizePixel = 0
-    replaceBtn.Text = "🔄 ЗАМЕНИТЬ SHOVEL НА ПИТОМЦА"
-    replaceBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-    replaceBtn.TextSize = 16
-    replaceBtn.Font = Enum.Font.SourceSansBold
-    replaceBtn.Parent = frame
+    -- Кнопка превращения
+    local transformBtn = Instance.new("TextButton")
+    transformBtn.Size = UDim2.new(1, -20, 0, 40)
+    transformBtn.Position = UDim2.new(0, 10, 0, 160)
+    transformBtn.BackgroundColor3 = Color3.new(0.8, 0.2, 0.8)
+    transformBtn.BorderSizePixel = 0
+    transformBtn.Text = "🔄 ПРЕВРАТИТЬ Shovel"
+    transformBtn.TextColor3 = Color3.new(1, 1, 1)
+    transformBtn.TextScaled = true
+    transformBtn.Font = Enum.Font.SourceSansBold
+    transformBtn.Visible = false
+    transformBtn.Parent = frame
     
-    -- События кнопок
+    -- События
     scanBtn.MouseButton1Click:Connect(function()
-        scanBtn.Text = "⏳ Сканирую..."
-        scanBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+        status.Text = "💾 Сканирую питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
         
-        spawn(function()
-            local success = fullScanAndReplace()
-            
-            wait(1)
-            if success then
-                scanBtn.Text = "✅ ПИТОМЕЦ ОТСКАНИРОВАН!"
-                scanBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-            else
-                scanBtn.Text = "❌ ОШИБКА! Проверьте инструкцию"
-                scanBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-            end
-            
-            wait(3)
-            scanBtn.Text = "🔍 СКАНИРОВАТЬ ПИТОМЦА"
-            scanBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-        end)
+        local success = scanCompletePet()
+        
+        if success then
+            status.Text = "✅ Питомец отсканирован!\nТеперь возьмите Shovel"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            transformBtn.Visible = true
+        else
+            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
     end)
     
-    replaceBtn.MouseButton1Click:Connect(function()
-        replaceBtn.Text = "⏳ Заменяю..."
-        replaceBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    transformBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Превращаю Shovel..."
+        status.TextColor3 = Color3.new(1, 1, 0)
         
-        spawn(function()
-            local success = replaceShovelWithScannedPet()
-            
-            if success then
-                wait(1)
-                startLiveAnimationFromScan()
-            end
-            
-            wait(1)
-            if success then
-                replaceBtn.Text = "✅ УСПЕШНО ЗАМЕНЕНО!"
-                replaceBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-            else
-                replaceBtn.Text = "❌ ОШИБКА! Проверьте инструкцию"
-                replaceBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-            end
-            
-            wait(3)
-            replaceBtn.Text = "🔄 ЗАМЕНИТЬ SHOVEL НА ПИТОМЦА"
-            replaceBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-        end)
+        local success = transformShovelToPet()
+        
+        if success then
+            status.Text = "✅ ГОТОВО!\nShovel = Питомец в том же слоте!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
     end)
-    
-    print("🖥️ Perfect Pet Scanner GUI создан!")
 end
 
--- === ЗАПУСК ===
-
-createGUI()
-print("=" .. string.rep("=", 60))
-print("💡 PERFECT PET SCANNER:")
-print("   🔍 Сканирует питомца прямо из руки")
-print("   💾 Сохраняет ВСЕ: части, Motor6D, CFrame, анимации")
-print("   🔄 Заменяет Shovel на точную 1:1 копию")
-print("   🎬 Восстанавливает живую анимацию")
-print("🎯 Следуйте инструкции в GUI!")
-print("=" .. string.rep("=", 60))
+-- Запускаем
+createHotbarFixGUI()
+print("✅ DirectShovelFix V5 готов!")
+print("🎯 ПРЕВРАЩЕНИЕ SHOVEL БЕЗ СМЕНЫ СЛОТА!")
+print("📍 HOTBAR СОХРАНЯЕТСЯ!")
