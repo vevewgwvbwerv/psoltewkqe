@@ -10,6 +10,7 @@ print("=== DIRECT SHOVEL FIX V4 - LIVE ANIMATIONS ===")
 local originalPet = nil
 local savedPetC0 = nil
 local savedPetC1 = nil
+local savedHotbarSlot = nil -- Сохраняем слот hotbar
 
 -- Поиск питомца в руках
 local function findPetInHands()
@@ -35,6 +36,95 @@ local function findShovelInHands()
         end
     end
     return nil
+end
+
+-- Определение слота hotbar для Tool
+local function getHotbarSlot(tool)
+    local backpack = player.Backpack
+    local hotbarSlots = {}
+    
+    -- Получаем все Tools в backpack
+    for _, item in pairs(backpack:GetChildren()) do
+        if item:IsA("Tool") then
+            table.insert(hotbarSlots, item)
+        end
+    end
+    
+    -- Ищем позицию нашего Tool в списке (первые 10 слотов = hotbar)
+    for i, item in ipairs(hotbarSlots) do
+        if item == tool then
+            if i <= 10 then
+                return i -- Возвращаем номер слота hotbar (1-10)
+            else
+                return nil -- Tool в дополнительных слотах
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Восстановление позиции в hotbar
+local function restoreHotbarPosition(tool, targetSlot)
+    if not targetSlot then
+        print("⚠️ Целевой слот hotbar не определен")
+        return false
+    end
+    
+    print("🎯 Восстанавливаю позицию в hotbar слот " .. targetSlot)
+    
+    local backpack = player.Backpack
+    local allTools = {}
+    
+    -- Собираем все Tools
+    for _, item in pairs(backpack:GetChildren()) do
+        if item:IsA("Tool") then
+            table.insert(allTools, item)
+        end
+    end
+    
+    -- Перемещаем наш Tool в нужную позицию
+    local currentPos = nil
+    for i, item in ipairs(allTools) do
+        if item == tool then
+            currentPos = i
+            break
+        end
+    end
+    
+    if currentPos and currentPos ~= targetSlot then
+        -- Временно убираем Tool
+        tool.Parent = game.Workspace
+        wait(0.1)
+        
+        -- Создаем пустые Tools для заполнения слотов до нужной позиции
+        local tempTools = {}
+        for i = 1, targetSlot - 1 do
+            if not allTools[i] then
+                local tempTool = Instance.new("Tool")
+                tempTool.Name = "TempSlot_" .. i
+                tempTool.Parent = backpack
+                table.insert(tempTools, tempTool)
+            end
+        end
+        
+        wait(0.1)
+        
+        -- Возвращаем наш Tool - он должен попасть в нужный слот
+        tool.Parent = backpack
+        
+        wait(0.1)
+        
+        -- Удаляем временные Tools
+        for _, tempTool in pairs(tempTools) do
+            tempTool:Destroy()
+        end
+        
+        print("✅ Tool перемещен в hotbar слот " .. targetSlot)
+        return true
+    end
+    
+    return false
 end
 
 -- СОХРАНИТЬ оригинального питомца
@@ -98,8 +188,17 @@ local function transferLivePet()
         return false
     end
     
-    -- Шаг 1: Убираем Shovel из рук (НЕ удаляем!)
+    -- Шаг 1: СОХРАНЯЕМ позицию Shovel в hotbar
     shovel.Parent = player.Backpack
+    wait(0.1)
+    savedHotbarSlot = getHotbarSlot(shovel)
+    if savedHotbarSlot then
+        print("📍 Shovel находится в слоте hotbar: " .. savedHotbarSlot)
+    else
+        print("📍 Shovel в дополнительных слотах backpack")
+    end
+    
+    -- Шаг 2: Убираем Shovel из рук (НЕ удаляем!)
     wait(0.1)
     
     -- Шаг 2: Убираем питомца из рук временно
@@ -124,10 +223,62 @@ local function transferLivePet()
     
     wait(0.2)
     
-    -- Шаг 5: Возвращаем ЖИВОГО питомца в руки под именем Shovel
+    -- Шаг 5: КРИТИЧЕСКИ ВАЖНО - Принудительно ставим питомца в слот Shovel
+    if savedHotbarSlot then
+        print("🎯 Принудительно размещаю в hotbar слот " .. savedHotbarSlot)
+        
+        -- Убираем ВСЕ Tools из backpack временно
+        local allTools = {}
+        for _, item in pairs(player.Backpack:GetChildren()) do
+            if item:IsA("Tool") then
+                table.insert(allTools, item)
+                item.Parent = game.Workspace -- Временно в Workspace
+            end
+        end
+        
+        wait(0.1)
+        
+        -- Создаем пустые слоты ДО нужного слота
+        local tempTools = {}
+        for i = 1, savedHotbarSlot - 1 do
+            local tempTool = Instance.new("Tool")
+            tempTool.Name = "TempSlot_" .. i
+            tempTool.Parent = player.Backpack
+            table.insert(tempTools, tempTool)
+        end
+        
+        wait(0.1)
+        
+        -- Ставим питомца в ТОЧНЫЙ слот Shovel
+        originalPet.Parent = player.Backpack
+        print("✅ Питомец помещен в слот " .. savedHotbarSlot)
+        
+        wait(0.1)
+        
+        -- Удаляем временные Tools
+        for _, tempTool in pairs(tempTools) do
+            tempTool:Destroy()
+        end
+        
+        -- Возвращаем остальные Tools (они попадут в следующие слоты)
+        for _, tool in pairs(allTools) do
+            if tool and tool.Parent == game.Workspace then
+                tool.Parent = player.Backpack
+            end
+        end
+        
+        print("🎯 Hotbar восстановлен!")
+    else
+        originalPet.Parent = player.Backpack
+        print("⚠️ Слот hotbar не сохранен, используем стандартное размещение")
+    end
+    
+    wait(0.3)
+    
+    -- Шаг 6: Берем питомца в руки из правильного слота
     originalPet.Parent = character
     
-    -- Шаг 6: Восстанавливаем правильную позицию в руке
+    -- Шаг 7: Восстанавливаем правильную позицию в руке
     if savedPetC0 and savedPetC1 then
         wait(0.3) -- Даем время Tool'у закрепиться
         
