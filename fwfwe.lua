@@ -2,12 +2,14 @@
 -- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local player = game.Players.LocalPlayer
 
 print("=== DIRECT SHOVEL FIX ===")
 
 -- Глобальные переменные
 local petTool = nil
+local savedPetGripC0 = nil
+local savedPetGripC1 = nil
 
 -- Поиск питомца в руках
 local function findPetInHands()
@@ -35,23 +37,38 @@ local function findShovelInHands()
     return nil
 end
 
--- СОХРАНИТЬ питомца
+-- Функция сохранения питомца
 local function savePet()
     print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
     
-    local pet = findPetInHands()
-    if not pet then
+    local foundPet = findPetInHands()
+    if foundPet then
+        petTool = foundPet:Clone()
+        print("✅ Питомец сохранен: " .. foundPet.Name)
+        
+        -- КРИТИЧЕСКИ ВАЖНО: Сохраняем ориентацию крепления питомца
+        local character = player.Character
+        if character then
+            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+            if rightHand then
+                local rightGrip = rightHand:FindFirstChild("RightGrip")
+                if rightGrip then
+                    savedPetGripC0 = rightGrip.C0
+                    savedPetGripC1 = rightGrip.C1
+                    print("📍 СОХРАНЕНА ориентация крепления питомца!")
+                    print("📍 C0:", savedPetGripC0)
+                    print("📍 C1:", savedPetGripC1)
+                else
+                    print("⚠️ RightGrip не найден при сохранении")
+                end
+            end
+        end
+        
+        return true
+    else
         print("❌ Питомец в руках не найден!")
         return false
     end
-    
-    print("✅ Найден питомец: " .. pet.Name)
-    
-    -- Сохраняем ссылку на питомца
-    petTool = pet
-    
-    print("✅ Питомец сохранен!")
-    return true
 end
 
 -- ПРЯМАЯ ЗАМЕНА содержимого
@@ -275,13 +292,18 @@ end
 local function fixPetOrientation()
     print("\n🔧 === ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ ===")
     
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
     local character = player.Character
     if not character then
         print("❌ Character не найден!")
         return false
     end
     
-    -- Ищем Tool питомца в руках
+    -- Ищем Tool питомца в руках (замененный Shovel)
     local petToolInHands = nil
     for _, tool in pairs(character:GetChildren()) do
         if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
@@ -311,36 +333,21 @@ local function fixPetOrientation()
         return false
     end
     
-    print("🔧 Исправляю ориентацию питомца...")
+    print("🔧 Применяю СОХРАНЕННУЮ ориентацию питомца...")
     
-    -- Пробуем разные стандартные ориентации для питомцев
-    local orientations = {
-        {name = "Стандартная", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0), c1 = CFrame.new(0, 0, 0)},
-        {name = "Повернутая вправо", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(90), 0), c1 = CFrame.new(0, 0, 0)},
-        {name = "Повернутая влево", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(-90), 0), c1 = CFrame.new(0, 0, 0)},
-        {name = "Перевернутая", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(180), 0, 0), c1 = CFrame.new(0, 0, 0)},
-        {name = "Наклоненная", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(45), 0, 0), c1 = CFrame.new(0, 0, 0)},
-    }
-    
-    -- Применяем первую подходящую ориентацию
-    local currentOrient = 1
-    rightGrip.C0 = orientations[currentOrient].c0
-    rightGrip.C1 = orientations[currentOrient].c1
-    
-    print("📍 Применена ориентация: " .. orientations[currentOrient].name)
-    print("🔧 Если не подходит - нажмите кнопку еще раз для следующей ориентации")
-    
-    -- Сохраняем текущую ориентацию для циклического переключения
-    if not _G.currentOrientationIndex then
-        _G.currentOrientationIndex = 1
+    -- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Используем сохраненную ориентацию
+    if savedPetGripC0 and savedPetGripC1 then
+        rightGrip.C0 = savedPetGripC0
+        rightGrip.C1 = savedPetGripC1
+        print("📍 Применена СОХРАНЕННАЯ ориентация крепления!")
+        print("📍 C0:", savedPetGripC0)
+        print("📍 C1:", savedPetGripC1)
+        return true
     else
-        _G.currentOrientationIndex = _G.currentOrientationIndex + 1
-        if _G.currentOrientationIndex > #orientations then
-            _G.currentOrientationIndex = 1
-        end
+        print("❌ Ориентация не была сохранена!")
+        print("💡 Сначала возьмите питомца в руки и нажмите 'Сохранить питомца'")
+        return false
     end
-    
-    return true
 end
 
 -- Создаем GUI
@@ -448,12 +455,12 @@ local function createDirectFixGUI()
         local success = savePet()
         
         if success then
-            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel и замените!"
+            status.Text = "✅ ПИТОМЕЦ СОХРАНЕН!\nТеперь возьмите Shovel"
             status.TextColor3 = Color3.new(0, 1, 0)
-            directBtn.Visible = true
             altBtn.Visible = true
+            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
         else
-            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
+            status.Text = "❌ Ошибка сохранения!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
