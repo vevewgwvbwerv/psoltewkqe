@@ -1,508 +1,639 @@
--- FullModelHunter.lua
--- ОХОТНИК ЗА ПОЛНОЙ МОДЕЛЬЮ: Ищет источник УЖЕ ГОТОВОЙ модели питомца
--- Фокус на поиске модели с 18 частями и 14 Motor6D, а не базовой модели
+-- DirectShovelFix.lua
+-- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ReplicatedFirst = game:GetService("ReplicatedFirst")
-local ServerStorage = game:GetService("ServerStorage")
-local StarterGui = game:GetService("StarterGui")
-local StarterPack = game:GetService("StarterPack")
-local StarterPlayer = game:GetService("StarterPlayer")
-local RunService = game:GetService("RunService")
+local player = game.Players.LocalPlayer
 
-local player = Players.LocalPlayer
+print("=== DIRECT SHOVEL FIX ===")
 
-print("🔍 === FULL MODEL HUNTER ===")
-print("🎯 Цель: Найти источник ПОЛНОЙ модели питомца (18 частей, 14 Motor6D)")
-print("=" .. string.rep("=", 60))
+-- Глобальные переменные
+local petTool = nil
+local savedPetGripC0 = nil
+local savedPetGripC1 = nil
 
--- 📊 ДАННЫЕ ОХОТНИКА ПОЛНОЙ МОДЕЛИ
-local FullHunterData = {
-    targetStructure = {
-        children = 18,
-        descendants = 34,
-        motor6ds = 14,
-        baseParts = 16
-    },
-    foundSources = {},
-    perfectMatches = {},
-    closeMatches = {},
-    targetModel = nil,
-    isHunting = false
-}
-
--- 🖥️ КОНСОЛЬ ОХОТНИКА
-local HunterConsole = nil
-local ConsoleLines = {}
-local MaxLines = 120
-
--- Создание консоли
-local function createHunterConsole()
-    if HunterConsole then HunterConsole:Destroy() end
+-- Поиск питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    HunterConsole = Instance.new("ScreenGui")
-    HunterConsole.Name = "FullModelHunterConsole"
-    HunterConsole.Parent = player:WaitForChild("PlayerGui")
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 900, 0, 700)
-    frame.Position = UDim2.new(0, 10, 0, 10)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.05, 0.02)
-    frame.BorderSizePixel = 3
-    frame.BorderColor3 = Color3.new(1, 0.5, 0.1)
-    frame.Parent = HunterConsole
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 35)
-    title.BackgroundColor3 = Color3.new(1, 0.5, 0.1)
-    title.BorderSizePixel = 0
-    title.Text = "🔍 FULL MODEL HUNTER"
-    title.TextColor3 = Color3.new(0, 0, 0)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
-    local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
-    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
-    scrollFrame.BackgroundColor3 = Color3.new(0.05, 0.02, 0.01)
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.ScrollBarThickness = 15
-    scrollFrame.Parent = frame
-    
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -10, 1, 0)
-    textLabel.Position = UDim2.new(0, 5, 0, 0)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = "🔍 Охотник за полной моделью готов..."
-    textLabel.TextColor3 = Color3.new(1, 0.9, 0.8)
-    textLabel.TextSize = 10
-    textLabel.Font = Enum.Font.SourceSans
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.TextYAlignment = Enum.TextYAlignment.Top
-    textLabel.TextWrapped = true
-    textLabel.Parent = scrollFrame
-    
-    return textLabel
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
+        end
+    end
+    return nil
 end
 
--- Функция логирования охотника
-local function hunterLog(category, message, data)
-    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
+-- Поиск Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    local prefixes = {
-        HUNTER = "🔍", SEARCH = "🔎", FOUND = "🎯", PERFECT = "💎",
-        CLOSE = "🔶", ANALYSIS = "📊", CRITICAL = "🔥", SUCCESS = "✅", 
-        ERROR = "❌", INFO = "ℹ️", DETAIL = "📝", LOCATION = "📍"
-    }
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
+        end
+    end
+    return nil
+end
+
+-- Функция сохранения питомца
+local function savePet()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
     
-    local logLine = string.format("[%s] %s %s", timestamp, prefixes[category] or "ℹ️", message)
+    local foundPet = findPetInHands()
+    if foundPet then
+        petTool = foundPet:Clone()
+        print("✅ Питомец сохранен: " .. foundPet.Name)
+        
+        -- КРИТИЧЕСКИ ВАЖНО: Сохраняем ориентацию крепления питомца
+        local character = player.Character
+        if character then
+            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+            if rightHand then
+                local rightGrip = rightHand:FindFirstChild("RightGrip")
+                if rightGrip then
+                    savedPetGripC0 = rightGrip.C0
+                    savedPetGripC1 = rightGrip.C1
+                    print("📍 СОХРАНЕНА ориентация крепления питомца!")
+                    print("📍 C0:", savedPetGripC0)
+                    print("📍 C1:", savedPetGripC1)
+                else
+                    print("⚠️ RightGrip не найден при сохранении")
+                end
+            end
+        end
+        
+        return true
+    else
+        print("❌ Питомец в руках не найден!")
+        return false
+    end
+end
+
+-- ПРЯМАЯ ЗАМЕНА содержимого
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
     
-    if data and next(data) then
-        for key, value in pairs(data) do
-            logLine = logLine .. string.format("\n      %s: %s", key, tostring(value))
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
+    
+    -- Шаг 1: Меняем имя
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 3: Удаляем все содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+    end
+    
+    wait(0.1)
+    
+    -- Шаг 4: Копируем все содержимое питомца
+    print("📋 Копирую содержимое питомца...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+    end
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 В руках должен быть питомец с именем Dragonfly!")
+    
+    return true
+end
+
+-- АЛЬТЕРНАТИВА: Замена содержимого существующего Tool БЕЗ создания нового
+local function alternativeReplace()
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Замена содержимого существующего Tool...")
+    
+    -- КАРДИНАЛЬНО НОВЫЙ ПОДХОД: НЕ создаем новый Tool, а меняем содержимое существующего!
+    
+    -- Шаг 1: Меняем имя Tool (остается в том же слоте)
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя Tool изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool от питомца
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped  
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    shovel.Enabled = petTool.Enabled
+    print("🔧 Свойства Tool обновлены от питомца")
+    
+    -- Шаг 3: Сохраняем позицию Handle ПЕРЕД очисткой
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local savedPosition = nil
+    local savedOrientation = nil
+    
+    if shovelHandle then
+        savedPosition = shovelHandle.Position
+        savedOrientation = shovelHandle.Orientation
+        print("📍 Сохранена позиция Handle: " .. tostring(savedPosition))
+    end
+    
+    -- Шаг 4: ПОЛНАЯ очистка содержимого Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+        print("   🗑️ Удалено: " .. child.Name)
+    end
+    
+    wait(0.05) -- Минимальная пауза для очистки
+    
+    -- Шаг 5: Копируем ВСЕ содержимое питомца в существующий Tool
+    print("📋 Копирую содержимое питомца в существующий Tool...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel  -- В существующий Tool!
+        
+        -- КРИТИЧЕСКИ ВАЖНО: Правильная настройка физики
+        if copy:IsA("BasePart") then
+            copy.Anchored = false
+            copy.CanCollide = false
+            
+            -- Если это Handle - восстанавливаем позицию
+            if copy.Name == "Handle" and savedPosition then
+                copy.Position = savedPosition
+                copy.Orientation = savedOrientation
+                print("   📍 Восстановлена позиция Handle")
+            end
+            
+            print("   ✅ Скопировано: " .. child.Name .. " (BasePart)")
+        else
+            print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
         end
     end
     
-    table.insert(ConsoleLines, logLine)
-    
-    if #ConsoleLines > MaxLines then
-        table.remove(ConsoleLines, 1)
-    end
-    
-    -- Обновляем консоль
-    if HunterConsole then
-        local textLabel = HunterConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
-        if textLabel then
-            textLabel.Text = table.concat(ConsoleLines, "\n")
-            local scrollFrame = textLabel.Parent
-            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
-            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
-        end
-    end
-    
-    print(logLine)
-end
-
--- 📊 АНАЛИЗ СТРУКТУРЫ МОДЕЛИ
-local function analyzeModelStructure(model)
-    local structure = {
-        children = #model:GetChildren(),
-        descendants = #model:GetDescendants(),
-        baseParts = 0,
-        motor6ds = 0,
-        meshParts = 0,
-        scripts = 0,
-        animators = 0,
-        unionOperations = 0,
-        weldConstraints = 0,
-        highlights = 0
-    }
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            structure.baseParts = structure.baseParts + 1
-        elseif obj:IsA("Motor6D") then
-            structure.motor6ds = structure.motor6ds + 1
-        elseif obj:IsA("MeshPart") then
-            structure.meshParts = structure.meshParts + 1
-        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
-            structure.scripts = structure.scripts + 1
-        elseif obj:IsA("Animator") then
-            structure.animators = structure.animators + 1
-        elseif obj:IsA("UnionOperation") then
-            structure.unionOperations = structure.unionOperations + 1
-        elseif obj:IsA("WeldConstraint") then
-            structure.weldConstraints = structure.weldConstraints + 1
-        elseif obj:IsA("Highlight") then
-            structure.highlights = structure.highlights + 1
-        end
-    end
-    
-    return structure
-end
-
--- 🎯 ПРОВЕРКА СООТВЕТСТВИЯ ЦЕЛЕВОЙ СТРУКТУРЕ
-local function checkStructureMatch(structure, modelName, modelPath)
-    local target = FullHunterData.targetStructure
-    
-    -- Точное совпадение (идеальное)
-    if structure.children == target.children and 
-       structure.motor6ds == target.motor6ds and
-       structure.baseParts == target.baseParts then
+    -- Шаг 6: КРИТИЧЕСКОЕ КРЕПЛЕНИЕ Tool к руке как настоящий питомец
+    spawn(function()
+        wait(0.1)
         
-        FullHunterData.perfectMatches[modelPath] = {
-            model = modelName,
-            path = modelPath,
-            structure = structure,
-            matchType = "PERFECT"
-        }
-        
-        hunterLog("PERFECT", "💎 ИДЕАЛЬНОЕ СОВПАДЕНИЕ НАЙДЕНО!", {
-            Model = modelName,
-            Path = modelPath,
-            Children = structure.children,
-            Motor6Ds = structure.motor6ds,
-            BaseParts = structure.baseParts,
-            MatchType = "PERFECT"
-        })
-        
-        return "PERFECT"
-    end
-    
-    -- Близкое совпадение
-    local childrenDiff = math.abs(structure.children - target.children)
-    local motor6dDiff = math.abs(structure.motor6ds - target.motor6ds)
-    local partsDiff = math.abs(structure.baseParts - target.baseParts)
-    
-    if childrenDiff <= 3 and motor6dDiff <= 3 and partsDiff <= 3 then
-        FullHunterData.closeMatches[modelPath] = {
-            model = modelName,
-            path = modelPath,
-            structure = structure,
-            matchType = "CLOSE",
-            differences = {
-                children = childrenDiff,
-                motor6ds = motor6dDiff,
-                baseParts = partsDiff
-            }
-        }
-        
-        hunterLog("CLOSE", "🔶 БЛИЗКОЕ СОВПАДЕНИЕ НАЙДЕНО!", {
-            Model = modelName,
-            Path = modelPath,
-            Children = string.format("%d (diff: %d)", structure.children, childrenDiff),
-            Motor6Ds = string.format("%d (diff: %d)", structure.motor6ds, motor6dDiff),
-            BaseParts = string.format("%d (diff: %d)", structure.baseParts, partsDiff),
-            MatchType = "CLOSE"
-        })
-        
-        return "CLOSE"
-    end
-    
-    return "NO_MATCH"
-end
-
--- 🔎 ГЛУБОКИЙ ПОИСК ВО ВСЕХ СЕРВИСАХ
-local function deepSearchAllServices()
-    hunterLog("HUNTER", "🔍 ГЛУБОКИЙ ПОИСК ПОЛНОЙ МОДЕЛИ ВО ВСЕХ СЕРВИСАХ")
-    
-    local services = {
-        {name = "ReplicatedStorage", service = ReplicatedStorage},
-        {name = "ReplicatedFirst", service = ReplicatedFirst},
-        {name = "Workspace", service = Workspace},
-        {name = "StarterGui", service = StarterGui},
-        {name = "StarterPack", service = StarterPack},
-        {name = "StarterPlayer", service = StarterPlayer}
-    }
-    
-    -- Попытка получить ServerStorage
-    local success, serverStorage = pcall(function() return game:GetService("ServerStorage") end)
-    if success and serverStorage then
-        table.insert(services, {name = "ServerStorage", service = serverStorage})
-    end
-    
-    local totalFound = 0
-    local perfectCount = 0
-    local closeCount = 0
-    
-    for _, serviceData in ipairs(services) do
-        hunterLog("LOCATION", "📍 Поиск в " .. serviceData.name .. "...")
-        local foundInService = 0
-        
-        local success, result = pcall(function()
-            for _, obj in pairs(serviceData.service:GetDescendants()) do
-                if obj:IsA("Model") then
-                    local name = obj.Name:lower()
-                    
-                    -- Расширенный поиск по именам питомцев
-                    if name:find("dog") or name:find("bunny") or name:find("lab") or
-                       name:find("cat") or name:find("rabbit") or name:find("puppy") or
-                       name:find("pet") or name:find("animal") or name:find("golden") or
-                       name == "dog" or name == "bunny" or name == "golden lab" or
-                       name == "goldenlab" then
+        -- Проверяем что Tool все еще в руках
+        if shovel.Parent == character then
+            local handle = shovel:FindFirstChild("Handle")
+            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+            
+            if handle and rightHand then
+                print(" Критическое крепление Handle к руке...")
+                
+                -- КРИТИЧЕСКИ ВАЖНО: Удаляем старое крепление перед созданием нового
+                local oldGrip = rightHand:FindFirstChild("RightGrip")
+                if oldGrip then
+                    oldGrip:Destroy()
+                    print(" Удалено старое крепление")
+                end
+                
+                -- МГНОВЕННО создаем новое крепление Handle к руке
+                local newGrip = Instance.new("Weld")
+                newGrip.Name = "RightGrip"
+                newGrip.Part0 = rightHand
+                newGrip.Part1 = handle
+                newGrip.Parent = rightHand
+                
+                -- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем СТАНДАРТНОЕ крепление для руки
+                -- Проблема была в том, что сохраненная ориентация может быть неправильной
+                newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
+                newGrip.C1 = CFrame.new(0, 0, 0)
+                print("📍 ПРИМЕНЕНО стандартное крепление для руки!")
+                print("📍 C0: CFrame.new(0, -1, -0.5)")
+                print("📍 C1: CFrame.new(0, 0, 0)")
+                
+                -- Если нужна коррекция ориентации - используем кнопку "ИСПРАВИТЬ ОРИЕНТАЦИЮ"
+                
+                -- Настраиваем Handle как у настоящего питомца (ПОСЛЕ крепления)
+                handle.Anchored = false
+                handle.CanCollide = false
+                handle.CanTouch = false
+                handle.TopSurface = Enum.SurfaceType.Smooth
+                handle.BottomSurface = Enum.SurfaceType.Smooth
+                
+                -- КРИТИЧЕСКИ ВАЖНО: Защищаем наш Weld от перезаписи игрой
+                spawn(function()
+                    while newGrip and newGrip.Parent do
+                        wait(0.01) -- Проверяем каждые 10ms
                         
-                        local structure = analyzeModelStructure(obj)
-                        local matchType = checkStructureMatch(structure, obj.Name, obj:GetFullName())
-                        
-                        FullHunterData.foundSources[obj:GetFullName()] = {
-                            model = obj,
-                            name = obj.Name,
-                            path = obj:GetFullName(),
-                            location = serviceData.name,
-                            structure = structure,
-                            matchType = matchType
-                        }
-                        
-                        foundInService = foundInService + 1
-                        totalFound = totalFound + 1
-                        
-                        if matchType == "PERFECT" then
-                            perfectCount = perfectCount + 1
-                        elseif matchType == "CLOSE" then
-                            closeCount = closeCount + 1
-                        else
-                            hunterLog("FOUND", "🎯 Модель найдена: " .. obj.Name, {
-                                Location = serviceData.name,
-                                Path = obj:GetFullName(),
-                                Children = structure.children,
-                                Motor6Ds = structure.motor6ds,
-                                BaseParts = structure.baseParts,
-                                Match = "NO_MATCH"
-                            })
+                        -- Если игра создала свой RightGrip - удаляем его и восстанавливаем наш
+                        local gameGrip = rightHand:FindFirstChild("RightGrip")
+                        if gameGrip and gameGrip ~= newGrip then
+                            print(" Обнаружен автоматический RightGrip игры - удаляем!")
+                            gameGrip:Destroy()
+                            
+                            -- Восстанавливаем наш Weld
+                            if not rightHand:FindFirstChild("RightGrip") then
+                                local restoredGrip = Instance.new("Weld")
+                                restoredGrip.Name = "RightGrip"
+                                restoredGrip.Part0 = rightHand
+                                restoredGrip.Part1 = handle
+                                restoredGrip.Parent = rightHand
+                                
+                                -- Используем стандартное крепление при восстановлении
+                                restoredGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
+                                restoredGrip.C1 = CFrame.new(0, 0, 0)
+                                
+                                newGrip = restoredGrip
+                                print(" Weld восстановлен с правильной ориентацией!")
+                            end
                         end
                     end
+                end)
+                
+                print("✅ Handle ЖЕСТКО закреплен к руке через Weld!")
+                print("🎯 Падение исключено!")
+                
+                -- Дополнительная стабилизация - принудительная активация Tool
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    -- Имитируем "взятие" Tool для активации системы
+                    shovel.Parent = character.Backpack
+                    wait(0.02)
+                    shovel.Parent = character
+                    print("⚡ Tool принудительно активирован с новым креплением")
                 end
+            else
+                print("❌ Handle или Right Arm не найдены!")
             end
-        end)
-        
-        if not success then
-            hunterLog("ERROR", "❌ Ошибка доступа к " .. serviceData.name .. ": " .. tostring(result))
-        else
-            hunterLog("LOCATION", string.format("📍 В %s найдено: %d моделей", serviceData.name, foundInService))
         end
-    end
+    end)
     
-    hunterLog("HUNTER", string.format("🔍 ИТОГИ ПОИСКА: %d моделей найдено", totalFound))
-    hunterLog("HUNTER", string.format("💎 Идеальных совпадений: %d", perfectCount))
-    hunterLog("HUNTER", string.format("🔶 Близких совпадений: %d", closeCount))
-    
-    return {total = totalFound, perfect = perfectCount, close = closeCount}
+    print("✅ Замена содержимого завершена!")
+    print("🎯 Tool остается в том же слоте с новым содержимым!")
+    print("📍 Позиция сохранена, падения быть не должно!")
+    return true
 end
 
--- 📊 СРАВНЕНИЕ С ЦЕЛЕВОЙ МОДЕЛЬЮ
-local function compareWithTarget(targetModel)
-    hunterLog("ANALYSIS", "📊 СРАВНЕНИЕ С ЦЕЛЕВОЙ МОДЕЛЬЮ: " .. targetModel.Name)
+-- ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ питомца в руках
+local function fixPetOrientation()
+    print("\n🔧 === ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ ===")
     
-    FullHunterData.targetModel = targetModel
-    local targetStructure = analyzeModelStructure(targetModel)
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
     
-    hunterLog("ANALYSIS", "📊 Структура целевой модели:", targetStructure)
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
     
-    -- Обновляем целевую структуру на основе реальной модели
-    FullHunterData.targetStructure = targetStructure
-    
-    -- Ищем точные совпадения среди найденных источников
-    local exactMatches = {}
-    
-    for path, sourceData in pairs(FullHunterData.foundSources) do
-        local source = sourceData.structure
-        
-        if source.children == targetStructure.children and
-           source.motor6ds == targetStructure.motor6ds and
-           source.baseParts == targetStructure.baseParts then
-            
-            exactMatches[path] = sourceData
-            
-            hunterLog("SUCCESS", "✅ ТОЧНОЕ СОВПАДЕНИЕ С ЦЕЛЕВОЙ МОДЕЛЬЮ!", {
-                Source = sourceData.name,
-                Location = sourceData.location,
-                Path = path,
-                Children = source.children,
-                Motor6Ds = source.motor6ds,
-                BaseParts = source.baseParts
-            })
+    -- Ищем Tool питомца в руках (замененный Shovel)
+    local petToolInHands = nil
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
+            petToolInHands = tool
+            break
         end
     end
     
-    if next(exactMatches) then
-        hunterLog("CRITICAL", string.format("🔥 НАЙДЕНО %d ТОЧНЫХ СОВПАДЕНИЙ!", #exactMatches))
-        return exactMatches
+    if not petToolInHands then
+        print("❌ Питомец в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден питомец в руках: " .. petToolInHands.Name)
+    
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+    local handle = petToolInHands:FindFirstChild("Handle")
+    
+    if not rightHand or not handle then
+        print("❌ Right Arm или Handle не найдены!")
+        return false
+    end
+    
+    local rightGrip = rightHand:FindFirstChild("RightGrip")
+    if not rightGrip then
+        print("❌ RightGrip не найден!")
+        return false
+    end
+    
+    print("🔧 Применяю СОХРАНЕННУЮ ориентацию питомца...")
+    
+    -- ЦИКЛИЧЕСКОЕ ПЕРЕКЛЮЧЕНИЕ разных ориентаций для питомцев
+    local orientations = {
+        {name = "Стандартная", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая вправо", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая влево", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(-90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Перевернутая", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(180), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная вперед", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная назад", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(-45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Сохраненная (если есть)", c0 = savedPetGripC0 or CFrame.new(0, -1, -0.5), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Переворот головой вниз", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(math.rad(180), 0, 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот вправо", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот влево", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(-90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+    }
+    
+    -- Инициализируем индекс ориентации
+    if not _G.currentOrientationIndex then
+        _G.currentOrientationIndex = 1
     else
-        hunterLog("ERROR", "❌ НИ ОДНОГО ТОЧНОГО СОВПАДЕНИЯ НЕ НАЙДЕНО")
-        return {}
-    end
-end
-
--- 📋 ГЕНЕРАЦИЯ ОТЧЕТА ОХОТЫ
-local function generateHuntingReport()
-    hunterLog("CRITICAL", "📋 === ОТЧЕТ ОХОТЫ ЗА ПОЛНОЙ МОДЕЛЬЮ ===")
-    
-    hunterLog("INFO", string.format("🔍 Всего найдено моделей: %d", #FullHunterData.foundSources))
-    hunterLog("INFO", string.format("💎 Идеальных совпадений: %d", #FullHunterData.perfectMatches))
-    hunterLog("INFO", string.format("🔶 Близких совпадений: %d", #FullHunterData.closeMatches))
-    
-    -- Показываем лучшие совпадения
-    if next(FullHunterData.perfectMatches) then
-        hunterLog("CRITICAL", "🔥 ИДЕАЛЬНЫЕ СОВПАДЕНИЯ:")
-        for path, match in pairs(FullHunterData.perfectMatches) do
-            hunterLog("PERFECT", string.format("💎 %s", match.model), {
-                Path = path,
-                Children = match.structure.children,
-                Motor6Ds = match.structure.motor6ds,
-                BaseParts = match.structure.baseParts
-            })
+        _G.currentOrientationIndex = _G.currentOrientationIndex + 1
+        if _G.currentOrientationIndex > #orientations then
+            _G.currentOrientationIndex = 1
         end
     end
     
-    if next(FullHunterData.closeMatches) then
-        hunterLog("CRITICAL", "🔥 БЛИЗКИЕ СОВПАДЕНИЯ:")
-        for path, match in pairs(FullHunterData.closeMatches) do
-            hunterLog("CLOSE", string.format("🔶 %s", match.model), {
-                Path = path,
-                ChildrenDiff = match.differences.children,
-                Motor6DsDiff = match.differences.motor6ds,
-                PartsDiff = match.differences.baseParts
-            })
+    local currentOrientation = orientations[_G.currentOrientationIndex]
+    
+    rightGrip.C0 = currentOrientation.c0
+    rightGrip.C1 = currentOrientation.c1
+    
+    print("📍 Применена ориентация: " .. currentOrientation.name)
+    print("📍 C0:", currentOrientation.c0)
+    print("📍 C1:", currentOrientation.c1)
+    print("🔄 Нажмите еще раз для следующей ориентации (" .. _G.currentOrientationIndex .. "/" .. #orientations .. ")")
+    
+    return true
+end
+
+-- ИЗУЧЕНИЕ ТЕКУЩЕЙ ОРИЕНТАЦИИ питомца в руках
+local function learnCurrentOrientation()
+    print("\n🔍 === ИЗУЧЕНИЕ ТЕКУЩЕЙ ОРИЕНТАЦИИ ===")
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    -- Ищем Tool питомца в руках (замененный Dragonfly)
+    local petToolInHands = nil
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
+            petToolInHands = tool
+            break
         end
     end
     
-    hunterLog("CRITICAL", "🔍 ОХОТА ЗА ПОЛНОЙ МОДЕЛЬЮ ЗАВЕРШЕНА!")
-end
-
--- 🚀 ГЛАВНАЯ ФУНКЦИЯ ОХОТЫ
-local function startFullModelHunt()
-    hunterLog("HUNTER", "🚀 ЗАПУСК ОХОТЫ ЗА ПОЛНОЙ МОДЕЛЬЮ")
-    hunterLog("HUNTER", "🎯 Цель: Найти источник модели с 18 частями и 14 Motor6D")
-    
-    FullHunterData.isHunting = true
-    
-    -- Глубокий поиск во всех сервисах
-    local searchResults = deepSearchAllServices()
-    
-    if searchResults.total == 0 then
-        hunterLog("ERROR", "❌ НИ ОДНОЙ МОДЕЛИ НЕ НАЙДЕНО!")
-        return
+    if not petToolInHands then
+        print("❌ Питомец в руках не найден!")
+        print("💡 Сначала возьмите замененного питомца в руки")
+        return false
     end
     
-    -- Мониторинг появления целевой модели в Visuals
-    local visuals = Workspace:FindFirstChild("Visuals")
-    if visuals then
-        hunterLog("SUCCESS", "✅ Мониторинг Visuals для сравнения...")
-        
-        local visualsConnection = visuals.ChildAdded:Connect(function(obj)
-            if obj:IsA("Model") then
-                local name = obj.Name:lower()
-                if name == "dog" or name == "bunny" or name == "golden lab" or 
-                   name == "cat" or name == "rabbit" or name == "puppy" or
-                   name == "goldenlab" or name:find("lab") then
-                    
-                    hunterLog("FOUND", "🎯 ЦЕЛЕВАЯ МОДЕЛЬ В VISUALS: " .. obj.Name)
-                    
-                    -- Сравниваем с найденными источниками
-                    local exactMatches = compareWithTarget(obj)
-                    
-                    -- Генерируем отчет
-                    generateHuntingReport()
-                    
-                    -- Отключаем мониторинг
-                    visualsConnection:Disconnect()
-                    FullHunterData.isHunting = false
-                end
-            end
-        end)
-    else
-        -- Если нет Visuals, просто генерируем отчет
-        generateHuntingReport()
-        FullHunterData.isHunting = false
+    print("✅ Найден питомец в руках: " .. petToolInHands.Name)
+    
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+    if not rightHand then
+        print("❌ Right Arm не найдена!")
+        return false
     end
     
-    hunterLog("HUNTER", "✅ Охота за полной моделью активна!")
-    hunterLog("HUNTER", "🥚 ОТКРОЙТЕ ЯЙЦО ДЛЯ СРАВНЕНИЯ!")
+    local rightGrip = rightHand:FindFirstChild("RightGrip")
+    if not rightGrip then
+        print("❌ RightGrip не найден!")
+        return false
+    end
+    
+    -- СОХРАНЯЕМ ТЕКУЩУЮ ОРИЕНТАЦИЮ как "правильную"
+    savedPetGripC0 = rightGrip.C0
+    savedPetGripC1 = rightGrip.C1
+    
+    print("🔍 ИЗУЧЕНА и СОХРАНЕНА текущая ориентация!")
+    print("📍 Новая сохраненная C0:", savedPetGripC0)
+    print("📍 Новая сохраненная C1:", savedPetGripC1)
+    print("✅ Теперь эта ориентация будет использоваться при следующих заменах!")
+    
+    return true
 end
 
 -- Создаем GUI
-local function createHunterGUI()
+local function createDirectFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "FullModelHunterGUI"
+    screenGui.Name = "DirectShovelFixGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 350, 0, 120)
-    frame.Position = UDim2.new(1, -370, 0, 10)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.05, 0.02)
+    frame.Size = UDim2.new(0, 400, 0, 450)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -225)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 30)
-    title.BackgroundColor3 = Color3.new(1, 0.5, 0.1)
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
     title.BorderSizePixel = 0
-    title.Text = "🔍 FULL MODEL HUNTER"
-    title.TextColor3 = Color3.new(0, 0, 0)
+    title.Text = "🎯 DIRECT SHOVEL FIX"
+    title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
-    local startBtn = Instance.new("TextButton")
-    startBtn.Size = UDim2.new(1, -20, 0, 40)
-    startBtn.Position = UDim2.new(0, 10, 0, 40)
-    startBtn.BackgroundColor3 = Color3.new(1, 0.5, 0.1)
-    startBtn.BorderSizePixel = 0
-    startBtn.Text = "🔍 ОХОТА ЗА ПОЛНОЙ МОДЕЛЬЮ"
-    startBtn.TextColor3 = Color3.new(0, 0, 0)
-    startBtn.TextScaled = true
-    startBtn.Font = Enum.Font.SourceSansBold
-    startBtn.Parent = frame
-    
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 30)
-    status.Position = UDim2.new(0, 10, 0, 90)
+    status.Size = UDim2.new(1, -20, 0, 80)
+    status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "Готов к охоте за полной моделью"
+    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
     status.Parent = frame
     
-    startBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔍 Охота активна!"
-        status.TextColor3 = Color3.new(1, 0.5, 0.1)
-        startBtn.Text = "✅ ОХОТА АКТИВНА"
-        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
-        startBtn.Active = false
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить питомца"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
+    
+    -- Кнопка прямой замены
+    local directBtn = Instance.new("TextButton")
+    directBtn.Size = UDim2.new(1, -20, 0, 50)
+    directBtn.Position = UDim2.new(0, 10, 0, 200)
+    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    directBtn.BorderSizePixel = 0
+    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
+    directBtn.TextColor3 = Color3.new(1, 1, 1)
+    directBtn.TextScaled = true
+    directBtn.Font = Enum.Font.SourceSansBold
+    directBtn.Visible = false
+    directBtn.Parent = frame
+    
+    -- Кнопка альтернативы
+    local altBtn = Instance.new("TextButton")
+    altBtn.Size = UDim2.new(1, -20, 0, 50)
+    altBtn.Position = UDim2.new(0, 10, 0, 260)
+    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    altBtn.BorderSizePixel = 0
+    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.TextColor3 = Color3.new(1, 1, 1)
+    altBtn.TextScaled = true
+    altBtn.Font = Enum.Font.SourceSansBold
+    altBtn.Visible = false
+    altBtn.Parent = frame
+    
+    -- Кнопка исправления ориентации
+    local fixOrientBtn = Instance.new("TextButton")
+    fixOrientBtn.Size = UDim2.new(1, -20, 0, 40)
+    fixOrientBtn.Position = UDim2.new(0, 10, 0, 320)
+    fixOrientBtn.BackgroundColor3 = Color3.new(0, 0.6, 0.8)
+    fixOrientBtn.BorderSizePixel = 0
+    fixOrientBtn.Text = "🔧 ИСПРАВИТЬ ОРИЕНТАЦИЮ"
+    fixOrientBtn.TextColor3 = Color3.new(1, 1, 1)
+    fixOrientBtn.TextScaled = true
+    fixOrientBtn.Font = Enum.Font.SourceSansBold
+    fixOrientBtn.Visible = false
+    fixOrientBtn.Parent = frame
+    
+    -- Кнопка изучения текущей ориентации
+    local learnOrientBtn = Instance.new("TextButton")
+    learnOrientBtn.Size = UDim2.new(1, -20, 0, 40)
+    learnOrientBtn.Position = UDim2.new(0, 10, 0, 370)
+    learnOrientBtn.BackgroundColor3 = Color3.new(0.8, 0.6, 0)
+    learnOrientBtn.BorderSizePixel = 0
+    learnOrientBtn.Text = "🔍 ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ"
+    learnOrientBtn.TextColor3 = Color3.new(1, 1, 1)
+    learnOrientBtn.TextScaled = true
+    learnOrientBtn.Font = Enum.Font.SourceSansBold
+    learnOrientBtn.Visible = false
+    learnOrientBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 410)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
+    
+    -- События
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
         
-        startFullModelHunt()
+        local success = savePet()
+        
+        if success then
+            status.Text = "✅ ПИТОМЕЦ СОХРАНЕН!\nТеперь возьмите Shovel"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            altBtn.Visible = true
+            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
+        else
+            status.Text = "❌ Ошибка сохранения!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    directBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Прямая замена содержимого..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = directReplace()
+        
+        if success then
+            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    altBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Альтернативная замена..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = alternativeReplace()
+        
+        if success then
+            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
+            learnOrientBtn.Visible = true -- Показываем кнопку изучения ориентации
+        else
+            status.Text = "❌ Ошибка альтернативы!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    fixOrientBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔧 Исправляю ориентацию..."
+        status.TextColor3 = Color3.new(0, 1, 1)
+        
+        local success = fixPetOrientation()
+        
+        if success then
+            status.Text = "✅ ОРИЕНТАЦИЯ ИСПРАВЛЕНА!\nНажмите еще раз для другой позиции"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка исправления ориентации!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    learnOrientBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔍 Изучаю текущую ориентацию..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = learnCurrentOrientation()
+        
+        if success then
+            status.Text = "✅ ОРИЕНТАЦИЯ ИЗУЧЕНА!\nТеперь она будет использоваться"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка изучения ориентации!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
     end)
 end
 
 -- Запускаем
-local consoleTextLabel = createHunterConsole()
-createHunterGUI()
-
-hunterLog("HUNTER", "✅ FullModelHunter готов!")
-hunterLog("HUNTER", "🔍 Охота за источником ПОЛНОЙ модели питомца")
-hunterLog("HUNTER", "🎯 Цель: 18 частей, 14 Motor6D, 34 потомка")
-hunterLog("HUNTER", "🚀 Нажмите 'ОХОТА ЗА ПОЛНОЙ МОДЕЛЬЮ' для поиска!")
+createDirectFixGUI()
+print("✅ DirectShovelFix готов!")
+print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
+print("💾 1. Сохранить питомца")
+print("🔄 2. Заменить Shovel")
