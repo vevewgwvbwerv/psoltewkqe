@@ -1,549 +1,462 @@
--- DirectShovelFix.lua
--- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
+-- 🔥 ULTIMATE SHOVEL REPLACER v1.0
+-- Идеальная замена Shovel на питомца с live анимацией
+-- Объединяет лучшие части DirectShovelFix.lua + PetScaler_v3.465.lua
 
 local Players = game:GetService("Players")
-local player = game.Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
-print("=== DIRECT SHOVEL FIX ===")
+local player = Players.LocalPlayer
+
+print("🔥 === ULTIMATE SHOVEL REPLACER v1.0 ===")
+print("=" .. string.rep("=", 50))
+
+-- Конфигурация
+local CONFIG = {
+    SCALE_FACTOR = 1.0,
+    INTERPOLATION_SPEED = 0.3,
+    MAX_DISTANCE_FROM_ROOT = 50,
+    POSITION_THRESHOLD = 0.01,
+    ROTATION_THRESHOLD = 0.01,
+    HAND_PET_CHECK_INTERVAL = 0.5
+}
 
 -- Глобальные переменные
-local petTool = nil
-local savedPetGripC0 = nil
-local savedPetGripC1 = nil
+local savedPetModel = nil
+local currentTool = nil
+local animationConnection = nil
+local lastHandPetCheck = 0
+local handPetModel = nil
+local handPetParts = {}
+local previousCFrameStates = {}
 
--- Поиск питомца в руках
-local function findPetInHands()
+-- === ФУНКЦИИ ПОИСКА И АНАЛИЗА ===
+
+-- Функция поиска питомца в руках игрока
+local function findHandHeldPet()
     local character = player.Character
-    if not character then return nil end
+    if not character then return nil, nil end
     
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
-            return tool
+    local tool = character:FindFirstChildOfClass("Tool")
+    if not tool then return nil, nil end
+    
+    -- Проверяем что это питомец (содержит "Dragonfly" или "KG]")
+    if tool.Name:find("Dragonfly") or tool.Name:find("KG]") then
+        local handle = tool:FindFirstChild("Handle")
+        if handle then
+            -- Ищем модель питомца внутри Tool
+            for _, child in pairs(tool:GetChildren()) do
+                if child:IsA("Model") and child ~= handle then
+                    return child, tool
+                end
+            end
+            
+            -- Если модель не найдена, создаем из Handle
+            local petModel = Instance.new("Model")
+            petModel.Name = "PetModel"
+            petModel.Parent = tool
+            handle.Parent = petModel
+            petModel.PrimaryPart = handle
+            
+            return petModel, tool
         end
     end
+    
+    return nil, nil
+end
+
+-- Функция получения анимируемых частей из Tool
+local function getAnimatedPartsFromTool(petModel)
+    if not petModel then return {} end
+    
+    local parts = {}
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
+        end
+    end
+    
+    return parts
+end
+
+-- Функция поиска соответствующей части в копии
+local function findCorrespondingPart(copyModel, partName)
+    if not copyModel then return nil end
+    
+    for _, obj in pairs(copyModel:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name == partName then
+            return obj
+        end
+    end
+    
     return nil
 end
 
--- Поиск Shovel в руках
-local function findShovelInHands()
-    local character = player.Character
-    if not character then return nil end
-    
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            return tool
-        end
+-- Функция масштабирования CFrame
+local function scaleCFrame(originalCFrame, scaleFactor)
+    if scaleFactor == 1.0 then
+        return originalCFrame
     end
-    return nil
+    
+    local position = originalCFrame.Position * scaleFactor
+    local rotation = originalCFrame - originalCFrame.Position
+    
+    return CFrame.new(position) * rotation
 end
+
+-- === ФУНКЦИИ СОЗДАНИЯ И УПРАВЛЕНИЯ TOOL ===
 
 -- Функция сохранения питомца
-local function savePet()
-    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
+local function savePetModel()
+    print("\n🔍 === ПОИСК И СОХРАНЕНИЕ ПИТОМЦА ===")
     
-    local foundPet = findPetInHands()
-    if foundPet then
-        petTool = foundPet:Clone()
-        print("✅ Питомец сохранен: " .. foundPet.Name)
-        
-        -- КРИТИЧЕСКИ ВАЖНО: Сохраняем ориентацию крепления питомца
-        local character = player.Character
-        if character then
-            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-            if rightHand then
-                local rightGrip = rightHand:FindFirstChild("RightGrip")
-                if rightGrip then
-                    savedPetGripC0 = rightGrip.C0
-                    savedPetGripC1 = rightGrip.C1
-                    print("📍 СОХРАНЕНА ориентация крепления питомца!")
-                    print("📍 C0:", savedPetGripC0)
-                    print("📍 C1:", savedPetGripC1)
-                else
-                    print("⚠️ RightGrip не найден при сохранении")
-                end
-            end
-        end
-        
-        return true
-    else
-        print("❌ Питомец в руках не найден!")
-        return false
-    end
-end
-
--- ПРЯМАЯ ЗАМЕНА содержимого
-local function directReplace()
-    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
-    
-    if not petTool then
-        print("❌ Сначала сохраните питомца!")
+    -- Ищем питомца в Visuals
+    local visuals = Workspace:FindFirstChild("Visuals")
+    if not visuals then
+        print("❌ Workspace.Visuals не найден!")
         return false
     end
     
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
-    
-    -- Шаг 1: Меняем имя
-    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("📝 Имя изменено: " .. shovel.Name)
-    
-    -- Шаг 2: Копируем свойства Tool
-    shovel.RequiresHandle = petTool.RequiresHandle
-    shovel.CanBeDropped = petTool.CanBeDropped
-    shovel.ManualActivationOnly = petTool.ManualActivationOnly
-    print("🔧 Свойства Tool скопированы")
-    
-    -- Шаг 3: Удаляем все содержимое Shovel
-    print("🗑️ Очищаю содержимое Shovel...")
-    for _, child in pairs(shovel:GetChildren()) do
-        child:Destroy()
-    end
-    
-    wait(0.1)
-    
-    -- Шаг 4: Копируем все содержимое питомца
-    print("📋 Копирую содержимое питомца...")
-    for _, child in pairs(petTool:GetChildren()) do
-        local copy = child:Clone()
-        copy.Parent = shovel
-        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
-    end
-    
-    print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
-    print("📝 Новое имя: " .. shovel.Name)
-    print("🎮 В руках должен быть питомец с именем Dragonfly!")
-    
-    return true
-end
-
--- АЛЬТЕРНАТИВА: Замена содержимого существующего Tool БЕЗ создания нового
-local function alternativeReplace()
-    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
-    
-    if not petTool then
-        print("❌ Сначала сохраните питомца!")
-        return false
-    end
-    
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    local character = player.Character
-    if not character then
-        print("❌ Character не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Замена содержимого существующего Tool...")
-    
-    -- КАРДИНАЛЬНО НОВЫЙ ПОДХОД: НЕ создаем новый Tool, а меняем содержимое существующего!
-    
-    -- Шаг 1: Меняем имя Tool (остается в том же слоте)
-    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("📝 Имя Tool изменено: " .. shovel.Name)
-    
-    -- Шаг 2: Копируем свойства Tool от питомца
-    shovel.RequiresHandle = petTool.RequiresHandle
-    shovel.CanBeDropped = petTool.CanBeDropped  
-    shovel.ManualActivationOnly = petTool.ManualActivationOnly
-    shovel.Enabled = petTool.Enabled
-    print("🔧 Свойства Tool обновлены от питомца")
-    
-    -- Шаг 3: Сохраняем позицию Handle ПЕРЕД очисткой
-    local shovelHandle = shovel:FindFirstChild("Handle")
-    local savedPosition = nil
-    local savedOrientation = nil
-    
-    if shovelHandle then
-        savedPosition = shovelHandle.Position
-        savedOrientation = shovelHandle.Orientation
-        print("📍 Сохранена позиция Handle: " .. tostring(savedPosition))
-    end
-    
-    -- Шаг 4: ПОЛНАЯ очистка содержимого Shovel
-    print("🗑️ Очищаю содержимое Shovel...")
-    for _, child in pairs(shovel:GetChildren()) do
-        child:Destroy()
-        print("   🗑️ Удалено: " .. child.Name)
-    end
-    
-    wait(0.05) -- Минимальная пауза для очистки
-    
-    -- Шаг 5: Копируем ВСЕ содержимое питомца в существующий Tool
-    print("📋 Копирую содержимое питомца в существующий Tool...")
-    for _, child in pairs(petTool:GetChildren()) do
-        local copy = child:Clone()
-        copy.Parent = shovel  -- В существующий Tool!
-        
-        -- КРИТИЧЕСКИ ВАЖНО: Правильная настройка физики
-        if copy:IsA("BasePart") then
-            copy.Anchored = false
-            copy.CanCollide = false
-            
-            -- Если это Handle - восстанавливаем позицию
-            if copy.Name == "Handle" and savedPosition then
-                copy.Position = savedPosition
-                copy.Orientation = savedOrientation
-                print("   📍 Восстановлена позиция Handle")
-            end
-            
-            print("   ✅ Скопировано: " .. child.Name .. " (BasePart)")
-        else
-            print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
-        end
-    end
-    
-    -- Шаг 6: КРИТИЧЕСКОЕ КРЕПЛЕНИЕ Tool к руке как настоящий питомец
-    spawn(function()
-        wait(0.1)
-        
-        -- Проверяем что Tool все еще в руках
-        if shovel.Parent == character then
-            local handle = shovel:FindFirstChild("Handle")
-            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-            
-            if handle and rightHand then
-                print(" Критическое крепление Handle к руке...")
-                
-                -- КРИТИЧЕСКИ ВАЖНО: Удаляем старое крепление перед созданием нового
-                local oldGrip = rightHand:FindFirstChild("RightGrip")
-                if oldGrip then
-                    oldGrip:Destroy()
-                    print(" Удалено старое крепление")
-                end
-                
-                -- МГНОВЕННО создаем новое крепление Handle к руке
-                local newGrip = Instance.new("Weld")
-                newGrip.Name = "RightGrip"
-                newGrip.Part0 = rightHand
-                newGrip.Part1 = handle
-                newGrip.Parent = rightHand
-                
-                -- Применяем сохраненную ориентацию с коррекцией позиции
-                if savedPetGripC0 and savedPetGripC1 then
-                    -- Используем сохраненную ориентацию, но корректируем позицию для руки
-                    local correctedC0 = CFrame.new(0, -1, -0.5) * savedPetGripC0.Rotation
-                    newGrip.C0 = correctedC0
-                    newGrip.C1 = savedPetGripC1
-                    print("📍 ПРИМЕНЕНА сохраненная ориентация с коррекцией позиции!")
-                    print("📍 Оригинальная C0:", savedPetGripC0)
-                    print("📍 Скорректированная C0:", correctedC0)
-                else
-                    -- Стандартное крепление, если ориентация не сохранена
-                    newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
-                    newGrip.C1 = CFrame.new(0, 0, 0)
-                    print("📍 Применено стандартное крепление")
-                end
-                
-                -- Настраиваем Handle как у настоящего питомца (ПОСЛЕ крепления)
-                handle.Anchored = false
-                handle.CanCollide = false
-                handle.CanTouch = false
-                handle.TopSurface = Enum.SurfaceType.Smooth
-                handle.BottomSurface = Enum.SurfaceType.Smooth
-                
-                -- КРИТИЧЕСКИ ВАЖНО: Защищаем наш Weld от перезаписи игрой
-                spawn(function()
-                    while newGrip and newGrip.Parent do
-                        wait(0.01) -- Проверяем каждые 10ms
-                        
-                        -- Если игра создала свой RightGrip - удаляем его и восстанавливаем наш
-                        local gameGrip = rightHand:FindFirstChild("RightGrip")
-                        if gameGrip and gameGrip ~= newGrip then
-                            print(" Обнаружен автоматический RightGrip игры - удаляем!")
-                            gameGrip:Destroy()
-                            
-                            -- Восстанавливаем наш Weld
-                            if not rightHand:FindFirstChild("RightGrip") then
-                                local restoredGrip = Instance.new("Weld")
-                                restoredGrip.Name = "RightGrip"
-                                restoredGrip.Part0 = rightHand
-                                restoredGrip.Part1 = handle
-                                restoredGrip.Parent = rightHand
-                                
-                                if savedPetGripC0 and savedPetGripC1 then
-                                    -- Применяем ту же коррекцию позиции при восстановлении
-                                    local correctedC0 = CFrame.new(0, -1, -0.5) * savedPetGripC0.Rotation
-                                    restoredGrip.C0 = correctedC0
-                                    restoredGrip.C1 = savedPetGripC1
-                                end
-                                
-                                newGrip = restoredGrip
-                                print(" Weld восстановлен с правильной ориентацией!")
-                            end
-                        end
-                    end
-                end)
-                
-                print("✅ Handle ЖЕСТКО закреплен к руке через Weld!")
-                print("🎯 Падение исключено!")
-                
-                -- Дополнительная стабилизация - принудительная активация Tool
-                local humanoid = character:FindFirstChild("Humanoid")
-                if humanoid then
-                    -- Имитируем "взятие" Tool для активации системы
-                    shovel.Parent = character.Backpack
-                    wait(0.02)
-                    shovel.Parent = character
-                    print("⚡ Tool принудительно активирован с новым креплением")
-                end
-            else
-                print("❌ Handle или Right Arm не найдены!")
-            end
-        end
-    end)
-    
-    print("✅ Замена содержимого завершена!")
-    print("🎯 Tool остается в том же слоте с новым содержимым!")
-    print("📍 Позиция сохранена, падения быть не должно!")
-    return true
-end
-
--- ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ питомца в руках
-local function fixPetOrientation()
-    print("\n🔧 === ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ ===")
-    
-    if not petTool then
-        print("❌ Сначала сохраните питомца!")
-        return false
-    end
-    
-    local character = player.Character
-    if not character then
-        print("❌ Character не найден!")
-        return false
-    end
-    
-    -- Ищем Tool питомца в руках (замененный Shovel)
-    local petToolInHands = nil
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
-            petToolInHands = tool
+    local foundPet = nil
+    for _, child in pairs(visuals:GetChildren()) do
+        if child:IsA("Model") and (child.Name:find("Dragonfly") or child.Name:find("KG]")) then
+            foundPet = child
             break
         end
     end
     
-    if not petToolInHands then
-        print("❌ Питомец в руках не найден!")
+    if not foundPet then
+        print("❌ Питомец не найден в Visuals!")
         return false
     end
     
-    print("✅ Найден питомец в руках: " .. petToolInHands.Name)
+    -- Создаем глубокую копию питомца
+    savedPetModel = foundPet:Clone()
+    savedPetModel.Name = foundPet.Name .. "_SAVED"
+    savedPetModel.Parent = nil -- Храним в памяти
     
-    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-    local handle = petToolInHands:FindFirstChild("Handle")
+    print("✅ Питомец сохранен:", foundPet.Name)
+    print("📦 Частей в модели:", #savedPetModel:GetDescendants())
     
-    if not rightHand or not handle then
-        print("❌ Right Arm или Handle не найдены!")
+    return true
+end
+
+-- Функция создания Tool из сохраненного питомца
+local function createPetTool()
+    if not savedPetModel then
+        print("❌ Питомец не сохранен! Сначала сохраните питомца.")
+        return nil
+    end
+    
+    print("\n🔧 === СОЗДАНИЕ PET TOOL ===")
+    
+    -- Создаем новый Tool
+    local newTool = Instance.new("Tool")
+    newTool.Name = savedPetModel.Name:gsub("_SAVED", "")
+    newTool.RequiresHandle = true
+    newTool.CanBeDropped = false
+    
+    -- Создаем Handle
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(1, 1, 1)
+    handle.Material = Enum.Material.Neon
+    handle.BrickColor = BrickColor.new("Bright green")
+    handle.Shape = Enum.PartType.Ball
+    handle.Anchored = false
+    handle.CanCollide = false
+    handle.TopSurface = Enum.SurfaceType.Smooth
+    handle.BottomSurface = Enum.SurfaceType.Smooth
+    handle.Parent = newTool
+    
+    -- Клонируем модель питомца в Tool
+    local petCopy = savedPetModel:Clone()
+    petCopy.Name = "PetModel"
+    petCopy.Parent = newTool
+    
+    -- Настраиваем все части питомца
+    for _, part in pairs(petCopy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = false
+            part.CanCollide = false
+            
+            -- Создаем Weld для крепления к Handle
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = handle
+            weld.Part1 = part
+            weld.Parent = handle
+        end
+    end
+    
+    print("✅ Pet Tool создан:", newTool.Name)
+    return newTool
+end
+
+-- Функция замены Shovel на Pet Tool
+local function replaceShovelWithPet()
+    print("\n🔄 === ЗАМЕНА SHOVEL НА PET TOOL ===")
+    
+    local character = player.Character
+    if not character then
+        print("❌ Персонаж не найден!")
         return false
     end
     
-    local rightGrip = rightHand:FindFirstChild("RightGrip")
-    if not rightGrip then
-        print("❌ RightGrip не найден!")
+    -- Ищем Shovel в руках
+    local shovelTool = character:FindFirstChildOfClass("Tool")
+    if not shovelTool or not shovelTool.Name:find("Shovel") then
+        print("❌ Shovel не найден в руках!")
         return false
     end
     
-    print("🔧 Применяю СОХРАНЕННУЮ ориентацию питомца...")
-    
-    -- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Используем сохраненную ориентацию с коррекцией позиции
-    if savedPetGripC0 and savedPetGripC1 then
-        -- Применяем коррекцию позиции для правильного расположения в руке
-        local correctedC0 = CFrame.new(0, -1, -0.5) * savedPetGripC0.Rotation
-        rightGrip.C0 = correctedC0
-        rightGrip.C1 = savedPetGripC1
-        print("📍 Применена СОХРАНЕННАЯ ориентация с коррекцией позиции!")
-        print("📍 Оригинальная C0:", savedPetGripC0)
-        print("📍 Скорректированная C0:", correctedC0)
-        print("📍 C1:", savedPetGripC1)
-        return true
-    else
-        print("❌ Ориентация не была сохранена!")
-        print("💡 Сначала возьмите питомца в руки и нажмите 'Сохранить питомца'")
+    -- Создаем Pet Tool
+    local petTool = createPetTool()
+    if not petTool then
+        print("❌ Не удалось создать Pet Tool!")
         return false
+    end
+    
+    -- Удаляем Shovel и добавляем Pet Tool
+    shovelTool:Destroy()
+    
+    -- Добавляем Pet Tool в Backpack, затем экипируем
+    petTool.Parent = player.Backpack
+    wait(0.1)
+    
+    -- Принудительно экипируем Tool
+    character.Humanoid:EquipTool(petTool)
+    
+    currentTool = petTool
+    print("✅ Shovel заменен на Pet Tool!")
+    
+    return true
+end
+
+-- === СИСТЕМА LIVE АНИМАЦИИ ===
+
+-- Функция запуска live анимации - КОПИРУЕМ С VISUALS
+local function startLiveAnimation()
+    if animationConnection then
+        animationConnection:Disconnect()
+    end
+    
+    print("\n🎬 === ЗАПУСК LIVE АНИМАЦИИ ===")
+    print("📋 Копируем анимацию с питомца в Visuals")
+    
+    animationConnection = RunService.Heartbeat:Connect(function()
+        -- Проверяем наличие Tool в руках
+        if not currentTool or not currentTool.Parent then
+            return
+        end
+        
+        local petModel = currentTool:FindFirstChild("PetModel")
+        if not petModel then
+            return
+        end
+        
+        -- Ищем питомца в Visuals для копирования анимации
+        local visuals = Workspace:FindFirstChild("Visuals")
+        if not visuals then
+            return
+        end
+        
+        local visualsPet = nil
+        for _, child in pairs(visuals:GetChildren()) do
+            if child:IsA("Model") and (child.Name:find("Dragonfly") or child.Name:find("KG]")) then
+                visualsPet = child
+                break
+            end
+        end
+        
+        if not visualsPet then
+            return
+        end
+        
+        -- Получаем части питомца из Visuals
+        local visualsParts = {}
+        for _, obj in pairs(visualsPet:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                table.insert(visualsParts, obj)
+            end
+        end
+        
+        -- Live копирование CFrame состояний с питомца в Visuals
+        if visualsPet and #visualsParts > 0 then
+            for _, visualsPart in ipairs(visualsParts) do
+                if visualsPart and visualsPart.Parent then
+                    local partName = visualsPart.Name
+                    local currentCFrame = visualsPart.CFrame
+                    
+                    -- Находим соответствующую часть в Pet Tool и применяем CFrame
+                    local copyPart = findCorrespondingPart(petModel, partName)
+                    if copyPart then
+                        local success, errorMsg = pcall(function()
+                            -- Применяем CFrame с интерполяцией для плавности
+                            if not copyPart.Anchored and copyPart.Parent then
+                                copyPart.CFrame = copyPart.CFrame:Lerp(currentCFrame, CONFIG.INTERPOLATION_SPEED)
+                            end
+                        end)
+                        
+                        if not success then
+                            print("❌ Ошибка при применении CFrame", partName, ":", errorMsg)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    print("✅ Live анимация запущена!")
+end
+
+-- Функция остановки live анимации
+local function stopLiveAnimation()
+    if animationConnection then
+        animationConnection:Disconnect()
+        animationConnection = nil
+        print("⏹️ Live анимация остановлена")
     end
 end
 
--- Создаем GUI
-local function createDirectFixGUI()
+-- === ГЛАВНЫЕ ФУНКЦИИ ===
+
+-- Главная функция - ПРОСТАЯ ЛОГИКА
+local function main()
+    print("\n🚀 === ЗАПУСК ULTIMATE SHOVEL REPLACER ===")
+    
+    local character = player.Character
+    if not character then
+        print("❌ Персонаж не найден!")
+        return false
+    end
+    
+    -- Проверяем что в руках Shovel
+    local currentTool = character:FindFirstChildOfClass("Tool")
+    if not currentTool or not currentTool.Name:find("Shovel") then
+        print("❌ Возьмите Shovel в руки перед запуском!")
+        return false
+    end
+    
+    -- Шаг 1: Сохраняем питомца из Visuals
+    if not savePetModel() then
+        print("❌ Питомец не найден в Visuals! Сначала получите питомца из яйца.")
+        return false
+    end
+    
+    -- Шаг 2: Заменяем Shovel на Pet Tool
+    if not replaceShovelWithPet() then
+        print("❌ Не удалось заменить Shovel!")
+        return false
+    end
+    
+    -- Шаг 3: Запускаем анимацию (копируем с питомца в Visuals)
+    wait(1)
+    startLiveAnimation()
+    
+    print("🎉 === УСПЕХ! ===")
+    print("✅ Shovel заменен на питомца!")
+    print("✅ Анимация копируется с питомца в Visuals!")
+    print("🔥 Теперь у вас живой питомец в руке!")
+    
+    return true
+end
+
+-- === СОЗДАНИЕ GUI ===
+
+local function createGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Удаляем старый GUI
+    local oldGui = playerGui:FindFirstChild("UltimateShovelReplacerGUI")
+    if oldGui then
+        oldGui:Destroy()
+    end
+    
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "DirectShovelFixGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+    screenGui.Name = "UltimateShovelReplacerGUI"
+    screenGui.Parent = playerGui
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 400, 0, 400)
-    frame.Position = UDim2.new(0.5, -200, 0.5, -200)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
-    frame.BorderSizePixel = 0
+    frame.Name = "MainFrame"
+    frame.Size = UDim2.new(0, 350, 0, 200)
+    frame.Position = UDim2.new(0, 50, 0, 50)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(0, 255, 0)
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
+    title.Name = "Title"
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     title.BorderSizePixel = 0
-    title.Text = "🎯 DIRECT SHOVEL FIX"
-    title.TextColor3 = Color3.new(1, 1, 1)
-    title.TextScaled = true
+    title.Text = "🔥 ЗАМЕНА SHOVEL НА ПИТОМЦА"
+    title.TextColor3 = Color3.fromRGB(0, 0, 0)
+    title.TextSize = 16
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 80)
-    status.Position = UDim2.new(0, 10, 0, 50)
-    status.BackgroundTransparency = 1
-    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
-    status.TextColor3 = Color3.new(1, 1, 1)
-    status.TextScaled = true
-    status.Font = Enum.Font.SourceSans
-    status.TextWrapped = true
-    status.Parent = frame
+    local instructions = Instance.new("TextLabel")
+    instructions.Name = "Instructions"
+    instructions.Size = UDim2.new(1, -20, 0, 80)
+    instructions.Position = UDim2.new(0, 10, 0, 50)
+    instructions.BackgroundTransparency = 1
+    instructions.Text = "ИНСТРУКЦИЯ:\n1. Получите питомца из яйца\n2. Возьмите Shovel в руки\n3. Нажмите кнопку ниже"
+    instructions.TextColor3 = Color3.fromRGB(255, 255, 255)
+    instructions.TextSize = 14
+    instructions.Font = Enum.Font.SourceSans
+    instructions.TextWrapped = true
+    instructions.TextYAlignment = Enum.TextYAlignment.Top
+    instructions.Parent = frame
     
-    -- Кнопка сохранения
-    local saveBtn = Instance.new("TextButton")
-    saveBtn.Size = UDim2.new(1, -20, 0, 50)
-    saveBtn.Position = UDim2.new(0, 10, 0, 140)
-    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
-    saveBtn.BorderSizePixel = 0
-    saveBtn.Text = "💾 Сохранить питомца"
-    saveBtn.TextColor3 = Color3.new(1, 1, 1)
-    saveBtn.TextScaled = true
-    saveBtn.Font = Enum.Font.SourceSansBold
-    saveBtn.Parent = frame
+    local replaceBtn = Instance.new("TextButton")
+    replaceBtn.Name = "ReplaceButton"
+    replaceBtn.Size = UDim2.new(0, 330, 0, 40)
+    replaceBtn.Position = UDim2.new(0, 10, 0, 140)
+    replaceBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    replaceBtn.BorderSizePixel = 0
+    replaceBtn.Text = "🚀 ЗАМЕНИТЬ SHOVEL НА ПИТОМЦА!"
+    replaceBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    replaceBtn.TextSize = 16
+    replaceBtn.Font = Enum.Font.SourceSansBold
+    replaceBtn.Parent = frame
     
-    -- Кнопка прямой замены
-    local directBtn = Instance.new("TextButton")
-    directBtn.Size = UDim2.new(1, -20, 0, 50)
-    directBtn.Position = UDim2.new(0, 10, 0, 200)
-    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    directBtn.BorderSizePixel = 0
-    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
-    directBtn.TextColor3 = Color3.new(1, 1, 1)
-    directBtn.TextScaled = true
-    directBtn.Font = Enum.Font.SourceSansBold
-    directBtn.Visible = false
-    directBtn.Parent = frame
-    
-    -- Кнопка альтернативы
-    local altBtn = Instance.new("TextButton")
-    altBtn.Size = UDim2.new(1, -20, 0, 50)
-    altBtn.Position = UDim2.new(0, 10, 0, 260)
-    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
-    altBtn.BorderSizePixel = 0
-    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
-    altBtn.TextColor3 = Color3.new(1, 1, 1)
-    altBtn.TextScaled = true
-    altBtn.Font = Enum.Font.SourceSansBold
-    altBtn.Visible = false
-    altBtn.Parent = frame
-    
-    -- Кнопка исправления ориентации
-    local fixOrientBtn = Instance.new("TextButton")
-    fixOrientBtn.Size = UDim2.new(1, -20, 0, 40)
-    fixOrientBtn.Position = UDim2.new(0, 10, 0, 320)
-    fixOrientBtn.BackgroundColor3 = Color3.new(0, 0.6, 0.8)
-    fixOrientBtn.BorderSizePixel = 0
-    fixOrientBtn.Text = "🔧 ИСПРАВИТЬ ОРИЕНТАЦИЮ"
-    fixOrientBtn.TextColor3 = Color3.new(1, 1, 1)
-    fixOrientBtn.TextScaled = true
-    fixOrientBtn.Font = Enum.Font.SourceSansBold
-    fixOrientBtn.Visible = false
-    fixOrientBtn.Parent = frame
-    
-    -- Кнопка закрытия
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(1, -20, 0, 30)
-    closeBtn.Position = UDim2.new(0, 10, 0, 360)
-    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
-    closeBtn.BorderSizePixel = 0
-    closeBtn.Text = "❌ Закрыть"
-    closeBtn.TextColor3 = Color3.new(1, 1, 1)
-    closeBtn.TextScaled = true
-    closeBtn.Font = Enum.Font.SourceSansBold
-    closeBtn.Parent = frame
-    
-    -- События
-    saveBtn.MouseButton1Click:Connect(function()
-        status.Text = "💾 Сохраняю питомца..."
-        status.TextColor3 = Color3.new(1, 1, 0)
+    -- События кнопок
+    replaceBtn.MouseButton1Click:Connect(function()
+        replaceBtn.Text = "⏳ Заменяю..."
+        replaceBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
         
-        local success = savePet()
-        
-        if success then
-            status.Text = "✅ ПИТОМЕЦ СОХРАНЕН!\nТеперь возьмите Shovel"
-            status.TextColor3 = Color3.new(0, 1, 0)
-            altBtn.Visible = true
-            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
-        else
-            status.Text = "❌ Ошибка сохранения!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
+        spawn(function()
+            local success = main()
+            
+            wait(1)
+            if success then
+                replaceBtn.Text = "✅ УСПЕШНО ЗАМЕНЕНО!"
+                replaceBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+            else
+                replaceBtn.Text = "❌ ОШИБКА! Проверьте инструкцию"
+                replaceBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+            end
+            
+            wait(3)
+            replaceBtn.Text = "🚀 ЗАМЕНИТЬ SHOVEL НА ПИТОМЦА!"
+            replaceBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+        end)
     end)
     
-    directBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Прямая замена содержимого..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = directReplace()
-        
-        if success then
-            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    altBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Альтернативная замена..."
-        status.TextColor3 = Color3.new(1, 1, 0)
-        
-        local success = alternativeReplace()
-        
-        if success then
-            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
-        else
-            status.Text = "❌ Ошибка альтернативы!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    fixOrientBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔧 Исправляю ориентацию..."
-        status.TextColor3 = Color3.new(0, 1, 1)
-        
-        local success = fixPetOrientation()
-        
-        if success then
-            status.Text = "✅ ОРИЕНТАЦИЯ ИСПРАВЛЕНА!\nНажмите еще раз для другой позиции"
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка исправления ориентации!"
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    closeBtn.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
-    end)
+    print("🖥️ Ultimate Shovel Replacer GUI создан!")
 end
 
--- Запускаем
-createDirectFixGUI()
-print("✅ DirectShovelFix готов!")
-print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
-print("💾 1. Сохранить питомца")
-print("🔄 2. Заменить Shovel")
+-- === ЗАПУСК ===
+
+createGUI()
+print("=" .. string.rep("=", 50))
+print("💡 ПРОСТАЯ ИНСТРУКЦИЯ:")
+print("   1. Получите питомца из яйца (он появится в Visuals)")
+print("   2. Возьмите Shovel в руки")
+print("   3. Нажмите зеленую кнопку в GUI")
+print("   4. Shovel заменится на живого питомца!")
+print("🎯 Анимация копируется с питомца в Visuals!")
+print("=" .. string.rep("=", 50))
