@@ -8,6 +8,8 @@ print("=== DIRECT SHOVEL FIX ===")
 
 -- Глобальные переменные
 local petTool = nil
+local savedPetC0 = nil
+local savedPetC1 = nil
 
 -- Поиск питомца в руках
 local function findPetInHands()
@@ -50,7 +52,27 @@ local function savePet()
     -- Сохраняем ссылку на питомца
     petTool = pet
     
-    print("✅ Питомец сохранен!")
+    -- КРИТИЧЕСКИ ВАЖНО: Сохраняем позицию питомца СЕЙЧАС, пока он в руках!
+    local character = player.Character
+    if character then
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local petHandle = pet:FindFirstChild("Handle")
+        
+        if rightHand and petHandle then
+            local petGrip = rightHand:FindFirstChild("RightGrip")
+            if petGrip then
+                savedPetC0 = petGrip.C0
+                savedPetC1 = petGrip.C1
+                print("📍 ПОЗИЦИЯ ПИТОМЦА СОХРАНЕНА!")
+                print("📐 C0: " .. tostring(savedPetC0))
+                print("📐 C1: " .. tostring(savedPetC1))
+            else
+                print("⚠️ RightGrip не найден, используем стандартную позицию")
+            end
+        end
+    end
+    
+    print("✅ Питомец и его позиция сохранены!")
     return true
 end
 
@@ -108,7 +130,7 @@ end
 
 -- АЛЬТЕРНАТИВА: Замена содержимого существующего Tool БЕЗ создания нового
 local function alternativeReplace()
-    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА (FIX) ===")
     
     if not petTool then
         print("❌ Сначала сохраните питомца!")
@@ -126,148 +148,84 @@ local function alternativeReplace()
         print("❌ Character не найден!")
         return false
     end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Замена содержимого существующего Tool...")
-    
-    -- КАРДИНАЛЬНО НОВЫЙ ПОДХОД: НЕ создаем новый Tool, а меняем содержимое существующего!
-    
-    -- Шаг 1: Меняем имя Tool (остается в том же слоте)
-    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("📝 Имя Tool изменено: " .. shovel.Name)
-    
-    -- Шаг 2: Копируем свойства Tool от питомца
+
+    -- === 1. Сохраняем C0/C1 от оригинала ===
+    local petHandle = petTool:FindFirstChild("Handle")
+    local petRightHand = petTool.Parent:FindFirstChild("Right Arm") or petTool.Parent:FindFirstChild("RightHand")
+    local savedC0, savedC1 = nil, nil
+
+    if petHandle and petRightHand then
+        local petGrip = petRightHand:FindFirstChild("RightGrip")
+        if petGrip then
+            savedC0 = petGrip.C0
+            savedC1 = petGrip.C1
+            print("📍 Скопированы C0/C1 от оригинала питомца")
+        end
+    end
+
+    -- === 2. Копируем свойства Tool ===
+    shovel.Name = petTool.Name
     shovel.RequiresHandle = petTool.RequiresHandle
     shovel.CanBeDropped = petTool.CanBeDropped  
     shovel.ManualActivationOnly = petTool.ManualActivationOnly
     shovel.Enabled = petTool.Enabled
-    print("🔧 Свойства Tool обновлены от питомца")
-    
-    -- Шаг 3: Сохраняем позицию Handle ПЕРЕД очисткой
-    local shovelHandle = shovel:FindFirstChild("Handle")
-    local savedPosition = nil
-    local savedOrientation = nil
-    
-    if shovelHandle then
-        savedPosition = shovelHandle.Position
-        savedOrientation = shovelHandle.Orientation
-        print("📍 Сохранена позиция Handle: " .. tostring(savedPosition))
-    end
-    
-    -- Шаг 4: ПОЛНАЯ очистка содержимого Shovel
-    print("🗑️ Очищаю содержимое Shovel...")
+
+    -- === 3. Удаляем старое содержимое ===
     for _, child in pairs(shovel:GetChildren()) do
         child:Destroy()
-        print("   🗑️ Удалено: " .. child.Name)
     end
-    
-    wait(0.05) -- Минимальная пауза для очистки
-    
-    -- Шаг 5: Копируем ВСЕ содержимое питомца в существующий Tool
-    print("📋 Копирую содержимое питомца в существующий Tool...")
+
+    -- === 4. Копируем содержимое питомца ===
     for _, child in pairs(petTool:GetChildren()) do
         local copy = child:Clone()
-        copy.Parent = shovel  -- В существующий Tool!
-        
-        -- КРИТИЧЕСКИ ВАЖНО: Правильная настройка физики
-        if copy:IsA("BasePart") then
-            copy.Anchored = false
+        copy.Parent = shovel
+
+        -- Если это Handle — временно закрепим
+        if copy.Name == "Handle" and copy:IsA("BasePart") then
+            copy.Anchored = true
             copy.CanCollide = false
-            
-            -- Если это Handle - восстанавливаем позицию
-            if copy.Name == "Handle" and savedPosition then
-                copy.Position = savedPosition
-                copy.Orientation = savedOrientation
-                print("   📍 Восстановлена позиция Handle")
-            end
-            
-            print("   ✅ Скопировано: " .. child.Name .. " (BasePart)")
-        else
-            print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+            copy.CanTouch = false
         end
     end
-    
-    -- Шаг 6: КРИТИЧЕСКОЕ КРЕПЛЕНИЕ Tool к руке как настоящий питомец
-    spawn(function()
-        wait(0.1)
-        
-        -- Проверяем что Tool все еще в руках
-        if shovel.Parent == character then
-            local handle = shovel:FindFirstChild("Handle")
-            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-            
-            if handle and rightHand then
-                print("🔧 Критическое крепление Handle к руке...")
-                
-                -- КРИТИЧЕСКИ ВАЖНО: Настройка Handle как у настоящего питомца
-                handle.Anchored = false
-                handle.CanCollide = false
-                handle.CanTouch = false
-                handle.TopSurface = Enum.SurfaceType.Smooth
-                handle.BottomSurface = Enum.SurfaceType.Smooth
-                
-                -- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Создаем правильное крепление к руке
-                local rightGrip = rightHand:FindFirstChild("RightGrip")
-                if rightGrip then
-                    rightGrip:Destroy() -- Удаляем старое крепление
-                end
-                
-                -- Создаем новое крепление Handle к руке (как у настоящего питомца)
-                local newGrip = Instance.new("Weld")
-                newGrip.Name = "RightGrip"
-                newGrip.Part0 = rightHand
-                newGrip.Part1 = handle
-                newGrip.Parent = rightHand
-                
-                -- КРИТИЧЕСКИ ВАЖНО: Устанавливаем правильный CFrame для крепления
-                -- Копируем CFrame от настоящего питомца
-                local petHandle = petTool:FindFirstChild("Handle")
-                if petHandle then
-                    -- Находим крепление питомца к руке
-                    local petRightHand = petTool.Parent:FindFirstChild("Right Arm") or petTool.Parent:FindFirstChild("RightHand")
-                    if petRightHand then
-                        local petGrip = petRightHand:FindFirstChild("RightGrip")
-                        if petGrip then
-                            -- Копируем ТОЧНЫЙ CFrame крепления от питомца!
-                            newGrip.C0 = petGrip.C0
-                            newGrip.C1 = petGrip.C1
-                            print("📍 Скопирован CFrame крепления от питомца!")
-                        else
-                            -- Стандартное крепление для Tool
-                            newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
-                            newGrip.C1 = CFrame.new(0, 0, 0)
-                            print("📍 Установлено стандартное крепление Tool")
-                        end
-                    end
-                else
-                    -- Стандартное крепление
-                    newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
-                    newGrip.C1 = CFrame.new(0, 0, 0)
-                end
-                
-                print("✅ Handle ЖЕСТКО закреплен к руке через Weld!")
-                print("🎯 Падение исключено!")
-                
-                -- Дополнительная стабилизация - принудительная активация Tool
-                local humanoid = character:FindFirstChild("Humanoid")
-                if humanoid then
-                    -- Имитируем "взятие" Tool для активации системы
-                    shovel.Parent = character.Backpack
-                    wait(0.02)
-                    shovel.Parent = character
-                    print("⚡ Tool принудительно активирован с новым креплением")
-                end
-            else
-                print("❌ Handle или Right Arm не найдены!")
-            end
-        end
-    end)
-    
-    print("✅ Замена содержимого завершена!")
-    print("🎯 Tool остается в том же слоте с новым содержимым!")
-    print("📍 Позиция сохранена, падения быть не должно!")
+
+    -- === 5. Создаём Weld сразу, пока физика не сработала ===
+    local newHandle = shovel:FindFirstChild("Handle")
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+
+    if newHandle and rightHand then
+        local oldGrip = rightHand:FindFirstChild("RightGrip")
+        if oldGrip then oldGrip:Destroy() end
+
+        local newGrip = Instance.new("Weld")
+        newGrip.Name = "RightGrip"
+        newGrip.Part0 = rightHand
+        newGrip.Part1 = newHandle
+        newGrip.C0 = savedC0 or CFrame.new(0, -1, -0.5)
+        newGrip.C1 = savedC1 or CFrame.new()
+        newGrip.Parent = rightHand
+
+        print("✅ Новый Weld установлен с сохранёнными C0/C1")
+    else
+        print("❌ Handle или RightHand не найдены!")
+    end
+
+    -- === 6. Включаем физику обратно ===
+    if newHandle then
+        newHandle.Anchored = false
+    end
+
+    -- === 7. Принудительно активируем Tool ===
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        shovel.Parent = character.Backpack
+        wait()
+        shovel.Parent = character
+    end
+
+    print("🎯 Альтернативная замена завершена — позиция сохранена!")
     return true
 end
+
 
 -- Создаем GUI
 local function createDirectFixGUI()
