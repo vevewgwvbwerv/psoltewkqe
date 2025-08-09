@@ -1,406 +1,410 @@
--- 🔥 PET SCALER - Плавное увеличение питомца с сохранением анимации
--- Находит UUID модель питомца, копирует её и плавно увеличивает
+-- DirectShovelFix_v3.lua
+-- УЛУЧШЕННАЯ ВЕРСИЯ: Полное копирование анимаций и позиций
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 
-print("🔥 === PET SCALER - ПЛАВНОЕ УВЕЛИЧЕНИЕ ПИТОМЦА ===")
-print("=" .. string.rep("=", 60))
+print("=== DIRECT SHOVEL FIX V3 ===")
 
--- Конфигурация
-local CONFIG = {
-    SEARCH_RADIUS = 100,
-    SCALE_FACTOR = 3.0,  -- Во сколько раз увеличиваем
-    TWEEN_TIME = 3.0,    -- Время анимации увеличения (секунды)
-    EASING_STYLE = Enum.EasingStyle.Quad,
-    EASING_DIRECTION = Enum.EasingDirection.Out
-}
+-- Глобальные переменные
+local petTool = nil
+local savedPetC0 = nil
+local savedPetC1 = nil
+local savedAnimations = {} -- Все CFrame анимации
 
--- Получаем позицию игрока
-local playerChar = player.Character
-if not playerChar then
-    print("❌ Персонаж игрока не найден!")
-    return
+-- Поиск питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
+        end
+    end
+    return nil
 end
 
-local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-if not hrp then
-    print("❌ HumanoidRootPart не найден!")
-    return
+-- Поиск Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
+        end
+    end
+    return nil
 end
 
-local playerPos = hrp.Position
-print("📍 Позиция игрока:", playerPos)
-print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
-print("📏 Коэффициент увеличения:", CONFIG.SCALE_FACTOR .. "x")
-print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
-print()
-
--- Функция проверки визуальных элементов питомца
-local function hasPetVisuals(model)
-    local meshCount = 0
-    local petMeshes = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or ""
-            }
-            if meshData.meshId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or ""
-            }
-            if meshData.meshId ~= "" or meshData.textureId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        end
-    end
-    
-    return meshCount > 0, petMeshes
-end
-
--- Функция глубокого копирования модели (ИСПРАВЛЕНО: стоит НА ЗЕМЛЕ)
-local function deepCopyModel(originalModel)
-    print("📋 Создаю глубокую копию модели:", originalModel.Name)
-    
-    local copy = originalModel:Clone()
-    copy.Name = originalModel.Name .. "_SCALED_COPY"
-    copy.Parent = Workspace
-    
-    -- ИСПРАВЛЕНО: Правильное позиционирование копии НА ЗЕМЛЕ
-    if copy.PrimaryPart and originalModel.PrimaryPart then
-        local originalCFrame = originalModel.PrimaryPart.CFrame
-        local offset = Vector3.new(15, 0, 0) -- 15 единиц в сторону по X
-        
-        -- Вычисляем позицию рядом с оригиналом
-        local targetPosition = originalCFrame.Position + offset
-        
-        -- Используем Raycast чтобы найти землю под копией
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {copy, originalModel}
-        
-        -- Луч вниз с высокой позиции
-        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
-        local rayDirection = Vector3.new(0, -200, 0)
-        
-        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        
-        if raycastResult then
-            -- Найдена земля - ставим копию НА землю
-            local groundY = raycastResult.Position.Y
-            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
-            
-            -- Устанавливаем копию на землю с правильной ориентацией
-            local newCFrame = CFrame.new(finalPosition) * (originalCFrame - originalCFrame.Position)
-            copy:SetPrimaryPartCFrame(newCFrame)
-            
-            print("📍 Копия размещена НА ЗЕМЛЕ")
-            print("  Оригинал:", originalCFrame.Position)
-            print("  Копия:", finalPosition)
-            print("  Высота земли:", groundY)
-        else
-            -- Если земля не найдена, используем высоту оригинала
-            local newCFrame = originalCFrame + offset
-            copy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на уровне оригинала (земля не найдена)")
-        end
-        
-    elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
-        -- Fallback если нет PrimaryPart
-        local originalPos = originalModel.RootPart.Position
-        local offset = Vector3.new(15, 0, 0)
-        local targetPos = originalPos + offset
-        
-        -- Raycast для RootPart
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {copy, originalModel}
-        
-        local rayOrigin = Vector3.new(targetPos.X, targetPos.Y + 100, targetPos.Z)
-        local rayDirection = Vector3.new(0, -200, 0)
-        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        
-        if raycastResult then
-            copy.RootPart.Position = Vector3.new(targetPos.X, raycastResult.Position.Y, targetPos.Z)
-            print("📍 Копия размещена через RootPart НА ЗЕМЛЕ")
-        else
-            copy.RootPart.Position = targetPos
-            print("📍 Копия размещена через RootPart на уровне оригинала")
-        end
-    else
-        print("⚠️ Не удалось точно позиционировать копию")
-    end
-    
-    -- Дополнительно: устанавливаем Anchored для всех частей чтобы копия не падала
-    for _, part in pairs(copy:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Anchored = true
-        end
-    end
-    
-    print("✅ Копия создана и закреплена:", copy.Name)
-    return copy
-end
-
--- Функция получения всех BasePart в модели
-local function getAllParts(model)
-    local parts = {}
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(parts, obj)
-        end
-    end
-    return parts
-end
-
--- Функция плавного масштабирования модели (ИСПРАВЛЕНО: через CFrame)
-local function scaleModelSmoothly(model, scaleFactor, tweenTime)
-    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
-    print("📏 Коэффициент:", scaleFactor .. "x")
-    print("⏱️ Время:", tweenTime .. " сек")
-    
-    local parts = getAllParts(model)
-    print("🧩 Найдено частей для масштабирования:", #parts)
-    
-    if #parts == 0 then
-        print("❌ Нет частей для масштабирования!")
-        return
-    end
-    
-    -- Определяем центр масштабирования
-    local centerCFrame
-    if model.PrimaryPart then
-        centerCFrame = model.PrimaryPart.CFrame
-        print("🎯 Центр масштабирования: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
-    else
-        -- Если нет PrimaryPart, используем центр модели
-        local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
-        if success then
-            centerCFrame = modelCFrame
-            print("🎯 Центр масштабирования: Центр модели")
-        else
-            print("❌ Не удалось определить центр масштабирования!")
-            return
-        end
-    end
-    
-    print("📍 Центр масштабирования:", centerCFrame.Position)
-    
-    -- Сохраняем исходные данные всех частей
-    local originalData = {}
-    for _, part in ipairs(parts) do
-        originalData[part] = {
-            size = part.Size,
-            cframe = part.CFrame
+-- ГЛУБОКОЕ сканирование всех частей питомца
+local function deepScanAllParts(obj, fullPath)
+    -- Если это BasePart - сохраняем его полное состояние
+    if obj:IsA("BasePart") then
+        savedAnimations[fullPath] = {
+            CFrame = obj.CFrame,
+            Position = obj.Position,
+            Rotation = obj.Rotation,
+            Size = obj.Size,
+            Material = obj.Material,
+            Color = obj.Color,
+            Transparency = obj.Transparency,
+            CanCollide = obj.CanCollide,
+            Anchored = obj.Anchored,
+            Name = obj.Name,
+            ClassName = obj.ClassName
         }
+        print("🎭 " .. fullPath .. " (" .. obj.ClassName .. ") сохранен")
     end
     
-    -- Создаем TweenInfo
-    local tweenInfo = TweenInfo.new(
-        tweenTime,
-        CONFIG.EASING_STYLE,
-        CONFIG.EASING_DIRECTION,
-        0, -- Повторений
-        false, -- Обратная анимация
-        0 -- Задержка
-    )
-    
-    -- ИСПРАВЛЕНО: Масштабирование через CFrame чтобы части не разлетались
-    local tweens = {}
-    local completedTweens = 0
-    
-    for _, part in ipairs(parts) do
-        local originalSize = originalData[part].size
-        local originalCFrame = originalData[part].cframe
-        
-        -- Вычисляем новый размер
-        local newSize = originalSize * scaleFactor
-        
-        -- Вычисляем новый CFrame относительно центра
-        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
-        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
-        local newCFrame = centerCFrame * scaledRelativeCFrame
-        
-        -- Создаем твин для размера и CFrame
-        local tween = TweenService:Create(part, tweenInfo, {
-            Size = newSize,
-            CFrame = newCFrame
-        })
-        
-        -- Обработчик завершения твина
-        tween.Completed:Connect(function()
-            completedTweens = completedTweens + 1
-            if completedTweens == #parts then
-                print("✅ Масштабирование завершено!")
-                print("🎉 Все " .. #parts .. " частей успешно увеличены в " .. scaleFactor .. "x")
-            end
-        end)
-        
-        table.insert(tweens, tween)
-        tween:Play()
+    -- ВАЖНО: Сохраняем также Motor6D для анимаций
+    if obj:IsA("Motor6D") then
+        savedAnimations[fullPath .. "_Motor6D"] = {
+            C0 = obj.C0,
+            C1 = obj.C1,
+            Part0 = obj.Part0,
+            Part1 = obj.Part1,
+            Name = obj.Name,
+            ClassName = obj.ClassName
+        }
+        print("⚙️ " .. fullPath .. " Motor6D сохранен")
     end
     
-    print("🚀 Запущено " .. #tweens .. " твинов для плавного масштабирования")
+    -- Рекурсивно сканируем ВСЕ дочерние объекты
+    for _, child in pairs(obj:GetChildren()) do
+        local childPath = fullPath == "" and child.Name or (fullPath .. "." .. child.Name)
+        deepScanAllParts(child, childPath)
+    end
 end
 
--- Основная функция поиска и масштабирования
-local function findAndScalePet()
-    print("🔍 Поиск UUID моделей питомцев...")
-    print("-" .. string.rep("-", 40))
+-- ВОССТАНОВЛЕНИЕ всех анимаций на копии
+local function restoreAllAnimations(obj, fullPath)
+    -- Если это BasePart и у нас есть сохраненные данные - восстанавливаем
+    if obj:IsA("BasePart") and savedAnimations[fullPath] then
+        local saved = savedAnimations[fullPath]
+        
+        -- Восстанавливаем только СТАТИЧНЫЕ свойства (НЕ CFrame - он может анимироваться!)
+        obj.Size = saved.Size
+        obj.Material = saved.Material
+        obj.Color = saved.Color
+        obj.Transparency = saved.Transparency
+        obj.CanCollide = saved.CanCollide
+        
+        -- CFrame восстанавливаем ТОЛЬКО если часть не анимируется
+        local hasMotor6D = obj:FindFirstChildOfClass("Motor6D") or obj.Parent:FindFirstChild(obj.Name .. "_Motor6D")
+        if not hasMotor6D then
+            obj.CFrame = saved.CFrame
+            obj.Position = saved.Position
+            obj.Rotation = saved.Rotation
+            obj.Anchored = saved.Anchored
+            print("🎯 " .. fullPath .. " (статичная часть) восстановлен")
+        else
+            print("🎭 " .. fullPath .. " (анимированная часть) - CFrame оставлен для анимации")
+        end
+    end
     
-    local foundPets = {}
+    -- КРИТИЧЕСКИ ВАЖНО: Восстанавливаем Motor6D для живой анимации
+    if obj:IsA("Motor6D") and savedAnimations[fullPath .. "_Motor6D"] then
+        local savedMotor = savedAnimations[fullPath .. "_Motor6D"]
+        
+        -- Восстанавливаем соединения Motor6D
+        obj.C0 = savedMotor.C0
+        obj.C1 = savedMotor.C1
+        
+        print("⚙️ " .. fullPath .. " Motor6D восстановлен для анимации")
+    end
     
-    -- Ищем UUID модели в Workspace
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    print("🎯 Найдена UUID модель:", obj.Name)
-                    print("📍 Расстояние:", math.floor(distance) .. " единиц")
-                    
-                    -- Проверяем визуальные элементы
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
-                        print("✅ Модель имеет визуальные элементы питомца!")
-                        print("🎨 Визуальных элементов:", #meshes)
-                        
-                        table.insert(foundPets, {
-                            model = obj,
-                            distance = distance,
-                            meshes = meshes
-                        })
-                    else
-                        print("❌ Модель без визуальных элементов питомца")
-                    end
-                    print()
+    -- Рекурсивно восстанавливаем для всех дочерних объектов
+    for _, child in pairs(obj:GetChildren()) do
+        local childPath = fullPath == "" and child.Name or (fullPath .. "." .. child.Name)
+        restoreAllAnimations(child, childPath)
+    end
+end
+
+-- СОХРАНИТЬ питомца И его анимации
+local function savePet()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА И АНИМАЦИЙ ===")
+    
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден питомец: " .. pet.Name)
+    
+    -- Сохраняем ссылку на питомца
+    petTool = pet
+    
+    -- Сохраняем позицию в руке
+    local character = player.Character
+    if character then
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local petHandle = pet:FindFirstChild("Handle")
+        
+        if rightHand and petHandle then
+            local petGrip = rightHand:FindFirstChild("RightGrip")
+            if petGrip then
+                savedPetC0 = petGrip.C0
+                savedPetC1 = petGrip.C1
+                print("📍 Позиция в руке сохранена!")
+            end
+        end
+    end
+    
+    -- ГЛАВНОЕ: Сканируем ВСЕ анимации питомца
+    print("🎬 === ГЛУБОКОЕ СКАНИРОВАНИЕ АНИМАЦИЙ ===")
+    savedAnimations = {}
+    local partCount = 0
+    
+    local function countAndScan(obj, path)
+        if obj:IsA("BasePart") then
+            partCount = partCount + 1
+        end
+        deepScanAllParts(obj, path)
+    end
+    
+    countAndScan(pet, "")
+    
+    print("✅ СКАНИРОВАНИЕ ЗАВЕРШЕНО!")
+    print("📊 Найдено частей: " .. partCount)
+    print("💾 Анимаций сохранено: " .. tostring(#savedAnimations))
+    
+    return true
+end
+
+-- ПРЯМАЯ ЗАМЕНА с восстановлением анимаций
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА С АНИМАЦИЯМИ ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    
+    -- Шаг 1: Копируем свойства Tool
+    shovel.Name = petTool.Name
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 2: Удаляем содержимое Shovel
+    print("🗑️ Очищаю Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+    end
+    
+    wait(0.2)
+    
+    -- Шаг 3: Копируем содержимое питомца
+    print("📋 Копирую содержимое питомца...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ " .. child.Name .. " (" .. child.ClassName .. ")")
+    end
+    
+    wait(0.3)
+    
+    -- Шаг 4: ВОССТАНАВЛИВАЕМ ВСЕ АНИМАЦИИ
+    print("🎬 === ВОССТАНОВЛЕНИЕ АНИМАЦИЙ ===")
+    if next(savedAnimations) then
+        print("🔄 Применяю сохраненные анимации...")
+        restoreAllAnimations(shovel, "")
+        print("✅ Все анимации восстановлены!")
+    else
+        print("⚠️ Анимации не найдены")
+    end
+    
+    wait(0.2)
+    
+    -- Шаг 4.5: КРИТИЧЕСКИ ВАЖНО - Копируем ЖИВОЙ анимационный механизм
+    print("🎬 === КОПИРОВАНИЕ ЖИВЫХ АНИМАЦИЙ ===")
+    
+    -- Ищем Animator в оригинальном питомце
+    local petAnimator = petTool:FindFirstChildOfClass("Animator")
+    if petAnimator then
+        -- Копируем Animator в новый питомец
+        local newAnimator = petAnimator:Clone()
+        newAnimator.Parent = shovel
+        print("🎭 Animator скопирован - анимации будут живыми!")
+    else
+        print("⚠️ Animator не найден в оригинальном питомце")
+    end
+    
+    -- Ищем и копируем анимационные скрипты
+    for _, child in pairs(petTool:GetChildren()) do
+        if child:IsA("LocalScript") or child:IsA("Script") then
+            local scriptCopy = child:Clone()
+            scriptCopy.Parent = shovel
+            print("📜 Скрипт анимации скопирован: " .. child.Name)
+        end
+    end
+    
+    -- Принудительно запускаем анимации
+    spawn(function()
+        wait(0.5)
+        local newAnimator = shovel:FindFirstChildOfClass("Animator")
+        if newAnimator then
+            print("🎬 Animator найден - анимации активируются!")
+            
+            -- Принудительно активируем все анимационные скрипты
+            for _, child in pairs(shovel:GetDescendants()) do
+                if (child:IsA("LocalScript") or child:IsA("Script")) and child.Disabled then
+                    child.Disabled = false
+                    print("📜 Активирован скрипт: " .. child.Name)
                 end
             end
+            
+            -- Убираем Anchored с анимированных частей для свободного движения
+            for _, part in pairs(shovel:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "Handle" then
+                    part.Anchored = false
+                    print("🔓 " .. part.Name .. " разблокирован для анимации")
+                end
+            end
+            
+            print("✅ ВСЕ АНИМАЦИИ АКТИВИРОВАНЫ!")
+        else
+            print("❌ Animator не найден - анимации могут не работать")
+        end
+    end)
+    
+    -- Шаг 5: Исправляем позицию в руке
+    local character = player.Character
+    if character and savedPetC0 and savedPetC1 then
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local newHandle = shovel:FindFirstChild("Handle")
+        
+        if rightHand and newHandle then
+            print("🔧 Применяю сохраненную позицию...")
+            
+            local oldGrip = rightHand:FindFirstChild("RightGrip")
+            if oldGrip then oldGrip:Destroy() end
+            
+            local newGrip = Instance.new("Weld")
+            newGrip.Name = "RightGrip"
+            newGrip.Part0 = rightHand
+            newGrip.Part1 = newHandle
+            newGrip.C0 = savedPetC0
+            newGrip.C1 = savedPetC1
+            newGrip.Parent = rightHand
+            
+            print("✅ Позиция Handle восстановлена!")
         end
     end
     
-    print("📊 Найдено подходящих питомцев:", #foundPets)
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel превращен в питомца с анимациями!")
+    print("🎮 Питомец должен быть в правильной позиции!")
     
-    if #foundPets == 0 then
-        print("❌ Питомцы с UUID именами и визуальными элементами не найдены!")
-        print("💡 Убедитесь что вы рядом с размещенным питомцем")
-        return
-    end
-    
-    -- Берем первого найденного питомца
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец для масштабирования:", targetPet.model.Name)
-    print("📍 Расстояние:", math.floor(targetPet.distance) .. " единиц")
-    print()
-    
-    return targetPet.model
+    return true
 end
 
--- Основная функция скрипта
-local function main()
-    print("🚀 ПетСкалер запущен!")
-    print("🔍 Поиск питомца в радиусе " .. CONFIG.SEARCH_RADIUS .. " единиц...")
-    
-    local petModel = findAndScalePet()
-    if not petModel then
-        print("❌ Питомец не найден!")
-        return
-    end
-    
-    local petCopy = deepCopyModel(petModel)
-    if not petCopy then
-        print("❌ Не удалось создать копию!")
-        return
-    end
-    
-    -- Небольшая задержка перед масштабированием
-    wait(0.5)
-    
-    scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
-end
-
--- Создание GUI с кнопкой
-local function createGUI()
-    local Players = game:GetService("Players")
-    local player = Players.LocalPlayer
-    local playerGui = player:WaitForChild("PlayerGui")
-    
-    -- Создаем ScreenGui
+-- Создаем GUI
+local function createDirectFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetScalerGUI"
-    screenGui.Parent = playerGui
+    screenGui.Name = "DirectShovelFixGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
     
-    -- Создаем Frame для кнопки
     local frame = Instance.new("Frame")
-    frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 200, 0, 80)
-    frame.Position = UDim2.new(0, 50, 0, 50)
-    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.Size = UDim2.new(0, 300, 0, 250)
+    frame.Position = UDim2.new(0.5, -150, 0.5, -125)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
     frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(0, 162, 255)
+    frame.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
     frame.Parent = screenGui
     
-    -- Создаем кнопку
-    local button = Instance.new("TextButton")
-    button.Name = "ScaleButton"
-    button.Size = UDim2.new(0, 180, 0, 40)
-    button.Position = UDim2.new(0, 10, 0, 20)
-    button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
-    button.BorderSizePixel = 0
-    button.Text = "🔥 Увеличить Питомца"
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.TextSize = 14
-    button.Font = Enum.Font.SourceSansBold
-    button.Parent = frame
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 DIRECT SHOVEL FIX V3"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
     
-    -- Обработчик нажатия кнопки
-    button.MouseButton1Click:Connect(function()
-        button.Text = "⏳ Обработка..."
-        button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 60)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "С АНИМАЦИЯМИ:\n1. Питомец в руки → Сохранить\n2. Shovel в руки → Заменить"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
+    
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 120)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить питомца + анимации"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
+    
+    -- Кнопка замены
+    local replaceBtn = Instance.new("TextButton")
+    replaceBtn.Size = UDim2.new(1, -20, 0, 50)
+    replaceBtn.Position = UDim2.new(0, 10, 0, 180)
+    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    replaceBtn.BorderSizePixel = 0
+    replaceBtn.Text = "🔄 ЗАМЕНИТЬ с анимациями"
+    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
+    replaceBtn.TextScaled = true
+    replaceBtn.Font = Enum.Font.SourceSansBold
+    replaceBtn.Visible = false
+    replaceBtn.Parent = frame
+    
+    -- События
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сканирую питомца и анимации..."
+        status.TextColor3 = Color3.new(1, 1, 0)
         
-        -- Запускаем основную функцию
-        spawn(function()
-            main()
-            
-            -- Возвращаем кнопку в исходное состояние
-            wait(2)
-            button.Text = "🔥 Увеличить Питомца"
-            button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
-        end)
-    end)
-    
-    -- Эффект наведения
-    button.MouseEnter:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(0, 162, 255) then
-            button.BackgroundColor3 = Color3.fromRGB(0, 140, 220)
+        local success = savePet()
+        
+        if success then
+            status.Text = "✅ Питомец и анимации сохранены!\nТеперь возьмите Shovel"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            replaceBtn.Visible = true
+        else
+            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    button.MouseLeave:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(0, 140, 220) then
-            button.BackgroundColor3 = Color3.fromRGB(0, 162, 255)
+    replaceBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Замена с анимациями..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = directReplace()
+        
+        if success then
+            status.Text = "✅ ГОТОВО!\nПитомец с анимациями в руке!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
-    
-    print("🖥️ GUI создан! Нажмите кнопку для увеличения питомца")
 end
 
--- Запуск GUI
-createGUI()
-print("=" .. string.rep("=", 60))
+-- Запускаем
+createDirectFixGUI()
+print("✅ DirectShovelFix V3 готов!")
+print("🎬 ТЕПЕРЬ С ПОЛНОЙ ПОДДЕРЖКОЙ АНИМАЦИЙ!")
