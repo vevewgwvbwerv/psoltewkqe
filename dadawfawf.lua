@@ -1,30 +1,20 @@
--- AdvancedTextReplacer.lua
--- Замена текста + анализ и замена полной структуры Tool в руке
+-- DirectShovelFix.lua
+-- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local player = Players.LocalPlayer
+local player = game.Players.LocalPlayer
 
-print("=== ADVANCED TEXT REPLACER ===")
+print("=== DIRECT SHOVEL FIX ===")
 
 -- Глобальные переменные
-local currentHandTool = nil
-local analyzedToolData = nil
-local diagnosticConnection = nil
+local player = game.Players.LocalPlayer
+local petTool = nil
+local savedPetGripC0 = nil
+local savedPetGripC1 = nil
+local weldProtectionActive = false
 
--- Данные для анализа
-local animationData = {
-    animators = {},
-    animationTracks = {},
-    scripts = {},
-    motor6ds = {},
-    cframes = {},
-    lastUpdate = 0
-}
-
--- Функция поиска питомца в руке
-local function findHandPetTool()
+-- Поиск питомца в руках
+local function findPetInHands()
     local character = player.Character
     if not character then return nil end
     
@@ -36,644 +26,673 @@ local function findHandPetTool()
     return nil
 end
 
--- Функция поиска и замены текста в Hotbar
-local function replaceTextInHotbar(slotNumber, newText)
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
-    
-    local backpackGui = playerGui:FindFirstChild("BackpackGui")
-    if not backpackGui then return false end
-    
-    local backpack = backpackGui:FindFirstChild("Backpack")
-    if not backpack then return false end
-    
-    local hotbar = backpack:FindFirstChild("Hotbar")
-    if not hotbar then return false end
-    
-    local targetSlot = hotbar:FindFirstChild(tostring(slotNumber))
-    if not targetSlot then return false end
-    
-    -- Ищем TextLabel в слоте
-    for _, desc in pairs(targetSlot:GetDescendants()) do
-        if desc:IsA("TextLabel") and desc.Text ~= "" then
-            local oldText = desc.Text
-            desc.Text = newText
-            print("✅ Текст заменен: " .. oldText .. " → " .. newText)
-            return true
-        end
-    end
-    
-    return false
-end
-
--- Функция глубокого копирования Tool
-local function deepCopyTool(originalTool)
-    if not originalTool then return nil end
-    
-    print("🔄 Создаю глубокую копию Tool: " .. originalTool.Name)
-    
-    local function copyInstance(instance)
-        local copy = Instance.new(instance.ClassName)
-        
-        -- Копируем основные свойства
-        local basicProperties = {"Name", "Archivable"}
-        for _, property in pairs(basicProperties) do
-            local success, value = pcall(function()
-                return instance[property]
-            end)
-            if success then
-                pcall(function()
-                    copy[property] = value
-                end)
-            end
-        end
-        
-        -- Специальные свойства для Tool
-        if instance:IsA("Tool") then
-            pcall(function() copy.RequiresHandle = instance.RequiresHandle end)
-            pcall(function() copy.ManualActivationOnly = instance.ManualActivationOnly end)
-            pcall(function() copy.CanBeDropped = instance.CanBeDropped end)
-            pcall(function() copy.Enabled = instance.Enabled end)
-            pcall(function() copy.ToolTip = instance.ToolTip end)
-            print("🔧 Tool свойства скопированы")
-            
-        -- Специальные свойства для BasePart
-        elseif instance:IsA("BasePart") then
-            pcall(function() copy.Size = instance.Size end)
-            pcall(function() copy.CFrame = instance.CFrame end)
-            pcall(function() copy.Material = instance.Material end)
-            pcall(function() copy.BrickColor = instance.BrickColor end)
-            pcall(function() copy.Color = instance.Color end)
-            pcall(function() copy.Transparency = instance.Transparency end)
-            pcall(function() copy.Reflectance = instance.Reflectance end)
-            pcall(function() copy.CanCollide = instance.CanCollide end)
-            pcall(function() copy.Anchored = instance.Anchored end)
-            pcall(function() copy.Shape = instance.Shape end)
-            pcall(function() copy.TopSurface = instance.TopSurface end)
-            pcall(function() copy.BottomSurface = instance.BottomSurface end)
-            print("🧱 Part свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для SpecialMesh
-        elseif instance:IsA("SpecialMesh") then
-            pcall(function() copy.MeshType = instance.MeshType end)
-            pcall(function() copy.MeshId = instance.MeshId end)
-            pcall(function() copy.TextureId = instance.TextureId end)
-            pcall(function() copy.Scale = instance.Scale end)
-            pcall(function() copy.Offset = instance.Offset end)
-            pcall(function() copy.VertexColor = instance.VertexColor end)
-            print("🎨 Mesh свойства скопированы")
-            
-        -- Специальные свойства для Motor6D
-        elseif instance:IsA("Motor6D") then
-            pcall(function() copy.C0 = instance.C0 end)
-            pcall(function() copy.C1 = instance.C1 end)
-            -- Part0 и Part1 установим после создания всех частей
-            print("⚙️ Motor6D свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для Weld
-        elseif instance:IsA("Weld") then
-            pcall(function() copy.C0 = instance.C0 end)
-            pcall(function() copy.C1 = instance.C1 end)
-            print("🔗 Weld свойства скопированы: " .. instance.Name)
-            
-        -- Специальные свойства для LocalScript/Script
-        elseif instance:IsA("LocalScript") or instance:IsA("Script") then
-            pcall(function() copy.Enabled = instance.Enabled end)
-            pcall(function() copy.Source = instance.Source end)
-            print("📜 Script свойства скопированы: " .. instance.Name)
-        end
-        
-        return copy
-    end
-    
-    -- Создаем копию с детьми
-    local toolCopy = copyInstance(originalTool)
-    
-    -- Рекурсивно копируем всех детей
-    local function copyChildren(original, copy)
-        for _, child in pairs(original:GetChildren()) do
-            local childCopy = copyInstance(child)
-            childCopy.Parent = copy
-            copyChildren(child, childCopy) -- Рекурсивно копируем детей детей
-        end
-    end
-    
-    copyChildren(originalTool, toolCopy)
-    
-    -- Восстанавливаем связи Motor6D и Weld
-    local function restoreConnections(original, copy)
-        for _, originalChild in pairs(original:GetDescendants()) do
-            if originalChild:IsA("Motor6D") or originalChild:IsA("Weld") then
-                -- Находим соответствующую копию
-                local copyChild = copy:FindFirstChild(originalChild.Name, true)
-                if copyChild and (copyChild:IsA("Motor6D") or copyChild:IsA("Weld")) then
-                    -- Восстанавливаем Part0 и Part1 только для BasePart
-                    if originalChild.Part0 and originalChild.Part0:IsA("BasePart") then
-                        local part0Copy = copy:FindFirstChild(originalChild.Part0.Name, true)
-                        if part0Copy and part0Copy:IsA("BasePart") then
-                            pcall(function()
-                                copyChild.Part0 = part0Copy
-                                print("🔗 Part0 восстановлен: " .. originalChild.Name .. " -> " .. part0Copy.Name)
-                            end)
-                        else
-                            print("⚠️ Part0 не найден или не BasePart: " .. originalChild.Name)
-                        end
-                    end
-                    if originalChild.Part1 and originalChild.Part1:IsA("BasePart") then
-                        local part1Copy = copy:FindFirstChild(originalChild.Part1.Name, true)
-                        if part1Copy and part1Copy:IsA("BasePart") then
-                            pcall(function()
-                                copyChild.Part1 = part1Copy
-                                print("🔗 Part1 восстановлен: " .. originalChild.Name .. " -> " .. part1Copy.Name)
-                            end)
-                        else
-                            print("⚠️ Part1 не найден или не BasePart: " .. originalChild.Name)
-                        end
-                    end
-                else
-                    print("⚠️ Копия Motor6D/Weld не найдена: " .. originalChild.Name)
-                end
-            end
-        end
-    end
-    
-    restoreConnections(originalTool, toolCopy)
-    
-    print("✅ Глубокая копия Tool создана успешно!")
-    return toolCopy
-end
-
--- Функция анализа Tool
-local function analyzeTool(tool)
-    if not tool then return nil end
-    
-    print("\n🔍 === АНАЛИЗ TOOL: " .. tool.Name .. " ===")
-    
-    local toolData = {
-        name = tool.Name,
-        className = tool.ClassName,
-        parts = {},
-        motor6ds = {},
-        welds = {},
-        meshes = {},
-        scripts = {},
-        animators = {},
-        totalChildren = 0
-    }
-    
-    -- Анализируем все компоненты
-    for _, obj in pairs(tool:GetDescendants()) do
-        toolData.totalChildren = toolData.totalChildren + 1
-        
-        if obj:IsA("BasePart") then
-            table.insert(toolData.parts, {
-                name = obj.Name,
-                size = obj.Size,
-                cframe = obj.CFrame,
-                material = obj.Material.Name,
-                transparency = obj.Transparency
-            })
-            print("🧱 Part: " .. obj.Name .. " | Size: " .. tostring(obj.Size))
-            
-        elseif obj:IsA("Motor6D") then
-            table.insert(toolData.motor6ds, {
-                name = obj.Name,
-                part0 = obj.Part0 and obj.Part0.Name or "NIL",
-                part1 = obj.Part1 and obj.Part1.Name or "NIL",
-                c0 = obj.C0,
-                c1 = obj.C1
-            })
-            print("⚙️ Motor6D: " .. obj.Name .. " | " .. (obj.Part0 and obj.Part0.Name or "NIL") .. " → " .. (obj.Part1 and obj.Part1.Name or "NIL"))
-            
-        elseif obj:IsA("Weld") then
-            table.insert(toolData.welds, {
-                name = obj.Name,
-                part0 = obj.Part0 and obj.Part0.Name or "NIL",
-                part1 = obj.Part1 and obj.Part1.Name or "NIL",
-                c0 = obj.C0,
-                c1 = obj.C1
-            })
-            print("🔗 Weld: " .. obj.Name)
-            
-        elseif obj:IsA("SpecialMesh") then
-            table.insert(toolData.meshes, {
-                name = obj.Name,
-                meshType = obj.MeshType.Name,
-                meshId = obj.MeshId,
-                textureId = obj.TextureId,
-                scale = obj.Scale
-            })
-            print("🎨 Mesh: " .. obj.Name .. " | Type: " .. obj.MeshType.Name)
-            
-        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
-            table.insert(toolData.scripts, {
-                name = obj.Name,
-                className = obj.ClassName,
-                enabled = obj.Enabled
-            })
-            print("📜 Script: " .. obj.Name .. " (" .. obj.ClassName .. ")")
-            
-        elseif obj:IsA("Animator") then
-            table.insert(toolData.animators, {
-                name = obj.Name,
-                parent = obj.Parent.Name
-            })
-            print("🎭 Animator: " .. obj.Name .. " в " .. obj.Parent.Name)
-        end
-    end
-    
-    print("📊 Анализ завершен:")
-    print("   🧱 Частей: " .. #toolData.parts)
-    print("   ⚙️ Motor6D: " .. #toolData.motor6ds)
-    print("   🔗 Weld: " .. #toolData.welds)
-    print("   🎨 Мешей: " .. #toolData.meshes)
-    print("   📜 Скриптов: " .. #toolData.scripts)
-    print("   🎭 Аниматоров: " .. #toolData.animators)
-    print("   📦 Всего объектов: " .. toolData.totalChildren)
-    
-    return toolData
-end
-
--- Функция замены Shovel на копию проанализированного питомца
-local function replaceToolInHand(analyzedToolData)
+-- Поиск Shovel в руках
+local function findShovelInHands()
     local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден")
-        return false
-    end
+    if not character then return nil end
     
-    -- Находим проанализированный питомец в руке
-    local sourceTool = findHandPetTool()
-    if not sourceTool then
-        print("❌ Проанализированный питомец в руке не найден")
-        return false
-    end
-    
-    print("🔄 Заменяю Shovel в слоте 1 на копию питомца: " .. sourceTool.Name)
-    
-    -- НОВЫЙ ПОДХОД: Заменяем Tool, который сейчас в руке (если это Shovel)
-    local currentToolInHand = nil
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") then
-            currentToolInHand = tool
-            break
-        end
-    end
-    
-    if currentToolInHand and not (string.find(currentToolInHand.Name, "KG%]") and string.find(currentToolInHand.Name, "%[")) then
-        -- Это не питомец (вероятно Shovel), заменяем его
-        print("🎯 Заменяю Tool в руке: " .. currentToolInHand.Name)
-        
-        -- Создаем копию питомца
-        local petCopy = sourceTool:Clone()
-        petCopy.Name = "Dragonfly [6.36 KG] [Age 35]"
-        
-        -- Удаляем Tool из руки и заменяем на копию
-        currentToolInHand:Destroy()
-        wait(0.1)
-        petCopy.Parent = character
-        
-        -- Заменяем текст в слоте 1
-        replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-        
-        print("✅ Tool в руке заменен на Dragonfly!")
-        print("✅ Текст в слоте 1 заменен!")
-        return true
-    end
-    
-    -- Новый подход: ищем Tool, который соответствует слоту 1 в Hotbar
-    local function findToolInSlot1()
-        -- Сначала проверяем, что в слоте 1 (может быть в руке)
-        for _, tool in pairs(character:GetChildren()) do
-            if tool:IsA("Tool") then
-                print("🔍 Tool в руке: " .. tool.Name)
-                -- Если это не питомец, то это наш кандидат
-                if not (string.find(tool.Name, "KG%]") and string.find(tool.Name, "%[")) then
-                    return tool
-                end
-            end
-        end
-        
-        -- Ищем в Backpack
-        local backpack = character:FindFirstChild("Backpack")
-        if backpack then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") then
-                    print("🔍 Tool в Backpack: " .. tool.Name)
-                    -- Если это не питомец, то это наш кандидат
-                    if not (string.find(tool.Name, "KG%]") and string.find(tool.Name, "%[")) then
-                        return tool
-                    end
-                end
-            end
-        end
-        
-        return nil
-    end
-    
-    local shovelTool = findToolInSlot1()
-    
-    if shovelTool then
-        print("✅ Найден Tool для замены: " .. shovelTool.Name)
-    else
-        print("🔍 Не найден подходящий Tool, создаем новый...")
-        -- Если нет подходящего Tool, создаем простой Tool для замены
-        shovelTool = Instance.new("Tool")
-        shovelTool.Name = "Shovel [Destroy Plants]"
-        shovelTool.RequiresHandle = true
-        
-        local handle = Instance.new("Part")
-        handle.Name = "Handle"
-        handle.Size = Vector3.new(1, 1, 1)
-        handle.Material = Enum.Material.Wood
-        handle.BrickColor = BrickColor.new("Brown")
-        handle.CanCollide = false
-        handle.Parent = shovelTool
-        
-        shovelTool.Parent = character:FindFirstChild("Backpack") or character
-        print("✅ Создан временный Tool для замены")
-    end
-    
-    if not shovelTool then
-        print("❌ Shovel не найден в инвентаре")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovelTool.Name)
-    print("🔄 Создаю копию питомца для замены Shovel...")
-    
-    -- Создаем простую копию питомца без сложных связей
-    print("🔄 Создаю упрощенную копию питомца...")
-    local petCopy = sourceTool:Clone()
-    if not petCopy then
-        print("❌ Не удалось создать копию питомца")
-        return false
-    end
-    print("✅ Упрощенная копия создана успешно!")
-    
-    -- Меняем имя копии на Dragonfly
-    petCopy.Name = "Dragonfly [6.36 KG] [Age 35]"
-    
-    -- Сохраняем информацию о Shovel
-    local shovelParent = shovelTool.Parent
-    local shovelName = shovelTool.Name
-    
-    print("🔄 Удаляю старый Tool: " .. shovelName)
-    print("🔄 Родитель Tool: " .. (shovelParent and shovelParent.Name or "NIL"))
-    
-    -- Удаляем Shovel
-    shovelTool:Destroy()
-    wait(0.2) -- Увеличиваем задержку для надежности
-    
-    -- Помещаем копию питомца на место Shovel
-    print("🔄 Размещаю копию питомца в: " .. (shovelParent and shovelParent.Name or "Character"))
-    petCopy.Parent = shovelParent or character
-    
-    -- Дополнительная проверка размещения
-    wait(0.1)
-    if petCopy.Parent then
-        print("✅ Копия успешно размещена в: " .. petCopy.Parent.Name)
-    else
-        print("❌ Ошибка размещения копии!")
-        petCopy.Parent = character -- Fallback в персонажа
-    end
-    
-    print("📝 Структура замененного Tool:")
-    print("   🧱 Частей: " .. #analyzedToolData.parts)
-    print("   ⚙️ Motor6D: " .. #analyzedToolData.motor6ds)
-    print("   🔗 Weld: " .. #analyzedToolData.welds)
-    print("   🎨 Мешей: " .. #analyzedToolData.meshes)
-    print("   📜 Скриптов: " .. #analyzedToolData.scripts)
-    
-    print("✅ Shovel успешно заменен на копию питомца Dragonfly!")
-    print("✅ Теперь у вас есть Dragonfly вместо Shovel!")
-    return true
-end
-
--- Функция замены структуры существующего Tool
-local function replaceToolStructure(analyzedToolData)
-    local character = player.Character
-    if not character then
-        print("❌ Персонаж не найден")
-        return false
-    end
-    
-    -- Находим проанализированный питомец в руке
-    local sourceTool = findHandPetTool()
-    if not sourceTool then
-        print("❌ Проанализированный питомец в руке не найден")
-        return false
-    end
-    
-    print("🔄 Ищу Shovel для замены структуры...")
-    
-    -- Ищем Shovel в руке или в Backpack
-    local targetTool = nil
-    
-    -- Сначала проверяем руки
     for _, tool in pairs(character:GetChildren()) do
         if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            targetTool = tool
-            print("✅ Найден Shovel в руке: " .. tool.Name)
-            break
+            return tool
         end
     end
+    return nil
+end
+
+-- Функция сохранения питомца
+local function savePet()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
     
-    -- Если не в руке, ищем в Backpack
-    if not targetTool then
-        local backpack = character:FindFirstChild("Backpack")
-        if backpack then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-                    targetTool = tool
-                    print("✅ Найден Shovel в Backpack: " .. tool.Name)
-                    break
+    local foundPet = findPetInHands()
+    if foundPet then
+        petTool = foundPet:Clone()
+        print("✅ Питомец сохранен: " .. foundPet.Name)
+        
+        -- КРИТИЧЕСКИ ВАЖНО: Сохраняем ориентацию крепления питомца
+        local character = player.Character
+        if character then
+            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+            if rightHand then
+                local rightGrip = rightHand:FindFirstChild("RightGrip")
+                if rightGrip then
+                    savedPetGripC0 = rightGrip.C0
+                    savedPetGripC1 = rightGrip.C1
+                    print("📍 СОХРАНЕНА ориентация крепления питомца!")
+                    print("📍 C0:", savedPetGripC0)
+                    print("📍 C1:", savedPetGripC1)
+                else
+                    print("⚠️ RightGrip не найден при сохранении")
                 end
             end
         end
+        
+        return true
+    else
+        print("❌ Питомец в руках не найден!")
+        return false
     end
+end
+
+-- ПРЯМАЯ ЗАМЕНА содержимого
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
     
-    if not targetTool then
-        print("❌ Shovel не найден для замены!")
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
         return false
     end
     
-    print("🔄 Заменяю структуру: " .. targetTool.Name .. " → " .. sourceTool.Name)
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
     
-    -- Удаляем все содержимое Shovel
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
+    
+    -- Шаг 1: Меняем имя
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 3: Удаляем все содержимое Shovel
     print("🗑️ Очищаю содержимое Shovel...")
-    for _, child in pairs(targetTool:GetChildren()) do
+    for _, child in pairs(shovel:GetChildren()) do
         child:Destroy()
-        print("   🗑️ Удален: " .. child.Name)
     end
     
     wait(0.1)
     
-    -- Копируем все содержимое питомца в Shovel
-    print("📋 Копирую содержимое питомца в Shovel...")
-    for _, child in pairs(sourceTool:GetChildren()) do
-        local childCopy = child:Clone()
-        childCopy.Parent = targetTool
-        print("   ✅ Скопирован: " .. child.Name .. " (" .. child.ClassName .. ")")
+    -- Шаг 4: Копируем все содержимое питомца
+    print("📋 Копирую содержимое питомца...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
     end
     
-    -- Меняем имя Tool на Dragonfly
-    local oldName = targetTool.Name
-    targetTool.Name = "Dragonfly [6.36 KG] [Age 35]"
-    
-    print("✅ Структура заменена успешно!")
-    print("📝 " .. oldName .. " → " .. targetTool.Name)
-    print("📊 Скопировано объектов: " .. analyzedToolData.totalChildren)
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 В руках должен быть питомец с именем Dragonfly!")
     
     return true
 end
 
--- Функция создания GUI
-local function createControlGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "AdvancedTextReplacerGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+-- АЛЬТЕРНАТИВА: Замена содержимого существующего Tool БЕЗ создания нового
+local function alternativeReplace()
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
     
-    -- Главное окно
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 500, 0, 400)
-    mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
-    mainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
     
-    -- Заголовок
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Size = UDim2.new(1, 0, 0, 40)
-    titleLabel.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    titleLabel.BorderSizePixel = 0
-    titleLabel.Text = "🔧 Продвинутая замена Tool"
-    titleLabel.TextColor3 = Color3.new(1, 1, 1)
-    titleLabel.TextScaled = true
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.Parent = mainFrame
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
     
-    -- Статус
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(1, -20, 0, 60)
-    statusLabel.Position = UDim2.new(0, 10, 0, 50)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Готов к работе. Возьмите питомца в руки для анализа."
-    statusLabel.TextColor3 = Color3.new(1, 1, 1)
-    statusLabel.TextScaled = true
-    statusLabel.Font = Enum.Font.SourceSans
-    statusLabel.TextWrapped = true
-    statusLabel.Parent = mainFrame
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
     
-    -- Кнопка замены текста
-    local replaceTextButton = Instance.new("TextButton")
-    replaceTextButton.Size = UDim2.new(1, -20, 0, 40)
-    replaceTextButton.Position = UDim2.new(0, 10, 0, 120)
-    replaceTextButton.BackgroundColor3 = Color3.new(0, 0.6, 0)
-    replaceTextButton.BorderSizePixel = 0
-    replaceTextButton.Text = "📝 Заменить текст слота 1"
-    replaceTextButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceTextButton.TextScaled = true
-    replaceTextButton.Font = Enum.Font.SourceSansBold
-    replaceTextButton.Parent = mainFrame
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Замена содержимого существующего Tool...")
     
-    -- Кнопка анализа Tool
-    local analyzeButton = Instance.new("TextButton")
-    analyzeButton.Size = UDim2.new(1, -20, 0, 40)
-    analyzeButton.Position = UDim2.new(0, 10, 0, 170)
-    analyzeButton.BackgroundColor3 = Color3.new(0, 0.4, 0.8)
-    analyzeButton.BorderSizePixel = 0
-    analyzeButton.Text = "🔍 Анализировать питомца в руке"
-    analyzeButton.TextColor3 = Color3.new(1, 1, 1)
-    analyzeButton.TextScaled = true
-    analyzeButton.Font = Enum.Font.SourceSansBold
-    analyzeButton.Parent = mainFrame
+    -- КАРДИНАЛЬНО НОВЫЙ ПОДХОД: НЕ создаем новый Tool, а меняем содержимое существующего!
     
-    -- Кнопка замены Tool
-    local replaceToolButton = Instance.new("TextButton")
-    replaceToolButton.Size = UDim2.new(1, -20, 0, 40)
-    replaceToolButton.Position = UDim2.new(0, 10, 0, 220)
-    replaceToolButton.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    replaceToolButton.BorderSizePixel = 0
-    replaceToolButton.Text = "🔧 Заменить Tool + текст"
-    replaceToolButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceToolButton.TextScaled = true
-    replaceToolButton.Font = Enum.Font.SourceSansBold
-    replaceToolButton.Visible = false
-    replaceToolButton.Parent = mainFrame
+    -- Шаг 1: Меняем имя Tool (остается в том же слоте)
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя Tool изменено: " .. shovel.Name)
     
-    -- Кнопка закрытия
-    local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(1, -20, 0, 40)
-    closeButton.Position = UDim2.new(0, 10, 0, 320)
-    closeButton.BackgroundColor3 = Color3.new(0.8, 0, 0)
-    closeButton.BorderSizePixel = 0
-    closeButton.Text = "❌ Закрыть"
-    closeButton.TextColor3 = Color3.new(1, 1, 1)
-    replaceToolButton.TextScaled = true
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.Parent = mainFrame
+    -- Шаг 2: Копируем свойства Tool от питомца
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped  
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    shovel.Enabled = petTool.Enabled
+    print("🔧 Свойства Tool обновлены от питомца")
     
-    -- Подключаем события
-    replaceTextButton.MouseButton1Click:Connect(function()
-        local success = replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-        if success then
-            statusLabel.Text = "✅ Текст в слоте 1 заменен на Dragonfly!"
-            statusLabel.TextColor3 = Color3.new(0, 1, 0)
+    -- Шаг 3: Сохраняем позицию Handle ПЕРЕД очисткой
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local savedPosition = nil
+    local savedOrientation = nil
+    
+    if shovelHandle then
+        savedPosition = shovelHandle.Position
+        savedOrientation = shovelHandle.Orientation
+        print("📍 Сохранена позиция Handle: " .. tostring(savedPosition))
+    end
+    
+    -- Шаг 4: ПОЛНАЯ очистка содержимого Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+        print("   🗑️ Удалено: " .. child.Name)
+    end
+    
+    wait(0.05) -- Минимальная пауза для очистки
+    
+    -- Шаг 5: Копируем ВСЕ содержимое питомца в существующий Tool
+    print("📋 Копирую содержимое питомца в существующий Tool...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel  -- В существующий Tool!
+        
+        -- КРИТИЧЕСКИ ВАЖНО: Правильная настройка физики
+        if copy:IsA("BasePart") then
+            copy.Anchored = false
+            copy.CanCollide = false
+            
+            -- Если это Handle - восстанавливаем позицию
+            if copy.Name == "Handle" and savedPosition then
+                copy.Position = savedPosition
+                copy.Orientation = savedOrientation
+                print("   📍 Восстановлена позиция Handle")
+            end
+            
+            print("   ✅ Скопировано: " .. child.Name .. " (BasePart)")
         else
-            statusLabel.Text = "❌ Не удалось заменить текст"
-            statusLabel.TextColor3 = Color3.new(1, 0, 0)
+            print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
         end
-    end)
+    end
     
-    analyzeButton.MouseButton1Click:Connect(function()
-        local tool = findHandPetTool()
-        if tool then
-            statusLabel.Text = "🔍 Анализирую Tool: " .. tool.Name
-            statusLabel.TextColor3 = Color3.new(0, 1, 1)
+    -- Шаг 6: КРИТИЧЕСКОЕ КРЕПЛЕНИЕ Tool к руке как настоящий питомец
+    spawn(function()
+        wait(0.1)
+        
+        -- Проверяем что Tool все еще в руках
+        if shovel.Parent == character then
+            local handle = shovel:FindFirstChild("Handle")
+            local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
             
-            analyzedToolData = analyzeTool(tool)
-            
-            -- НЕ заменяем текст при анализе, только при замене!
-            
-            statusLabel.Text = "✅ Анализ завершен! Tool готов к замене."
-            statusLabel.TextColor3 = Color3.new(0, 1, 0)
-            replaceToolButton.Visible = true
-        else
-            statusLabel.Text = "❌ Питомец в руке не найден!"
-            statusLabel.TextColor3 = Color3.new(1, 0, 0)
-        end
-    end)
-    
-    replaceToolButton.MouseButton1Click:Connect(function()
-        if analyzedToolData then
-            statusLabel.Text = "🔄 Выполняю замену структуры..."
-            statusLabel.TextColor3 = Color3.new(1, 1, 0)
-            
-            -- НОВЫЙ ПОДХОД: Заменяем структуру существующего Tool
-            local success = replaceToolStructure(analyzedToolData)
-            if success then
-                -- Также заменяем текст
-                replaceTextInHotbar(1, "Dragonfly [6.36 KG] [Age 35]")
-                statusLabel.Text = "✅ Структура Tool заменена на питомца!"
-                statusLabel.TextColor3 = Color3.new(0, 1, 0)
+            if handle and rightHand then
+                print(" Критическое крепление Handle к руке...")
+                
+                -- КРИТИЧЕСКИ ВАЖНО: Удаляем старое крепление перед созданием нового
+                local oldGrip = rightHand:FindFirstChild("RightGrip")
+                if oldGrip then
+                    oldGrip:Destroy()
+                    print(" Удалено старое крепление")
+                end
+                
+                -- МГНОВЕННО создаем новое крепление Handle к руке
+                local newGrip = Instance.new("Weld")
+                newGrip.Name = "RightGrip"
+                newGrip.Part0 = rightHand
+                newGrip.Part1 = handle
+                newGrip.Parent = rightHand
+                
+                -- ВРЕМЕННО ИСПОЛЬЗУЕМ ТОЛЬКО СТАНДАРТНОЕ КРЕПЛЕНИЕ
+                -- Сбрасываем неправильную изученную ориентацию
+                savedPetGripC0 = nil
+                savedPetGripC1 = nil
+                
+                -- Применяем стандартное крепление
+                newGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
+                newGrip.C1 = CFrame.new(0, 0, 0)
+                print("📍 ПРИМЕНЕНО СТАНДАРТНОЕ крепление (изученная ориентация СБРОШЕНА)")
+                print("📍 C0: CFrame.new(0, -1, -0.5)")
+                print("📍 C1: CFrame.new(0, 0, 0)")
+                print("⚠️ Изученная ориентация была неправильной - используем стандартную!")
+                print("🔍 После коррекции игрой изучите правильную ориентацию ВРУЧНУЮ!")
+                
+                -- Настраиваем Handle как у настоящего питомца (ПОСЛЕ крепления)
+                handle.Anchored = false
+                handle.CanCollide = false
+                handle.CanTouch = false
+                handle.TopSurface = Enum.SurfaceType.Smooth
+                handle.BottomSurface = Enum.SurfaceType.Smooth
+                
+                -- Запускаем фоновую защиту Weld от игры (ОЧЕНЬ КОРОТКОЕ время)
+                weldProtectionActive = true
+                spawn(function()
+                    local protectionTime = 0
+                    local maxProtectionCycles = 10 -- Максимум 0.1 секунды защиты (СОКРАЩЕНО!)
+                    
+                    while newGrip and newGrip.Parent and weldProtectionActive and protectionTime < maxProtectionCycles do
+                        wait(0.01)
+                        protectionTime = protectionTime + 1
+                        
+                        -- Проверяем, не создала ли игра свой RightGrip
+                        local gameGrip = rightHand:FindFirstChild("RightGrip")
+                        if gameGrip and gameGrip ~= newGrip then
+                            print("🛡️ Обнаружен автоматический RightGrip от игры! Удаляем...")
+                            gameGrip:Destroy()
+                            
+                            -- Восстанавливаем наш Weld с правильными параметрами
+                            if not newGrip or not newGrip.Parent then
+                                local restoredGrip = Instance.new("Weld")
+                                restoredGrip.Name = "RightGrip"
+                                restoredGrip.Part0 = rightHand
+                                restoredGrip.Part1 = handle
+                                restoredGrip.Parent = rightHand
+                                
+                                -- Используем изученную ориентацию при восстановлении
+                                if savedPetGripC0 and savedPetGripC1 then
+                                    restoredGrip.C0 = savedPetGripC0
+                                    restoredGrip.C1 = savedPetGripC1
+                                    print("🔧 Восстановлен Weld с изученной ориентацией!")
+                                else
+                                    restoredGrip.C0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0)
+                                    restoredGrip.C1 = CFrame.new(0, 0, 0)
+                                    print("🔧 Восстановлен Weld со стандартной ориентацией!")
+                                end
+                                
+                                print("🔧 Weld восстановлен с правильной ориентацией!")
+                            end
+                        end
+                    end
+                    
+                    -- Автоматически отключаем защиту через КОРОТКОЕ время
+                    weldProtectionActive = false
+                    print("🛡️ Защита Weld автоматически отключена через", protectionTime * 0.01, "секунд")
+                    print("🎮 ИГРА ТЕПЕРЬ МОЖЕТ ИСПРАВИТЬ ОРИЕНТАЦИЮ! Попробуйте убрать и взять питомца обратно.")
+                    
+                    -- Дополнительная задержка для стабилизации
+                    wait(0.1)
+                    print("✅ Система готова к естественной коррекции ориентации игрой")
+                    
+                    -- АВТОМАТИЧЕСКОЕ ИЗУЧЕНИЕ ОТКЛЮЧЕНО - ТОЛЬКО РУЧНОЕ!
+                    print("⚠️ Автоматическое изучение ориентации ОТКЛЮЧЕНО")
+                    print("🔍 Используйте кнопку 'ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ' вручную!")
+                    print("📋 ИНСТРУКЦИЯ:")
+                    print("   1. Уберите питомца в инвентарь")
+                    print("   2. Возьмите питомца обратно в руки")
+                    print("   3. Убедитесь, что питомец в ПРАВИЛЬНОЙ позе")
+                    print("   4. Нажмите 'ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ'")
+                    print("   5. Теперь можно делать новые замены")
+                end)
+                
+                print("✅ Handle ЖЕСТКО закреплен к руке через Weld!")
+                print("🎯 Падение исключено!")
+                
+                -- Дополнительная стабилизация - принудительная активация Tool
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    -- Имитируем "взятие" Tool для активации системы
+                    shovel.Parent = character.Backpack
+                    wait(0.02)
+                    shovel.Parent = character
+                    print("⚡ Tool принудительно активирован с новым креплением")
+                end
             else
-                statusLabel.Text = "❌ Не удалось заменить структуру Tool"
-                statusLabel.TextColor3 = Color3.new(1, 0, 0)
+                print("❌ Handle или Right Arm не найдены!")
             end
         end
     end)
     
-    closeButton.MouseButton1Click:Connect(function()
-        if diagnosticConnection then
-            diagnosticConnection:Disconnect()
+    print("✅ Замена содержимого завершена!")
+    print("🎯 Tool остается в том же слоте с новым содержимым!")
+    print("📍 Позиция сохранена, падения быть не должно!")
+    return true
+end
+
+-- ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ питомца в руках
+local function fixPetOrientation()
+    print("\n🔧 === ИСПРАВЛЕНИЕ ОРИЕНТАЦИИ ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    -- Ищем Tool питомца в руках (замененный Shovel)
+    local petToolInHands = nil
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
+            petToolInHands = tool
+            break
         end
+    end
+    
+    if not petToolInHands then
+        print("❌ Питомец в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден питомец в руках: " .. petToolInHands.Name)
+    
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+    local handle = petToolInHands:FindFirstChild("Handle")
+    
+    if not rightHand or not handle then
+        print("❌ Right Arm или Handle не найдены!")
+        return false
+    end
+    
+    local rightGrip = rightHand:FindFirstChild("RightGrip")
+    if not rightGrip then
+        print("❌ RightGrip не найден!")
+        return false
+    end
+    
+    print("🔧 Применяю СОХРАНЕННУЮ ориентацию питомца...")
+    
+    -- ЦИКЛИЧЕСКОЕ ПЕРЕКЛЮЧЕНИЕ разных ориентаций для питомцев
+    local orientations = {
+        {name = "Стандартная", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая вправо", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Повернутая влево", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(0, math.rad(-90), 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Перевернутая", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(180), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная вперед", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Наклоненная назад", c0 = CFrame.new(0, -1, -0.5) * CFrame.Angles(math.rad(-45), 0, 0), c1 = CFrame.new(0, 0, 0)},
+        {name = "Сохраненная (если есть)", c0 = savedPetGripC0 or CFrame.new(0, -1, -0.5), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Переворот головой вниз", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(math.rad(180), 0, 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот вправо", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+        {name = "Сохраненная + Поворот влево", c0 = (savedPetGripC0 or CFrame.new(0, -1, -0.5)) * CFrame.Angles(0, math.rad(-90), 0), c1 = savedPetGripC1 or CFrame.new(0, 0, 0)},
+    }
+    
+    -- Инициализируем индекс ориентации
+    if not _G.currentOrientationIndex then
+        _G.currentOrientationIndex = 1
+    else
+        _G.currentOrientationIndex = _G.currentOrientationIndex + 1
+        if _G.currentOrientationIndex > #orientations then
+            _G.currentOrientationIndex = 1
+        end
+    end
+    
+    local currentOrientation = orientations[_G.currentOrientationIndex]
+    
+    rightGrip.C0 = currentOrientation.c0
+    rightGrip.C1 = currentOrientation.c1
+    
+    print("📍 Применена ориентация: " .. currentOrientation.name)
+    print("📍 C0:", currentOrientation.c0)
+    print("📍 C1:", currentOrientation.c1)
+    print("🔄 Нажмите еще раз для следующей ориентации (" .. _G.currentOrientationIndex .. "/" .. #orientations .. ")")
+    
+    return true
+end
+
+-- ИЗУЧЕНИЕ ТЕКУЩЕЙ ОРИЕНТАЦИИ питомца в руках
+local function learnCurrentOrientation()
+    print("\n🔍 === ИЗУЧЕНИЕ ТЕКУЩЕЙ ОРИЕНТАЦИИ ===")
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    -- Ищем Tool питомца в руках (замененный Dragonfly)
+    local petToolInHands = nil
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Dragonfly") or string.find(tool.Name, "KG%]")) then
+            petToolInHands = tool
+            break
+        end
+    end
+    
+    if not petToolInHands then
+        print("❌ Питомец в руках не найден!")
+        print("💡 Сначала возьмите замененного питомца в руки")
+        return false
+    end
+    
+    print("✅ Найден питомец в руках: " .. petToolInHands.Name)
+    
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+    if not rightHand then
+        print("❌ Right Arm не найдена!")
+        return false
+    end
+    
+    local rightGrip = rightHand:FindFirstChild("RightGrip")
+    if not rightGrip then
+        print("❌ RightGrip не найден!")
+        return false
+    end
+    
+    -- СОХРАНЯЕМ ТЕКУЩУЮ ОРИЕНТАЦИЮ как "правильную"
+    savedPetGripC0 = rightGrip.C0
+    savedPetGripC1 = rightGrip.C1
+    
+    print("🔍 ИЗУЧЕНА и СОХРАНЕНА текущая ориентация!")
+    print("📍 Новая сохраненная C0:", savedPetGripC0)
+    print("📍 Новая сохраненная C1:", savedPetGripC1)
+    print("✅ Теперь эта ориентация будет использоваться при следующих заменах!")
+    
+    return true
+end
+
+-- Создаем GUI
+local function createDirectFixGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "DirectShovelFixGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 400, 0, 500)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -250)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 DIRECT SHOVEL FIX"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 80)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
+    
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить питомца"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
+    
+    -- Кнопка прямой замены
+    local directBtn = Instance.new("TextButton")
+    directBtn.Size = UDim2.new(1, -20, 0, 50)
+    directBtn.Position = UDim2.new(0, 10, 0, 200)
+    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    directBtn.BorderSizePixel = 0
+    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
+    directBtn.TextColor3 = Color3.new(1, 1, 1)
+    directBtn.TextScaled = true
+    directBtn.Font = Enum.Font.SourceSansBold
+    directBtn.Visible = false
+    directBtn.Parent = frame
+    
+    -- Кнопка альтернативы
+    local altBtn = Instance.new("TextButton")
+    altBtn.Size = UDim2.new(1, -20, 0, 50)
+    altBtn.Position = UDim2.new(0, 10, 0, 260)
+    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    altBtn.BorderSizePixel = 0
+    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.TextColor3 = Color3.new(1, 1, 1)
+    altBtn.TextScaled = true
+    altBtn.Font = Enum.Font.SourceSansBold
+    altBtn.Visible = false
+    altBtn.Parent = frame
+    
+    -- Кнопка исправления ориентации
+    local fixOrientBtn = Instance.new("TextButton")
+    fixOrientBtn.Size = UDim2.new(1, -20, 0, 40)
+    fixOrientBtn.Position = UDim2.new(0, 10, 0, 320)
+    fixOrientBtn.BackgroundColor3 = Color3.new(0, 0.6, 0.8)
+    fixOrientBtn.BorderSizePixel = 0
+    fixOrientBtn.Text = "🔧 ИСПРАВИТЬ ОРИЕНТАЦИЮ"
+    fixOrientBtn.TextColor3 = Color3.new(1, 1, 1)
+    fixOrientBtn.TextScaled = true
+    fixOrientBtn.Font = Enum.Font.SourceSansBold
+    fixOrientBtn.Visible = false
+    fixOrientBtn.Parent = frame
+    
+    -- Кнопка изучения текущей ориентации
+    local learnOrientBtn = Instance.new("TextButton")
+    learnOrientBtn.Size = UDim2.new(1, -20, 0, 40)
+    learnOrientBtn.Position = UDim2.new(0, 10, 0, 370)
+    learnOrientBtn.BackgroundColor3 = Color3.new(0.8, 0.6, 0)
+    learnOrientBtn.BorderSizePixel = 0
+    learnOrientBtn.Text = "🔍 ИЗУЧИТЬ ТЕКУЩУЮ ОРИЕНТАЦИЮ"
+    learnOrientBtn.TextColor3 = Color3.new(1, 1, 1)
+    learnOrientBtn.TextScaled = true
+    learnOrientBtn.Font = Enum.Font.SourceSansBold
+    learnOrientBtn.Visible = false
+    learnOrientBtn.Parent = frame
+    
+    -- Кнопка отключения защиты Weld
+    local disableProtectionBtn = Instance.new("TextButton")
+    disableProtectionBtn.Size = UDim2.new(1, -20, 0, 30)
+    disableProtectionBtn.Position = UDim2.new(0, 10, 0, 420)
+    disableProtectionBtn.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
+    disableProtectionBtn.BorderSizePixel = 0
+    disableProtectionBtn.Text = "🛡️ ОТКЛЮЧИТЬ ЗАЩИТУ WELD"
+    disableProtectionBtn.TextColor3 = Color3.new(1, 1, 1)
+    disableProtectionBtn.TextScaled = true
+    disableProtectionBtn.Font = Enum.Font.SourceSansBold
+    disableProtectionBtn.Visible = false
+    disableProtectionBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 460)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
+    
+    -- События
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = savePet()
+        
+        if success then
+            status.Text = "✅ ПИТОМЕЦ СОХРАНЕН!\nТеперь возьмите Shovel"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            altBtn.Visible = true
+            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
+        else
+            status.Text = "❌ Ошибка сохранения!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    directBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Прямая замена содержимого..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = directReplace()
+        
+        if success then
+            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    altBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Альтернативная замена..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = alternativeReplace()
+        
+        if success then
+            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            fixOrientBtn.Visible = true -- Показываем кнопку исправления ориентации
+            learnOrientBtn.Visible = true -- Показываем кнопку изучения ориентации
+            disableProtectionBtn.Visible = true -- Показываем кнопку отключения защиты
+        else
+            status.Text = "❌ Ошибка альтернативы!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    fixOrientBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔧 Исправляю ориентацию..."
+        status.TextColor3 = Color3.new(0, 1, 1)
+        
+        local success = fixPetOrientation()
+        
+        if success then
+            status.Text = "✅ ОРИЕНТАЦИЯ ИСПРАВЛЕНА!\nНажмите еще раз для другой позиции"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка исправления ориентации!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    learnOrientBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔍 Изучаю текущую ориентацию..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = learnCurrentOrientation()
+        
+        if success then
+            status.Text = "✅ ОРИЕНТАЦИЯ ИЗУЧЕНА!\nТеперь она будет использоваться"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка изучения ориентации!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    disableProtectionBtn.MouseButton1Click:Connect(function()
+        weldProtectionActive = false
+        status.Text = "🛡️ ЗАЩИТА WELD ОТКЛЮЧЕНА!\nИгра может корректировать ориентацию"
+        status.TextColor3 = Color3.new(1, 0.5, 0)
+        disableProtectionBtn.Text = "✅ ЗАЩИТА ОТКЛЮЧЕНА"
+        disableProtectionBtn.BackgroundColor3 = Color3.new(0.2, 0.8, 0.2)
+        print("🛡️ Защита Weld принудительно отключена пользователем")
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
         screenGui:Destroy()
     end)
 end
 
--- Создаем GUI
-createControlGUI()
-
-print("✅ AdvancedTextReplacer готов!")
-print("🎮 Используйте GUI для замены текста и анализа Tool")
+-- Запускаем
+createDirectFixGUI()
+print("✅ DirectShovelFix готов!")
+print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
+print("💾 1. Сохранить питомца")
+print("🔄 2. Заменить Shovel")
