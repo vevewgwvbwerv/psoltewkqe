@@ -1,16 +1,11 @@
--- DirectShovelFix_v3.lua
--- УЛУЧШЕННАЯ ВЕРСИЯ: Полное копирование анимаций и позиций
+-- PetAnimationResearch.lua
+-- ГЛУБОКОЕ ИССЛЕДОВАНИЕ: Как работают анимации у питомца
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
-print("=== DIRECT SHOVEL FIX V3 ===")
-
--- Глобальные переменные
-local petTool = nil
-local savedPetC0 = nil
-local savedPetC1 = nil
-local savedAnimations = {} -- Все CFrame анимации
+print("=== 🔬 PET ANIMATION RESEARCH ===")
 
 -- Поиск питомца в руках
 local function findPetInHands()
@@ -25,217 +20,217 @@ local function findPetInHands()
     return nil
 end
 
--- Поиск Shovel в руках
-local function findShovelInHands()
-    local character = player.Character
-    if not character then return nil end
+-- ПОЛНЫЙ анализ структуры питомца
+local function analyzeStructure(obj, depth, path)
+    local indent = string.rep("  ", depth)
+    local fullPath = path == "" and obj.Name or (path .. "." .. obj.Name)
     
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            return tool
+    print(indent .. "📁 " .. obj.Name .. " (" .. obj.ClassName .. ")")
+    
+    -- Детальный анализ для важных компонентов
+    if obj:IsA("Animator") then
+        print(indent .. "  🎭 ANIMATOR НАЙДЕН!")
+        print(indent .. "     Parent: " .. tostring(obj.Parent))
+        
+        -- Ищем анимационные треки
+        local tracks = obj:GetPlayingAnimationTracks()
+        print(indent .. "     Активных треков: " .. #tracks)
+        for i, track in pairs(tracks) do
+            print(indent .. "       Track " .. i .. ": " .. tostring(track.Animation))
+            print(indent .. "         IsPlaying: " .. tostring(track.IsPlaying))
+            print(indent .. "         Length: " .. tostring(track.Length))
+            print(indent .. "         Speed: " .. tostring(track.Speed))
         end
     end
-    return nil
-end
-
--- ГЛУБОКОЕ сканирование всех частей питомца
-local function deepScanAllParts(obj, fullPath)
-    -- Если это BasePart - сохраняем его полное состояние
+    
+    if obj:IsA("Motor6D") then
+        print(indent .. "  ⚙️ MOTOR6D: " .. obj.Name)
+        print(indent .. "     Part0: " .. tostring(obj.Part0))
+        print(indent .. "     Part1: " .. tostring(obj.Part1))
+        print(indent .. "     C0: " .. tostring(obj.C0))
+        print(indent .. "     C1: " .. tostring(obj.C1))
+        print(indent .. "     CurrentAngle: " .. tostring(obj.CurrentAngle))
+        print(indent .. "     DesiredAngle: " .. tostring(obj.DesiredAngle))
+    end
+    
     if obj:IsA("BasePart") then
-        savedAnimations[fullPath] = {
-            CFrame = obj.CFrame,
-            Position = obj.Position,
-            Rotation = obj.Rotation,
-            Size = obj.Size,
-            Material = obj.Material,
-            Color = obj.Color,
-            Transparency = obj.Transparency,
-            CanCollide = obj.CanCollide,
-            Anchored = obj.Anchored,
-            Name = obj.Name,
-            ClassName = obj.ClassName
-        }
-        print("🎭 " .. fullPath .. " (" .. obj.ClassName .. ") сохранен")
+        print(indent .. "  🧱 PART: " .. obj.Name)
+        print(indent .. "     CFrame: " .. tostring(obj.CFrame))
+        print(indent .. "     Anchored: " .. tostring(obj.Anchored))
+        print(indent .. "     CanCollide: " .. tostring(obj.CanCollide))
+        print(indent .. "     AssemblyRootPart: " .. tostring(obj.AssemblyRootPart))
     end
     
-    -- Рекурсивно сканируем ВСЕ дочерние объекты
+    if obj:IsA("LocalScript") or obj:IsA("Script") then
+        print(indent .. "  📜 SCRIPT: " .. obj.Name)
+        print(indent .. "     Enabled: " .. tostring(obj.Enabled))
+        print(indent .. "     Disabled: " .. tostring(obj.Disabled))
+        print(indent .. "     RunContext: " .. tostring(obj.RunContext or "N/A"))
+    end
+    
+    if obj:IsA("Animation") then
+        print(indent .. "  🎬 ANIMATION: " .. obj.Name)
+        print(indent .. "     AnimationId: " .. tostring(obj.AnimationId))
+    end
+    
+    if obj:IsA("Weld") then
+        print(indent .. "  🔗 WELD: " .. obj.Name)
+        print(indent .. "     Part0: " .. tostring(obj.Part0))
+        print(indent .. "     Part1: " .. tostring(obj.Part1))
+        print(indent .. "     C0: " .. tostring(obj.C0))
+        print(indent .. "     C1: " .. tostring(obj.C1))
+    end
+    
+    -- Рекурсивно анализируем детей
     for _, child in pairs(obj:GetChildren()) do
-        local childPath = fullPath == "" and child.Name or (fullPath .. "." .. child.Name)
-        deepScanAllParts(child, childPath)
+        analyzeStructure(child, depth + 1, fullPath)
     end
 end
 
--- ВОССТАНОВЛЕНИЕ всех анимаций на копии
-local function restoreAllAnimations(obj, fullPath)
-    -- Если это BasePart и у нас есть сохраненные данные - восстанавливаем
-    if obj:IsA("BasePart") and savedAnimations[fullPath] then
-        local saved = savedAnimations[fullPath]
-        
-        -- Восстанавливаем ВСЕ свойства
-        obj.CFrame = saved.CFrame
-        obj.Position = saved.Position
-        obj.Rotation = saved.Rotation
-        obj.Size = saved.Size
-        obj.Material = saved.Material
-        obj.Color = saved.Color
-        obj.Transparency = saved.Transparency
-        obj.CanCollide = saved.CanCollide
-        obj.Anchored = saved.Anchored
-        
-        print("🎯 " .. fullPath .. " восстановлен с анимацией")
-    end
+-- Мониторинг изменений в реальном времени
+local function startRealTimeMonitoring(pet)
+    print("\n🔄 === МОНИТОРИНГ В РЕАЛЬНОМ ВРЕМЕНИ ===")
     
-    -- Рекурсивно восстанавливаем для всех дочерних объектов
-    for _, child in pairs(obj:GetChildren()) do
-        local childPath = fullPath == "" and child.Name or (fullPath .. "." .. child.Name)
-        restoreAllAnimations(child, childPath)
+    local connection
+    local frameCount = 0
+    local maxFrames = 300 -- 5 секунд при 60 FPS
+    
+    connection = RunService.Heartbeat:Connect(function()
+        frameCount = frameCount + 1
+        
+        if frameCount % 30 == 0 then -- Каждые 0.5 секунды
+            print("\n⏱️ Кадр " .. frameCount .. " (+" .. (frameCount/60) .. "s)")
+            
+            -- Мониторим Animator
+            local animator = pet:FindFirstChildOfClass("Animator")
+            if animator then
+                local tracks = animator:GetPlayingAnimationTracks()
+                print("🎭 Активных треков: " .. #tracks)
+                for i, track in pairs(tracks) do
+                    print("   Track " .. i .. ": Playing=" .. tostring(track.IsPlaying) .. ", Time=" .. tostring(track.TimePosition))
+                end
+            else
+                print("❌ Animator не найден!")
+            end
+            
+            -- Мониторим Motor6D
+            for _, motor in pairs(pet:GetDescendants()) do
+                if motor:IsA("Motor6D") then
+                    print("⚙️ " .. motor.Name .. ": C0=" .. tostring(motor.C0))
+                end
+            end
+            
+            -- Мониторим BasePart позиции
+            local handle = pet:FindFirstChild("Handle")
+            if handle then
+                print("🧱 Handle CFrame: " .. tostring(handle.CFrame))
+            end
+        end
+        
+        if frameCount >= maxFrames then
+            connection:Disconnect()
+            print("\n✅ Мониторинг завершен!")
+        end
+    end)
+    
+    print("🔄 Мониторинг запущен на 5 секунд...")
+end
+
+-- Анализ анимационных скриптов
+local function analyzeAnimationScripts(pet)
+    print("\n📜 === АНАЛИЗ АНИМАЦИОННЫХ СКРИПТОВ ===")
+    
+    for _, obj in pairs(pet:GetDescendants()) do
+        if obj:IsA("LocalScript") or obj:IsA("Script") then
+            print("📜 Скрипт: " .. obj.Name)
+            print("   Parent: " .. tostring(obj.Parent))
+            print("   Enabled: " .. tostring(obj.Enabled))
+            print("   Source доступен: " .. tostring(obj.Source ~= nil))
+            
+            -- Пытаемся найти ключевые слова в скрипте
+            if obj.Source then
+                local source = obj.Source
+                if string.find(source, "Animator") then
+                    print("   🎭 Содержит Animator код!")
+                end
+                if string.find(source, "Motor6D") then
+                    print("   ⚙️ Содержит Motor6D код!")
+                end
+                if string.find(source, "TweenService") then
+                    print("   🔄 Содержит TweenService код!")
+                end
+                if string.find(source, "RunService") then
+                    print("   ⏱️ Содержит RunService код!")
+                end
+            end
+        end
     end
 end
 
--- СОХРАНИТЬ питомца И его анимации
-local function savePet()
-    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА И АНИМАЦИЙ ===")
+-- Основная функция исследования
+local function researchPetAnimations()
+    print("\n🔬 === НАЧИНАЮ ИССЛЕДОВАНИЕ ===")
     
     local pet = findPetInHands()
     if not pet then
         print("❌ Питомец в руках не найден!")
+        print("📋 Возьмите питомца в руки и запустите исследование")
         return false
     end
     
-    print("✅ Найден питомец: " .. pet.Name)
+    print("✅ Исследую питомца: " .. pet.Name)
+    print("🔍 Анализирую структуру...")
     
-    -- Сохраняем ссылку на питомца
-    petTool = pet
+    -- 1. Полный анализ структуры
+    print("\n📊 === СТРУКТУРА ПИТОМЦА ===")
+    analyzeStructure(pet, 0, "")
     
-    -- Сохраняем позицию в руке
-    local character = player.Character
-    if character then
-        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-        local petHandle = pet:FindFirstChild("Handle")
-        
-        if rightHand and petHandle then
-            local petGrip = rightHand:FindFirstChild("RightGrip")
-            if petGrip then
-                savedPetC0 = petGrip.C0
-                savedPetC1 = petGrip.C1
-                print("📍 Позиция в руке сохранена!")
-            end
-        end
-    end
+    -- 2. Анализ скриптов
+    analyzeAnimationScripts(pet)
     
-    -- ГЛАВНОЕ: Сканируем ВСЕ анимации питомца
-    print("🎬 === ГЛУБОКОЕ СКАНИРОВАНИЕ АНИМАЦИЙ ===")
-    savedAnimations = {}
-    local partCount = 0
+    -- 3. Поиск ключевых компонентов
+    print("\n🔍 === ПОИСК КЛЮЧЕВЫХ КОМПОНЕНТОВ ===")
     
-    local function countAndScan(obj, path)
-        if obj:IsA("BasePart") then
-            partCount = partCount + 1
-        end
-        deepScanAllParts(obj, path)
-    end
-    
-    countAndScan(pet, "")
-    
-    print("✅ СКАНИРОВАНИЕ ЗАВЕРШЕНО!")
-    print("📊 Найдено частей: " .. partCount)
-    print("💾 Анимаций сохранено: " .. tostring(#savedAnimations))
-    
-    return true
-end
-
--- ПРЯМАЯ ЗАМЕНА с восстановлением анимаций
-local function directReplace()
-    print("\n🔄 === ПРЯМАЯ ЗАМЕНА С АНИМАЦИЯМИ ===")
-    
-    if not petTool then
-        print("❌ Сначала сохраните питомца!")
-        return false
-    end
-    
-    local shovel = findShovelInHands()
-    if not shovel then
-        print("❌ Shovel в руках не найден!")
-        return false
-    end
-    
-    print("✅ Найден Shovel: " .. shovel.Name)
-    
-    -- Шаг 1: Копируем свойства Tool
-    shovel.Name = petTool.Name
-    shovel.RequiresHandle = petTool.RequiresHandle
-    shovel.CanBeDropped = petTool.CanBeDropped
-    shovel.ManualActivationOnly = petTool.ManualActivationOnly
-    print("🔧 Свойства Tool скопированы")
-    
-    -- Шаг 2: Удаляем содержимое Shovel
-    print("🗑️ Очищаю Shovel...")
-    for _, child in pairs(shovel:GetChildren()) do
-        child:Destroy()
-    end
-    
-    wait(0.2)
-    
-    -- Шаг 3: Копируем содержимое питомца
-    print("📋 Копирую содержимое питомца...")
-    for _, child in pairs(petTool:GetChildren()) do
-        local copy = child:Clone()
-        copy.Parent = shovel
-        print("   ✅ " .. child.Name .. " (" .. child.ClassName .. ")")
-    end
-    
-    wait(0.3)
-    
-    -- Шаг 4: ВОССТАНАВЛИВАЕМ ВСЕ АНИМАЦИИ
-    print("🎬 === ВОССТАНОВЛЕНИЕ АНИМАЦИЙ ===")
-    if next(savedAnimations) then
-        print("🔄 Применяю сохраненные анимации...")
-        restoreAllAnimations(shovel, "")
-        print("✅ Все анимации восстановлены!")
+    local animator = pet:FindFirstChildOfClass("Animator")
+    if animator then
+        print("✅ Animator найден: " .. tostring(animator))
+        print("   Parent: " .. tostring(animator.Parent))
     else
-        print("⚠️ Анимации не найдены")
+        print("❌ Animator НЕ найден!")
     end
     
-    -- Шаг 5: Исправляем позицию в руке
-    local character = player.Character
-    if character and savedPetC0 and savedPetC1 then
-        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-        local newHandle = shovel:FindFirstChild("Handle")
-        
-        if rightHand and newHandle then
-            print("🔧 Применяю сохраненную позицию...")
-            
-            local oldGrip = rightHand:FindFirstChild("RightGrip")
-            if oldGrip then oldGrip:Destroy() end
-            
-            local newGrip = Instance.new("Weld")
-            newGrip.Name = "RightGrip"
-            newGrip.Part0 = rightHand
-            newGrip.Part1 = newHandle
-            newGrip.C0 = savedPetC0
-            newGrip.C1 = savedPetC1
-            newGrip.Parent = rightHand
-            
-            print("✅ Позиция Handle восстановлена!")
+    local motors = {}
+    for _, obj in pairs(pet:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motors, obj)
         end
     end
+    print("⚙️ Motor6D найдено: " .. #motors)
     
-    print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Shovel превращен в питомца с анимациями!")
-    print("🎮 Питомец должен быть в правильной позиции!")
+    local scripts = {}
+    for _, obj in pairs(pet:GetDescendants()) do
+        if obj:IsA("LocalScript") or obj:IsA("Script") then
+            table.insert(scripts, obj)
+        end
+    end
+    print("📜 Скриптов найдено: " .. #scripts)
+    
+    -- 4. Запуск мониторинга в реальном времени
+    print("\n🔄 Запускаю мониторинг анимаций...")
+    startRealTimeMonitoring(pet)
     
     return true
 end
 
--- Создаем GUI
-local function createDirectFixGUI()
+-- Создаем GUI для исследования
+local function createResearchGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "DirectShovelFixGUI"
+    screenGui.Name = "PetResearchGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 300, 0, 250)
-    frame.Position = UDim2.new(0.5, -150, 0.5, -125)
+    frame.Size = UDim2.new(0, 300, 0, 180)
+    frame.Position = UDim2.new(0.5, -150, 0.5, -90)
     frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
     frame.BorderSizePixel = 2
     frame.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
@@ -243,9 +238,9 @@ local function createDirectFixGUI()
     
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.BackgroundColor3 = Color3.new(0.2, 0.4, 0.8)
     title.BorderSizePixel = 0
-    title.Text = "🎯 DIRECT SHOVEL FIX V3"
+    title.Text = "🔬 PET ANIMATION RESEARCH"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
@@ -255,72 +250,239 @@ local function createDirectFixGUI()
     status.Size = UDim2.new(1, -20, 0, 60)
     status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "С АНИМАЦИЯМИ:\n1. Питомец в руки → Сохранить\n2. Shovel в руки → Заменить"
+    status.Text = "ИССЛЕДОВАНИЕ АНИМАЦИЙ:\nВозьмите питомца в руки\nи нажмите 'Исследовать'"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
     status.TextWrapped = true
     status.Parent = frame
     
-    -- Кнопка сохранения
-    local saveBtn = Instance.new("TextButton")
-    saveBtn.Size = UDim2.new(1, -20, 0, 50)
-    saveBtn.Position = UDim2.new(0, 10, 0, 120)
-    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
-    saveBtn.BorderSizePixel = 0
-    saveBtn.Text = "💾 Сохранить питомца + анимации"
-    saveBtn.TextColor3 = Color3.new(1, 1, 1)
-    saveBtn.TextScaled = true
-    saveBtn.Font = Enum.Font.SourceSansBold
-    saveBtn.Parent = frame
+    -- Кнопка исследования
+    local researchBtn = Instance.new("TextButton")
+    researchBtn.Size = UDim2.new(1, -20, 0, 50)
+    researchBtn.Position = UDim2.new(0, 10, 0, 120)
+    researchBtn.BackgroundColor3 = Color3.new(0.2, 0.6, 0.8)
+    researchBtn.BorderSizePixel = 0
+    researchBtn.Text = "🔬 ИССЛЕДОВАТЬ анимации"
+    researchBtn.TextColor3 = Color3.new(1, 1, 1)
+    researchBtn.TextScaled = true
+    researchBtn.Font = Enum.Font.SourceSansBold
+    researchBtn.Parent = frame
     
-    -- Кнопка замены
-    local replaceBtn = Instance.new("TextButton")
-    replaceBtn.Size = UDim2.new(1, -20, 0, 50)
-    replaceBtn.Position = UDim2.new(0, 10, 0, 180)
-    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    replaceBtn.BorderSizePixel = 0
-    replaceBtn.Text = "🔄 ЗАМЕНИТЬ с анимациями"
-    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
-    replaceBtn.TextScaled = true
-    replaceBtn.Font = Enum.Font.SourceSansBold
-    replaceBtn.Visible = false
-    replaceBtn.Parent = frame
-    
-    -- События
-    saveBtn.MouseButton1Click:Connect(function()
-        status.Text = "💾 Сканирую питомца и анимации..."
+    -- Событие исследования
+    researchBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔬 Исследую анимации питомца..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = savePet()
+        local success = researchPetAnimations()
         
         if success then
-            status.Text = "✅ Питомец и анимации сохранены!\nТеперь возьмите Shovel"
+            status.Text = "✅ Исследование завершено!\nСмотрите консоль для деталей"
             status.TextColor3 = Color3.new(0, 1, 0)
-            replaceBtn.Visible = true
         else
             status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
+end
+
+-- Дополнительная функция: Сравнение оригинала и копии
+local function compareOriginalAndCopy()
+    print("\n🔄 === СОЗДАНИЕ КОПИИ ДЛЯ СРАВНЕНИЯ ===")
     
-    replaceBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Замена с анимациями..."
-        status.TextColor3 = Color3.new(1, 1, 0)
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец не найден!")
+        return
+    end
+    
+    -- Создаем копию питомца
+    local petCopy = pet:Clone()
+    petCopy.Name = pet.Name .. "_COPY"
+    petCopy.Parent = game.Workspace
+    
+    print("✅ Копия создана: " .. petCopy.Name)
+    
+    -- Сравниваем Animator
+    local origAnimator = pet:FindFirstChildOfClass("Animator")
+    local copyAnimator = petCopy:FindFirstChildOfClass("Animator")
+    
+    print("\n🎭 === СРАВНЕНИЕ ANIMATOR ===")
+    print("Оригинал Animator: " .. tostring(origAnimator))
+    print("Копия Animator: " .. tostring(copyAnimator))
+    
+    if origAnimator and copyAnimator then
+        local origTracks = origAnimator:GetPlayingAnimationTracks()
+        local copyTracks = copyAnimator:GetPlayingAnimationTracks()
         
-        local success = directReplace()
+        print("Оригинал треков: " .. #origTracks)
+        print("Копия треков: " .. #copyTracks)
         
-        if success then
-            status.Text = "✅ ГОТОВО!\nПитомец с анимациями в руке!"
-            status.TextColor3 = Color3.new(0, 1, 0)
-        else
-            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
-            status.TextColor3 = Color3.new(1, 0, 0)
+        -- Пытаемся запустить анимации на копии
+        print("\n🎬 Пытаюсь запустить анимации на копии...")
+        for _, track in pairs(origTracks) do
+            local copyTrack = copyAnimator:LoadAnimation(track.Animation)
+            copyTrack:Play()
+            print("▶️ Запущен трек на копии: " .. tostring(track.Animation))
+        end
+    end
+    
+    -- Мониторим обе версии
+    print("\n📊 === МОНИТОРИНГ ОРИГИНАЛА И КОПИИ ===")
+    
+    local monitorConnection
+    local monitorFrames = 0
+    
+    monitorConnection = RunService.Heartbeat:Connect(function()
+        monitorFrames = monitorFrames + 1
+        
+        if monitorFrames % 60 == 0 then -- Каждую секунду
+            print("\n⏱️ Секунда " .. (monitorFrames/60))
+            
+            -- Сравниваем состояние
+            if origAnimator and copyAnimator then
+                local origActive = #origAnimator:GetPlayingAnimationTracks()
+                local copyActive = #copyAnimator:GetPlayingAnimationTracks()
+                
+                print("🎭 Оригинал активных треков: " .. origActive)
+                print("🎭 Копия активных треков: " .. copyActive)
+            end
+            
+            -- Сравниваем позиции Handle
+            local origHandle = pet:FindFirstChild("Handle")
+            local copyHandle = petCopy:FindFirstChild("Handle")
+            
+            if origHandle and copyHandle then
+                print("🧱 Оригинал Handle: " .. tostring(origHandle.CFrame))
+                print("🧱 Копия Handle: " .. tostring(copyHandle.CFrame))
+            end
+        end
+        
+        if monitorFrames >= 300 then -- 5 секунд
+            monitorConnection:Disconnect()
+            print("\n✅ Сравнительный мониторинг завершен!")
+            
+            -- Удаляем копию
+            petCopy:Destroy()
+            print("🗑️ Копия удалена")
         end
     end)
 end
 
--- Запускаем
-createDirectFixGUI()
-print("✅ DirectShovelFix V3 готов!")
-print("🎬 ТЕПЕРЬ С ПОЛНОЙ ПОДДЕРЖКОЙ АНИМАЦИЙ!")
+-- Создаем расширенный GUI
+local function createAdvancedResearchGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AdvancedPetResearchGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 320, 0, 250)
+    frame.Position = UDim2.new(0.5, -160, 0.5, -125)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
+    frame.Parent = screenGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.4, 0.8)
+    title.BorderSizePixel = 0
+    title.Text = "🔬 ADVANCED PET RESEARCH"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 50)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "Возьмите питомца в руки\nи выберите тип исследования"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
+    
+    -- Кнопка структурного анализа
+    local structBtn = Instance.new("TextButton")
+    structBtn.Size = UDim2.new(1, -20, 0, 40)
+    structBtn.Position = UDim2.new(0, 10, 0, 110)
+    structBtn.BackgroundColor3 = Color3.new(0.2, 0.6, 0.8)
+    structBtn.BorderSizePixel = 0
+    structBtn.Text = "📊 АНАЛИЗ СТРУКТУРЫ"
+    structBtn.TextColor3 = Color3.new(1, 1, 1)
+    structBtn.TextScaled = true
+    structBtn.Font = Enum.Font.SourceSansBold
+    structBtn.Parent = frame
+    
+    -- Кнопка мониторинга
+    local monitorBtn = Instance.new("TextButton")
+    monitorBtn.Size = UDim2.new(1, -20, 0, 40)
+    monitorBtn.Position = UDim2.new(0, 10, 0, 160)
+    monitorBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.8)
+    monitorBtn.BorderSizePixel = 0
+    monitorBtn.Text = "🔄 МОНИТОРИНГ АНИМАЦИЙ"
+    monitorBtn.TextColor3 = Color3.new(1, 1, 1)
+    monitorBtn.TextScaled = true
+    monitorBtn.Font = Enum.Font.SourceSansBold
+    monitorBtn.Parent = frame
+    
+    -- Кнопка сравнения
+    local compareBtn = Instance.new("TextButton")
+    compareBtn.Size = UDim2.new(1, -20, 0, 40)
+    compareBtn.Position = UDim2.new(0, 10, 0, 210)
+    compareBtn.BackgroundColor3 = Color3.new(0.8, 0.6, 0.2)
+    compareBtn.BorderSizePixel = 0
+    compareBtn.Text = "⚖️ СРАВНИТЬ ОРИГИНАЛ/КОПИЮ"
+    compareBtn.TextColor3 = Color3.new(1, 1, 1)
+    compareBtn.TextScaled = true
+    compareBtn.Font = Enum.Font.SourceSansBold
+    compareBtn.Parent = frame
+    
+    -- События
+    structBtn.MouseButton1Click:Connect(function()
+        status.Text = "📊 Анализирую структуру..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = researchPetAnimations()
+        
+        if success then
+            status.Text = "✅ Анализ завершен!\nСмотрите консоль"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Возьмите питомца в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    monitorBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Мониторинг 5 секунд..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local pet = findPetInHands()
+        if pet then
+            startRealTimeMonitoring(pet)
+            status.Text = "✅ Мониторинг запущен!\nСмотрите консоль"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Возьмите питомца в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    compareBtn.MouseButton1Click:Connect(function()
+        status.Text = "⚖️ Создаю копию и сравниваю..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        compareOriginalAndCopy()
+        status.Text = "✅ Сравнение запущено!\nСмотрите консоль"
+        status.TextColor3 = Color3.new(0, 1, 0)
+    end)
+end
+
+-- Запускаем исследование
+createAdvancedResearchGUI()
+print("✅ Pet Animation Research готов!")
+print("🔬 ГЛУБОКОЕ ИССЛЕДОВАНИЕ АНИМАЦИЙ!")
+print("📋 Возьмите питомца в руки и начните исследование")
