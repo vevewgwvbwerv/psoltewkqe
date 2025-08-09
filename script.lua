@@ -1,399 +1,363 @@
--- SimpleCreationWatcher.lua
--- ПРОСТОЙ НАБЛЮДАТЕЛЬ: Отслеживает ВСЕ новые объекты без сложных хуков
--- Фокус на ТОЧНОМ моменте появления модели питомца
+-- DirectShovelFix.lua
+-- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 
-print("👁️ === SIMPLE CREATION WATCHER ===")
-print("🎯 Цель: Отследить появление модели питомца БЕЗ хуков")
-print("=" .. string.rep("=", 60))
+print("=== DIRECT SHOVEL FIX ===")
 
--- 📊 ДАННЫЕ НАБЛЮДАТЕЛЯ
-local WatcherData = {
-    targetModel = nil,
-    allNewObjects = {},
-    petModels = {},
-    startTime = nil,
-    isWatching = false
-}
+-- Глобальные переменные
+local petTool = nil
 
--- 🖥️ КОНСОЛЬ
-local WatcherConsole = nil
-local ConsoleLines = {}
-local MaxLines = 150
-
--- Создание консоли
-local function createWatcherConsole()
-    if WatcherConsole then WatcherConsole:Destroy() end
+-- Поиск питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    WatcherConsole = Instance.new("ScreenGui")
-    WatcherConsole.Name = "SimpleCreationWatcherConsole"
-    WatcherConsole.Parent = player:WaitForChild("PlayerGui")
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 800, 0, 600)
-    frame.Position = UDim2.new(0, 10, 0, 10)
-    frame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.15)
-    frame.BorderSizePixel = 3
-    frame.BorderColor3 = Color3.new(0.3, 0.3, 1)
-    frame.Parent = WatcherConsole
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 35)
-    title.BackgroundColor3 = Color3.new(0.3, 0.3, 1)
-    title.BorderSizePixel = 0
-    title.Text = "👁️ SIMPLE CREATION WATCHER"
-    title.TextColor3 = Color3.new(1, 1, 1)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
-    local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
-    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
-    scrollFrame.BackgroundColor3 = Color3.new(0.02, 0.02, 0.08)
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.ScrollBarThickness = 15
-    scrollFrame.Parent = frame
-    
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -10, 1, 0)
-    textLabel.Position = UDim2.new(0, 5, 0, 0)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = "👁️ Простой наблюдатель готов..."
-    textLabel.TextColor3 = Color3.new(0.9, 0.9, 1)
-    textLabel.TextSize = 11
-    textLabel.Font = Enum.Font.SourceSans
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.TextYAlignment = Enum.TextYAlignment.Top
-    textLabel.TextWrapped = true
-    textLabel.Parent = scrollFrame
-    
-    return textLabel
-end
-
--- Функция логирования
-local function watcherLog(category, message, data)
-    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
-    local relativeTime = WatcherData.startTime and string.format("+%.3f", tick() - WatcherData.startTime) or "0.000"
-    
-    local prefixes = {
-        WATCHER = "👁️", NEW = "🆕", PET = "🐕", ANALYSIS = "📊",
-        FOUND = "🎯", CRITICAL = "🔥", SUCCESS = "✅", ERROR = "❌", 
-        INFO = "ℹ️", DETAIL = "📝"
-    }
-    
-    local logLine = string.format("[%s] (%s) %s %s", timestamp, relativeTime, prefixes[category] or "ℹ️", message)
-    
-    if data and next(data) then
-        for key, value in pairs(data) do
-            logLine = logLine .. string.format("\n      %s: %s", key, tostring(value))
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
         end
     end
-    
-    table.insert(ConsoleLines, logLine)
-    
-    if #ConsoleLines > MaxLines then
-        table.remove(ConsoleLines, 1)
-    end
-    
-    -- Обновляем консоль
-    if WatcherConsole then
-        local textLabel = WatcherConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
-        if textLabel then
-            textLabel.Text = table.concat(ConsoleLines, "\n")
-            local scrollFrame = textLabel.Parent
-            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
-            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
-        end
-    end
-    
-    print(logLine)
+    return nil
 end
 
--- 🔍 ПОИСК СУЩЕСТВУЮЩИХ ИСТОЧНИКОВ
-local function findExistingSources()
-    watcherLog("WATCHER", "🔍 Поиск существующих источников...")
+-- Поиск Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    local sources = {}
-    
-    -- Поиск в ReplicatedStorage
-    local function searchInService(service, serviceName)
-        local found = 0
-        for _, obj in pairs(service:GetDescendants()) do
-            if obj:IsA("Model") then
-                local name = obj.Name:lower()
-                if name == "dog" or name == "bunny" or name == "golden lab" or 
-                   name == "cat" or name == "rabbit" or name == "puppy" then
-                    
-                    sources[obj:GetFullName()] = {
-                        object = obj,
-                        name = obj.Name,
-                        location = serviceName,
-                        children = #obj:GetChildren()
-                    }
-                    
-                    found = found + 1
-                    watcherLog("FOUND", string.format("🎯 Источник в %s: %s", serviceName, obj.Name), {
-                        Path = obj:GetFullName(),
-                        Children = #obj:GetChildren()
-                    })
-                end
-            end
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
         end
-        return found
     end
-    
-    local totalFound = 0
-    totalFound = totalFound + searchInService(ReplicatedStorage, "ReplicatedStorage")
-    totalFound = totalFound + searchInService(Workspace, "Workspace")
-    
-    watcherLog("WATCHER", string.format("📊 Всего найдено источников: %d", totalFound))
-    return sources
+    return nil
 end
 
--- 🆕 МОНИТОРИНГ НОВЫХ ОБЪЕКТОВ
-local function monitorNewObjects()
-    watcherLog("WATCHER", "🆕 Мониторинг новых объектов...")
+-- СОХРАНИТЬ питомца
+local function savePet()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
     
-    -- Мониторинг Workspace
-    local workspaceConnection = Workspace.DescendantAdded:Connect(function(obj)
-        local relativeTime = WatcherData.startTime and (tick() - WatcherData.startTime) or 0
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден питомец: " .. pet.Name)
+    
+    -- Сохраняем ссылку на питомца
+    petTool = pet
+    
+    print("✅ Питомец сохранен!")
+    return true
+end
+
+-- ПРЯМАЯ ЗАМЕНА содержимого
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
+    
+    -- Шаг 1: Меняем имя
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 3: Удаляем все содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+    end
+    
+    wait(0.1)
+    
+    -- Шаг 4: Копируем все содержимое питомца
+    print("📋 Копирую содержимое питомца...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+    end
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 В руках должен быть питомец с именем Dragonfly!")
+    
+    return true
+end
+
+-- АЛЬТЕРНАТИВА: Замена содержимого существующего Tool БЕЗ создания нового
+local function alternativeReplace()
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Замена содержимого существующего Tool...")
+    
+    -- КАРДИНАЛЬНО НОВЫЙ ПОДХОД: НЕ создаем новый Tool, а меняем содержимое существующего!
+    
+    -- Шаг 1: Меняем имя Tool (остается в том же слоте)
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя Tool изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool от питомца
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped  
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    shovel.Enabled = petTool.Enabled
+    print("🔧 Свойства Tool обновлены от питомца")
+    
+    -- Шаг 3: Сохраняем позицию Handle ПЕРЕД очисткой
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local savedPosition = nil
+    local savedOrientation = nil
+    
+    if shovelHandle then
+        savedPosition = shovelHandle.Position
+        savedOrientation = shovelHandle.Orientation
+        print("📍 Сохранена позиция Handle: " .. tostring(savedPosition))
+    end
+    
+    -- Шаг 4: ПОЛНАЯ очистка содержимого Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+        print("   🗑️ Удалено: " .. child.Name)
+    end
+    
+    wait(0.05) -- Минимальная пауза для очистки
+    
+    -- Шаг 5: Копируем ВСЕ содержимое питомца в существующий Tool
+    print("📋 Копирую содержимое питомца в существующий Tool...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel  -- В существующий Tool!
         
-        -- Записываем ВСЕ новые объекты
-        WatcherData.allNewObjects[obj] = {
-            time = tick(),
-            relativeTime = relativeTime,
-            name = obj.Name,
-            className = obj.ClassName,
-            parent = obj.Parent and obj.Parent.Name or "NIL"
-        }
-        
-        -- Особое внимание к Model
-        if obj:IsA("Model") then
-            watcherLog("NEW", "🆕 НОВАЯ МОДЕЛЬ: " .. obj.Name, {
-                ClassName = obj.ClassName,
-                Parent = obj.Parent and obj.Parent.Name or "NIL",
-                RelativeTime = string.format("%.3f сек", relativeTime)
-            })
+        -- КРИТИЧЕСКИ ВАЖНО: Правильная настройка физики
+        if copy:IsA("BasePart") then
+            copy.Anchored = false
+            copy.CanCollide = false
             
-            local name = obj.Name:lower()
-            if name == "dog" or name == "bunny" or name == "golden lab" or 
-               name == "cat" or name == "rabbit" or name == "puppy" then
-                
-                WatcherData.targetModel = obj
-                
-                watcherLog("CRITICAL", "🔥 ПИТОМЕЦ ОБНАРУЖЕН: " .. obj.Name, {
-                    Parent = obj.Parent and obj.Parent.Name or "NIL",
-                    ParentPath = obj.Parent and obj.Parent:GetFullName() or "NIL",
-                    RelativeTime = string.format("%.3f сек", relativeTime),
-                    Children = #obj:GetChildren()
-                })
-                
-                -- Глубокий анализ питомца
-                analyzePetModel(obj)
-                
-                -- Поиск похожих источников
-                findSimilarSources(obj)
-            end
-        end
-        
-        -- Особое внимание к Tool
-        if obj:IsA("Tool") then
-            local name = obj.Name:lower()
-            if name:find("dog") or name:find("bunny") or name:find("lab") or 
-               name:find("cat") or name:find("rabbit") or name:find("puppy") then
-                
-                watcherLog("PET", "🐕 TOOL ПИТОМЦА: " .. obj.Name, {
-                    Parent = obj.Parent and obj.Parent.Name or "NIL",
-                    RelativeTime = string.format("%.3f сек", relativeTime)
-                })
-            end
-        end
-    end)
-    
-    return workspaceConnection
-end
-
--- 📊 АНАЛИЗ МОДЕЛИ ПИТОМЦА
-local function analyzePetModel(model)
-    watcherLog("ANALYSIS", "📊 АНАЛИЗ МОДЕЛИ ПИТОМЦА: " .. model.Name)
-    
-    -- Базовая информация
-    local info = {
-        Name = model.Name,
-        ClassName = model.ClassName,
-        Parent = model.Parent and model.Parent.Name or "NIL",
-        ParentPath = model.Parent and model.Parent:GetFullName() or "NIL",
-        Children = #model:GetChildren(),
-        Descendants = #model:GetDescendants()
-    }
-    
-    watcherLog("DETAIL", "📝 Базовая информация:", info)
-    
-    -- Структура модели
-    local structure = {}
-    for _, obj in pairs(model:GetDescendants()) do
-        structure[obj.ClassName] = (structure[obj.ClassName] or 0) + 1
-    end
-    
-    watcherLog("DETAIL", "📝 Структура модели:", structure)
-    
-    -- Анализ родителя
-    local parent = model.Parent
-    if parent then
-        watcherLog("DETAIL", "📝 Информация о родителе:", {
-            Name = parent.Name,
-            ClassName = parent.ClassName,
-            Path = parent:GetFullName(),
-            Children = #parent:GetChildren()
-        })
-    end
-end
-
--- 🔍 ПОИСК ПОХОЖИХ ИСТОЧНИКОВ
-local function findSimilarSources(targetModel)
-    watcherLog("ANALYSIS", "🔍 Поиск похожих источников для: " .. targetModel.Name)
-    
-    -- Поиск в ReplicatedStorage
-    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:lower() == targetModel.Name:lower() then
-            watcherLog("SUCCESS", "✅ НАЙДЕН ПОХОЖИЙ ИСТОЧНИК!", {
-                Name = obj.Name,
-                Path = obj:GetFullName(),
-                Children = #obj:GetChildren(),
-                TargetChildren = #targetModel:GetChildren(),
-                Match = #obj:GetChildren() == #targetModel:GetChildren() and "ТОЧНОЕ" or "ЧАСТИЧНОЕ"
-            })
-            
-            -- Сравнение структуры
-            local sourceStructure = {}
-            local targetStructure = {}
-            
-            for _, child in pairs(obj:GetDescendants()) do
-                sourceStructure[child.ClassName] = (sourceStructure[child.ClassName] or 0) + 1
+            -- Если это Handle - восстанавливаем позицию
+            if copy.Name == "Handle" and savedPosition then
+                copy.Position = savedPosition
+                copy.Orientation = savedOrientation
+                print("   📍 Восстановлена позиция Handle")
             end
             
-            for _, child in pairs(targetModel:GetDescendants()) do
-                targetStructure[child.ClassName] = (targetStructure[child.ClassName] or 0) + 1
-            end
-            
-            local matches = 0
-            local total = 0
-            for className, count in pairs(targetStructure) do
-                total = total + 1
-                if sourceStructure[className] and sourceStructure[className] == count then
-                    matches = matches + 1
-                end
-            end
-            
-            local similarity = total > 0 and (matches / total * 100) or 0
-            
-            watcherLog("SUCCESS", string.format("✅ СХОДСТВО СТРУКТУРЫ: %.1f%%", similarity), {
-                Matches = matches,
-                Total = total,
-                Confidence = similarity > 90 and "ОЧЕНЬ ВЫСОКАЯ" or (similarity > 70 and "ВЫСОКАЯ" or "СРЕДНЯЯ")
-            })
+            print("   ✅ Скопировано: " .. child.Name .. " (BasePart)")
+        else
+            print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
         end
     end
-end
-
--- 🚀 ГЛАВНАЯ ФУНКЦИЯ НАБЛЮДЕНИЯ
-local function startSimpleWatching()
-    watcherLog("WATCHER", "🚀 ЗАПУСК ПРОСТОГО НАБЛЮДЕНИЯ")
-    watcherLog("WATCHER", "👁️ Отслеживание появления модели питомца")
     
-    WatcherData.isWatching = true
-    WatcherData.startTime = tick()
-    
-    -- Поиск существующих источников
-    local sources = findExistingSources()
-    
-    -- Запуск мониторинга новых объектов
-    local workspaceConnection = monitorNewObjects()
-    
-    watcherLog("WATCHER", "✅ Наблюдение активно!")
-    watcherLog("WATCHER", "🥚 ОТКРОЙТЕ ЯЙЦО СЕЙЧАС!")
-    
-    -- Автоостановка через 2 минуты
+    -- Шаг 6: Принудительная стабилизация Tool в руках
     spawn(function()
-        wait(120)
-        if workspaceConnection then
-            workspaceConnection:Disconnect()
-        end
-        WatcherData.isWatching = false
-        watcherLog("WATCHER", "⏰ Наблюдение завершено по таймауту")
+        wait(0.1)
         
-        -- Итоговая статистика
-        watcherLog("INFO", string.format("📊 Всего отслежено объектов: %d", #WatcherData.allNewObjects))
+        -- Проверяем что Tool все еще в руках
+        if shovel.Parent == character then
+            local handle = shovel:FindFirstChild("Handle")
+            if handle then
+                -- Убеждаемся что Handle правильно настроен
+                handle.Anchored = false
+                handle.CanCollide = false
+                
+                -- Принудительно "активируем" Tool
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    -- Имитируем повторное взятие Tool
+                    shovel.Parent = character.Backpack
+                    wait(0.05)
+                    shovel.Parent = character
+                    print("✅ Tool принудительно активирован")
+                end
+            end
+        end
     end)
+    
+    print("✅ Замена содержимого завершена!")
+    print("🎯 Tool остается в том же слоте с новым содержимым!")
+    print("📍 Позиция сохранена, падения быть не должно!")
+    return true
 end
 
 -- Создаем GUI
-local function createWatcherGUI()
+local function createDirectFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "SimpleCreationWatcherGUI"
+    screenGui.Name = "DirectShovelFixGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 300, 0, 120)
-    frame.Position = UDim2.new(1, -320, 0, 530)
-    frame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.15)
+    frame.Size = UDim2.new(0, 400, 0, 350)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 30)
-    title.BackgroundColor3 = Color3.new(0.3, 0.3, 1)
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
     title.BorderSizePixel = 0
-    title.Text = "👁️ SIMPLE WATCHER"
+    title.Text = "🎯 DIRECT SHOVEL FIX"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
     title.Parent = frame
     
-    local startBtn = Instance.new("TextButton")
-    startBtn.Size = UDim2.new(1, -20, 0, 40)
-    startBtn.Position = UDim2.new(0, 10, 0, 40)
-    startBtn.BackgroundColor3 = Color3.new(0.3, 0.3, 1)
-    startBtn.BorderSizePixel = 0
-    startBtn.Text = "👁️ НАЧАТЬ НАБЛЮДЕНИЕ"
-    startBtn.TextColor3 = Color3.new(1, 1, 1)
-    startBtn.TextScaled = true
-    startBtn.Font = Enum.Font.SourceSansBold
-    startBtn.Parent = frame
-    
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 30)
-    status.Position = UDim2.new(0, 10, 0, 90)
+    status.Size = UDim2.new(1, -20, 0, 80)
+    status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "Готов к простому наблюдению"
+    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
     status.Parent = frame
     
-    startBtn.MouseButton1Click:Connect(function()
-        status.Text = "👁️ Наблюдение активно!"
-        status.TextColor3 = Color3.new(0.3, 0.3, 1)
-        startBtn.Text = "✅ НАБЛЮДЕНИЕ АКТИВНО"
-        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
-        startBtn.Active = false
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить питомца"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
+    
+    -- Кнопка прямой замены
+    local directBtn = Instance.new("TextButton")
+    directBtn.Size = UDim2.new(1, -20, 0, 50)
+    directBtn.Position = UDim2.new(0, 10, 0, 200)
+    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    directBtn.BorderSizePixel = 0
+    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
+    directBtn.TextColor3 = Color3.new(1, 1, 1)
+    directBtn.TextScaled = true
+    directBtn.Font = Enum.Font.SourceSansBold
+    directBtn.Visible = false
+    directBtn.Parent = frame
+    
+    -- Кнопка альтернативы
+    local altBtn = Instance.new("TextButton")
+    altBtn.Size = UDim2.new(1, -20, 0, 50)
+    altBtn.Position = UDim2.new(0, 10, 0, 260)
+    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    altBtn.BorderSizePixel = 0
+    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.TextColor3 = Color3.new(1, 1, 1)
+    altBtn.TextScaled = true
+    altBtn.Font = Enum.Font.SourceSansBold
+    altBtn.Visible = false
+    altBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 310)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
+    
+    -- События
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
         
-        startSimpleWatching()
+        local success = savePet()
+        
+        if success then
+            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel и замените!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            directBtn.Visible = true
+            altBtn.Visible = true
+        else
+            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    directBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Прямая замена содержимого..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = directReplace()
+        
+        if success then
+            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    altBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Альтернативная замена..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = alternativeReplace()
+        
+        if success then
+            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка альтернативы!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
     end)
 end
 
 -- Запускаем
-local consoleTextLabel = createWatcherConsole()
-createWatcherGUI()
-
-watcherLog("WATCHER", "✅ SimpleCreationWatcher готов!")
-watcherLog("WATCHER", "👁️ Простое наблюдение за созданием модели питомца")
-watcherLog("WATCHER", "🎯 БЕЗ сложных хуков - только DescendantAdded")
-watcherLog("WATCHER", "🚀 Нажмите 'НАЧАТЬ НАБЛЮДЕНИЕ' и откройте яйцо!")
+createDirectFixGUI()
+print("✅ DirectShovelFix готов!")
+print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
+print("💾 1. Сохранить питомца")
+print("🔄 2. Заменить Shovel")
