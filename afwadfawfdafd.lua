@@ -1,529 +1,401 @@
--- 🥚 EGG PET REPLACER - Замена временного питомца из яйца на анимированную копию
--- Основано на PetScaler_v2, но без масштабирования и с заменой позиции
+-- DirectShovelFix.lua
+-- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 
-print("🥚 === EGG PET REPLACER - ЗАПУЩЕН ===")
-print("=" .. string.rep("=", 50))
+print("=== DIRECT SHOVEL FIX ===")
 
--- Конфигурация
-local CONFIG = {
-    SEARCH_RADIUS = 100,
-    WAIT_TIMEOUT = 30, -- 30 секунд ожидания
-    TARGET_PETS = {"BUNNY", "DOG", "GOLDEN LAB"} -- Целевые питомцы из яйца
-}
+-- Глобальные переменные
+local petTool = nil
+local savedPetC0 = nil
+local savedPetC1 = nil
 
--- Глобальные перемены
-local isWaiting = false
-local scannedPet = nil
-local waitConnection = nil
-
--- Получаем позицию игрока
-local function getPlayerPosition()
-    local playerChar = player.Character
-    if not playerChar then return nil end
+-- Поиск питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    
-    return hrp.Position
-end
-
--- === ФУНКЦИИ ИЗ PETSCALER_V2 (БЕЗ МАСШТАБИРОВАНИЯ) ===
-
--- Функция проверки что это питомец (адаптированная под dragonfly)
-local function isPetModel(model)
-    -- Проверяем что это модель с UUID именем (фигурные скобки)
-    if not (model.Name:find("{") and model.Name:find("}")) then
-        return false, {}
-    end
-    
-    local meshCount = 0
-    local petMeshes = {}
-    local hasMotor6D = false
-    
-    -- Ищем Motor6D (есть у всех питомцев для анимации)
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            hasMotor6D = true
-        elseif obj:IsA("MeshPart") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or ""
-            }
-            if meshData.meshId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            local meshData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or ""
-            }
-            if meshData.meshId ~= "" or meshData.textureId ~= "" then
-                table.insert(petMeshes, meshData)
-            end
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
         end
     end
-    
-    -- Питомец валидный если есть Motor6D (для анимации) ИЛИ есть визуальные элементы
-    return hasMotor6D or meshCount > 0, petMeshes
+    return nil
 end
 
--- Функция получения всех BasePart из модели (из PetScaler_v2)
-local function getAllParts(model)
-    local parts = {}
+-- Поиск Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
     
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(parts, obj)
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
         end
     end
-    
-    return parts
+    return nil
 end
 
--- Функция получения всех Motor6D из модели (из PetScaler_v2)
-local function getMotor6Ds(model)
-    local motors = {}
+-- СОХРАНИТЬ питомца
+local function savePet()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
     
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            table.insert(motors, obj)
-        end
-    end
-    
-    return motors
-end
-
--- Функция создания карты Motor6D (из PetScaler_v2)
-local function createMotorMap(motors)
-    local map = {}
-    
-    for _, motor in ipairs(motors) do
-        local key = motor.Name
-        if motor.Part0 then
-            key = key .. "_" .. motor.Part0.Name
-        end
-        if motor.Part1 then
-            key = key .. "_" .. motor.Part1.Name
-        end
-        
-        map[key] = motor
-    end
-    
-    return map
-end
-
--- Функция копирования состояния Motor6D (из PetScaler_v2)
-local function copyMotorState(originalMotor, copyMotor)
-    if not originalMotor or not copyMotor then
+    local pet = findPetInHands()
+    if not pet then
+        print("❌ Питомец в руках не найден!")
         return false
     end
     
-    copyMotor.Transform = originalMotor.Transform
-    copyMotor.C0 = originalMotor.C0
-    copyMotor.C1 = originalMotor.C1
+    print("✅ Найден питомец: " .. pet.Name)
+    
+    -- Сохраняем ссылку на питомца
+    petTool = pet
+    
+    -- КРИТИЧЕСКИ ВАЖНО: Сохраняем позицию питомца СЕЙЧАС, пока он в руках!
+    local character = player.Character
+    if character then
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local petHandle = pet:FindFirstChild("Handle")
+        
+        if rightHand and petHandle then
+            local petGrip = rightHand:FindFirstChild("RightGrip")
+            if petGrip then
+                savedPetC0 = petGrip.C0
+                savedPetC1 = petGrip.C1
+                print("📍 ПОЗИЦИЯ ПИТОМЦА СОХРАНЕНА!")
+                print("📐 C0: " .. tostring(savedPetC0))
+                print("📐 C1: " .. tostring(savedPetC1))
+            else
+                print("⚠️ RightGrip не найден, используем стандартную позицию")
+            end
+        end
+    end
+    
+    print("✅ Питомец и его позиция сохранены!")
+    return true
+end
+
+-- ПРЯМАЯ ЗАМЕНА содержимого
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
+    
+    -- Шаг 1: Меняем имя
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 3: Удаляем все содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+    end
+    
+    wait(0.1)
+    
+    -- Шаг 4: Копируем все содержимое питомца
+    print("📋 Копирую содержимое питомца...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+    end
+    
+    wait(0.1)
+    
+    -- Шаг 5: ИСПРАВЛЯЕМ ПОЗИЦИЮ Handle с сохраненной позицией питомца
+    local character = player.Character
+    if character and savedPetC0 and savedPetC1 then
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local newHandle = shovel:FindFirstChild("Handle")
+        
+        if rightHand and newHandle then
+            print("🔧 Применяю сохраненную позицию питомца...")
+            
+            -- Удаляем старый Grip
+            local oldGrip = rightHand:FindFirstChild("RightGrip")
+            if oldGrip then oldGrip:Destroy() end
+            
+            -- Создаем новый Grip с ТОЧНОЙ позицией оригинального питомца
+            local newGrip = Instance.new("Weld")
+            newGrip.Name = "RightGrip"
+            newGrip.Part0 = rightHand
+            newGrip.Part1 = newHandle
+            newGrip.C0 = savedPetC0  -- ТОЧНАЯ позиция оригинала!
+            newGrip.C1 = savedPetC1  -- ТОЧНАЯ ориентация оригинала!
+            newGrip.Parent = rightHand
+            
+            print("✅ Позиция Handle ИСПРАВЛЕНА!")
+            print("📐 Применены C0/C1 от оригинального питомца")
+        else
+            print("⚠️ Не удалось применить позицию - используется стандартная")
+        end
+    else
+        print("⚠️ Сохраненная позиция не найдена - используется стандартная")
+    end
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 В руках должен быть питомец с ПРАВИЛЬНОЙ позицией!")
     
     return true
 end
 
--- Функция умного управления Anchored (из PetScaler_v2)
-local function smartAnchoredManagement(copyParts)
-    print("🧠 Умное управление Anchored...")
+-- АЛЬТЕРНАТИВА: Замена содержимого существующего Tool БЕЗ создания нового
+local function alternativeReplace()
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА (FIX) ===")
     
-    -- Находим "корневую" часть
-    local rootPart = nil
-    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
-    
-    for _, candidate in ipairs(rootCandidates) do
-        for _, part in ipairs(copyParts) do
-            if part.Name == candidate then
-                rootPart = part
-                break
-            end
-        end
-        if rootPart then break end
-    end
-    
-    if not rootPart then
-        rootPart = copyParts[1]
-        print("  ⚠️ Корневая часть не найдена, использую:", rootPart.Name)
-    else
-        print("  ✅ Корневая часть:", rootPart.Name)
-    end
-    
-    -- Применяем умный Anchored
-    for _, part in ipairs(copyParts) do
-        if part == rootPart then
-            part.Anchored = true -- Только корень заякорен
-        else
-            part.Anchored = false -- Остальные могут двигаться
-        end
-    end
-    
-    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
-    return rootPart
-end
-
--- === НОВЫЕ ФУНКЦИИ ДЛЯ ЗАМЕНЫ ПИТОМЦА ===
-
--- Функция поиска питомца рядом с игроком (адаптированная из PetScaler_v2)
-local function scanNearbyPet()
-    local playerPos = getPlayerPosition()
-    if not playerPos then
-        print("❌ Не удалось получить позицию игрока!")
-        return nil
-    end
-    
-    print("🔍 Сканирую питомцев рядом с игроком...")
-    print("📍 Позиция игрока:", playerPos)
-    print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
-    
-    local foundPets = {}
-    
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    local hasVisuals, meshes = hasPetVisuals(obj)
-                    if hasVisuals then
-                        table.insert(foundPets, {
-                            model = obj,
-                            distance = distance,
-                            meshes = meshes
-                        })
-                        print("  ✅ Найден питомец:", obj.Name, "расстояние:", math.floor(distance))
-                    end
-                end
-            end
-        end
-    end
-    
-    if #foundPets == 0 then
-        print("❌ Питомцы не найдены в радиусе", CONFIG.SEARCH_RADIUS)
-        return nil
-    end
-    
-    -- Берем ближайшего питомца
-    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
-    local targetPet = foundPets[1]
-    print("🎯 Выбран питомец:", targetPet.model.Name, "расстояние:", math.floor(targetPet.distance))
-    
-    return targetPet.model
-end
-
--- Функция создания копии без масштабирования, но с позиционированием
-local function createPetCopy(originalModel, targetPosition)
-    print("📋 Создаю копию питомца:", originalModel.Name)
-    
-    local copy = originalModel:Clone()
-    copy.Name = originalModel.Name .. "_EGG_COPY"
-    copy.Parent = Workspace
-    
-    -- Устанавливаем точную позицию временного питомца
-    if copy.PrimaryPart then
-        copy:SetPrimaryPartCFrame(CFrame.new(targetPosition))
-        print("📍 Копия размещена через PrimaryPart в позиции:", targetPosition)
-    elseif copy:FindFirstChild("RootPart") then
-        copy.RootPart.Position = targetPosition
-        print("📍 Копия размещена через RootPart в позиции:", targetPosition)
-    else
-        print("⚠️ Не удалось точно позиционировать копию")
-    end
-    
-    print("✅ Копия создана:", copy.Name)
-    return copy
-end
-
--- Функция запуска живого копирования Motor6D (из PetScaler_v2)
-local function startLiveMotorCopying(original, copy)
-    print("🔄 Запуск живого копирования Motor6D...")
-    
-    local originalMotors = getMotor6Ds(original)
-    local copyMotors = getMotor6Ds(copy)
-    
-    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
-    
-    if #originalMotors == 0 or #copyMotors == 0 then
-        print("❌ Недостаточно Motor6D для копирования")
-        return nil
-    end
-    
-    local originalMap = createMotorMap(originalMotors)
-    local copyMap = createMotorMap(copyMotors)
-    
-    local connection = nil
-    local isRunning = true
-    local frameCount = 0
-    
-    connection = RunService.Heartbeat:Connect(function()
-        if not isRunning then
-            connection:Disconnect()
-            return
-        end
-        
-        frameCount = frameCount + 1
-        
-        -- Проверяем существование моделей
-        if not original.Parent or not copy.Parent then
-            print("⚠️ Модель удалена, останавливаю копирование")
-            isRunning = false
-            return
-        end
-        
-        -- Копируем состояния Motor6D
-        for key, originalMotor in pairs(originalMap) do
-            local copyMotor = copyMap[key]
-            if copyMotor and originalMotor.Parent then
-                copyMotorState(originalMotor, copyMotor)
-            end
-        end
-        
-        -- Статус каждые 3 секунды
-        if frameCount % 180 == 0 then
-            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
-        end
-    end)
-    
-    print("✅ Живое копирование Motor6D запущено!")
-    return connection
-end
-
--- Функция ожидания появления питомца в workspace.visuals
-local function waitForVisualsPet()
-    print("👁️ Ожидаю появления питомца в workspace.visuals...")
-    print("🎯 Ищу питомцев:", table.concat(CONFIG.TARGET_PETS, ", "))
-    
-    local startTime = tick()
-    local found = false
-    
-    return coroutine.create(function()
-        while not found and (tick() - startTime) < CONFIG.WAIT_TIMEOUT do
-            -- Проверяем workspace.visuals
-            local visuals = Workspace:FindFirstChild("visuals")
-            if visuals then
-                for _, obj in pairs(visuals:GetChildren()) do
-                    if obj:IsA("Model") then
-                        for _, targetName in ipairs(CONFIG.TARGET_PETS) do
-                            if obj.Name:upper() == targetName:upper() then
-                                print("🎉 Найден целевой питомец в visuals:", obj.Name)
-                                
-                                -- Получаем позицию временного питомца
-                                local tempPetPosition
-                                local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-                                if success then
-                                    tempPetPosition = modelCFrame.Position
-                                elseif obj.PrimaryPart then
-                                    tempPetPosition = obj.PrimaryPart.Position
-                                elseif obj:FindFirstChild("RootPart") then
-                                    tempPetPosition = obj.RootPart.Position
-                                else
-                                    print("❌ Не удалось получить позицию временного питомца")
-                                    found = true
-                                    return false
-                                end
-                                
-                                print("📍 Позиция временного питомца:", tempPetPosition)
-                                
-                                -- Удаляем временного питомца
-                                print("🗑️ Удаляю временного питомца из visuals")
-                                obj:Destroy()
-                                
-                                found = true
-                                return tempPetPosition
-                            end
-                        end
-                    end
-                end
-            end
-            
-            wait(0.1) -- Проверяем каждые 0.1 секунды
-        end
-        
-        if not found then
-            print("⏰ Время ожидания истекло (", CONFIG.WAIT_TIMEOUT, "сек)")
-        end
-        
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
         return false
-    end)
-end
-
--- === ГЛАВНАЯ ФУНКЦИЯ ===
-
-local function startEggReplacement()
-    if isWaiting then
-        print("⚠️ Уже ожидаю появления питомца из яйца!")
-        return
     end
     
-    print("🚀 === ЗАПУСК ЗАМЕНЫ ПИТОМЦА ИЗ ЯЙЦА ===")
-    
-    -- Шаг 1: Сканируем питомца рядом
-    local targetPet = scanNearbyPet()
-    if not targetPet then
-        print("❌ Не найден питомец для копирования!")
-        return
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
     end
     
-    scannedPet = targetPet
-    isWaiting = true
-    
-    print("✅ Питомец отсканирован:", scannedPet.Name)
-    print("⏳ Ожидаю взрыва яйца и появления питомца в visuals...")
-    
-    -- Шаг 2: Ожидаем появления питомца в visuals
-    local waitCoroutine = waitForVisualsPet()
-    
-    spawn(function()
-        local result = coroutine.resume(waitCoroutine)
-        local tempPetPosition = select(2, result)
-        
-        isWaiting = false
-        
-        if tempPetPosition then
-            print("✅ Временный питомец найден и удален!")
-            print("📍 Создаю копию в позиции:", tempPetPosition)
-            
-            -- Шаг 3: Создаем копию в позиции временного питомца
-            local petCopy = createPetCopy(scannedPet, tempPetPosition)
-            if petCopy then
-                -- Шаг 4: Настраиваем Anchored
-                local copyParts = getAllParts(petCopy)
-                smartAnchoredManagement(copyParts)
-                
-                -- Шаг 5: Запускаем анимацию
-                wait(0.5)
-                local connection = startLiveMotorCopying(scannedPet, petCopy)
-                
-                if connection then
-                    print("🎉 === УСПЕХ! ===")
-                    print("✅ Питомец из яйца заменен анимированной копией!")
-                    print("💡 Копия повторяет движения оригинала")
-                else
-                    print("⚠️ Копия создана, но анимация не запустилась")
-                end
-            end
-        else
-            print("❌ Не удалось найти питомца в visuals или время истекло")
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+
+    -- === 1. Используем ЗАРАНЕЕ сохраненные C0/C1 ===
+    print("📍 Используем сохраненную позицию питомца...")
+    if savedPetC0 and savedPetC1 then
+        print("✅ Позиция найдена в памяти!")
+        print("📐 C0: " .. tostring(savedPetC0))
+        print("📐 C1: " .. tostring(savedPetC1))
+    else
+        print("⚠️ Сохраненная позиция не найдена, используем стандартную")
+    end
+
+    -- === 2. Копируем свойства Tool ===
+    shovel.Name = petTool.Name
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped  
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    shovel.Enabled = petTool.Enabled
+
+    -- === 3. Удаляем старое содержимое ===
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+    end
+
+    -- === 4. Копируем содержимое питомца ===
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+
+        -- Если это Handle — временно закрепим
+        if copy.Name == "Handle" and copy:IsA("BasePart") then
+            copy.Anchored = true
+            copy.CanCollide = false
+            copy.CanTouch = false
         end
-        
-        scannedPet = nil
-    end)
+    end
+
+    -- === 5. Создаём Weld сразу, пока физика не сработала ===
+    local newHandle = shovel:FindFirstChild("Handle")
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+
+    if newHandle and rightHand then
+        local oldGrip = rightHand:FindFirstChild("RightGrip")
+        if oldGrip then oldGrip:Destroy() end
+
+        local newGrip = Instance.new("Weld")
+        newGrip.Name = "RightGrip"
+        newGrip.Part0 = rightHand
+        newGrip.Part1 = newHandle
+        newGrip.C0 = savedPetC0 or CFrame.new(0, -1, -0.5)
+        newGrip.C1 = savedPetC1 or CFrame.new()
+        newGrip.Parent = rightHand
+
+        print("✅ Новый Weld установлен с сохранёнными C0/C1")
+    else
+        print("❌ Handle или RightHand не найдены!")
+    end
+
+    -- === 6. Включаем физику обратно ===
+    if newHandle then
+        newHandle.Anchored = false
+    end
+
+    -- === 7. Принудительно активируем Tool ===
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        shovel.Parent = player.Backpack  -- ИСПРАВЛЕНО: player.Backpack, а не character.Backpack!
+        wait()
+        shovel.Parent = character
+    end
+
+    print("🎯 Альтернативная замена завершена — позиция сохранена!")
+    return true
 end
 
--- === СОЗДАНИЕ GUI ===
 
-local function createGUI()
-    local playerGui = player:WaitForChild("PlayerGui")
-    
-    local oldGui = playerGui:FindFirstChild("EggReplacerGUI")
-    if oldGui then
-        oldGui:Destroy()
-    end
-    
+-- Создаем GUI
+local function createDirectFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "EggReplacerGUI"
-    screenGui.Parent = playerGui
+    screenGui.Name = "DirectShovelFixGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 280, 0, 100)
-    frame.Position = UDim2.new(0, 50, 0, 250) -- Ниже других GUI
-    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(255, 165, 0) -- Оранжевая рамка
+    frame.Size = UDim2.new(0, 400, 0, 350)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
+    frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
-    local button = Instance.new("TextButton")
-    button.Name = "ReplaceButton"
-    button.Size = UDim2.new(0, 260, 0, 40)
-    button.Position = UDim2.new(0, 10, 0, 15)
-    button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-    button.BorderSizePixel = 0
-    button.Text = "🥚 Заменить питомца из яйца"
-    button.TextColor3 = Color3.fromRGB(0, 0, 0)
-    button.TextSize = 14
-    button.Font = Enum.Font.SourceSansBold
-    button.Parent = frame
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
+    title.BorderSizePixel = 0
+    title.Text = "🎯 DIRECT SHOVEL FIX"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
     
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Name = "StatusLabel"
-    statusLabel.Size = UDim2.new(0, 260, 0, 25)
-    statusLabel.Position = UDim2.new(0, 10, 0, 65)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Готов к работе"
-    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    statusLabel.TextSize = 12
-    statusLabel.Font = Enum.Font.SourceSans
-    statusLabel.Parent = frame
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 80)
+    status.Position = UDim2.new(0, 10, 0, 50)
+    status.BackgroundTransparency = 1
+    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
+    status.TextColor3 = Color3.new(1, 1, 1)
+    status.TextScaled = true
+    status.Font = Enum.Font.SourceSans
+    status.TextWrapped = true
+    status.Parent = frame
     
-    button.MouseButton1Click:Connect(function()
-        if isWaiting then
-            statusLabel.Text = "Уже ожидаю питомца из яйца..."
-            return
-        end
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить питомца"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
+    
+    -- Кнопка прямой замены
+    local directBtn = Instance.new("TextButton")
+    directBtn.Size = UDim2.new(1, -20, 0, 50)
+    directBtn.Position = UDim2.new(0, 10, 0, 200)
+    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    directBtn.BorderSizePixel = 0
+    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
+    directBtn.TextColor3 = Color3.new(1, 1, 1)
+    directBtn.TextScaled = true
+    directBtn.Font = Enum.Font.SourceSansBold
+    directBtn.Visible = false
+    directBtn.Parent = frame
+    
+    -- Кнопка альтернативы
+    local altBtn = Instance.new("TextButton")
+    altBtn.Size = UDim2.new(1, -20, 0, 50)
+    altBtn.Position = UDim2.new(0, 10, 0, 260)
+    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    altBtn.BorderSizePixel = 0
+    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.TextColor3 = Color3.new(1, 1, 1)
+    altBtn.TextScaled = true
+    altBtn.Font = Enum.Font.SourceSansBold
+    altBtn.Visible = false
+    altBtn.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 310)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "❌ Закрыть"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = frame
+    
+    -- События
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца..."
+        status.TextColor3 = Color3.new(1, 1, 0)
         
-        button.Text = "⏳ Сканирую и ожидаю..."
-        button.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-        statusLabel.Text = "Ожидаю появления питомца в visuals..."
+        local success = savePet()
         
-        spawn(function()
-            startEggReplacement()
-            
-            wait(2)
-            if not isWaiting then
-                button.Text = "🥚 Заменить питомца из яйца"
-                button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-                statusLabel.Text = "Готов к работе"
-            end
-        end)
-    end)
-    
-    -- Обновление статуса в реальном времени
-    spawn(function()
-        while true do
-            if isWaiting then
-                statusLabel.Text = "⏳ Ожидаю питомца в visuals..."
-            elseif not isWaiting and statusLabel.Text:find("Ожидаю") then
-                statusLabel.Text = "Готов к работе"
-            end
-            wait(1)
+        if success then
+            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel и замените!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            directBtn.Visible = true
+            altBtn.Visible = true
+        else
+            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    button.MouseEnter:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(255, 165, 0) then
-            button.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+    directBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Прямая замена содержимого..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = directReplace()
+        
+        if success then
+            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    button.MouseLeave:Connect(function()
-        if button.BackgroundColor3 == Color3.fromRGB(255, 140, 0) then
-            button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    altBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Альтернативная замена..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = alternativeReplace()
+        
+        if success then
+            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка альтернативы!"
+            status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    print("🖥️ EggReplacer GUI создан!")
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
 end
 
--- === ЗАПУСК ===
-
-createGUI()
-print("=" .. string.rep("=", 50))
-print("💡 EGG PET REPLACER - ГОТОВ К РАБОТЕ:")
-print("   1. Нажмите кнопку")
-print("   2. Откройте яйцо")
-print("   3. Временный питомец будет заменен анимированной копией!")
-print("🎯 Целевые питомцы: " .. table.concat(CONFIG.TARGET_PETS, ", "))
-print("=" .. string.rep("=", 50))
+-- Запускаем
+createDirectFixGUI()
+print("✅ DirectShovelFix готов!")
+print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
+print("💾 1. Сохранить питомца")
+print("🔄 2. Заменить Shovel")
