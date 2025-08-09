@@ -1,18 +1,31 @@
--- AdvancedShovelReplacer.lua
--- Основан на методах из CFrameAnimationDiagnostic и ComprehensiveEggPetAnimationAnalyzer
--- Правильно сканирует CFrame анимацию питомца в руке
+-- DirectShovelFix.lua
+-- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
-print("=== ADVANCED SHOVEL REPLACER ===")
+print("=== DIRECT SHOVEL FIX ===")
 
--- Глобальная переменная для хранения отсканированного питомца с анимацией
-local scannedPetData = nil
-local animationConnection = nil
+-- Глобальные переменные
+local petTool = nil
+local savedPetC0 = nil
+local savedPetC1 = nil
+local savedAnimations = {} -- Сохраняем все CFrame анимации частей тела
 
--- Функция поиска Shovel в руках
+-- Поиск питомца в руках
+local function findPetInHands()
+    local character = player.Character
+    if not character then return nil end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
+        end
+    end
+    return nil
+end
+
+-- Поиск Shovel в руках
 local function findShovelInHands()
     local character = player.Character
     if not character then return nil end
@@ -25,74 +38,11 @@ local function findShovelInHands()
     return nil
 end
 
--- Функция поиска питомца в руках (из CFrameAnimationDiagnostic)
-local function findHandHeldPet()
-    local character = player.Character
-    if not character then return nil end
+-- СОХРАНИТЬ питомца
+local function savePet()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
     
-    local handTool = character:FindFirstChildOfClass("Tool")
-    if not handTool then return nil end
-    
-    -- Проверяем что это питомец (содержит KG и Age)
-    if string.find(handTool.Name, "%[") and string.find(handTool.Name, "KG%]") then
-        print("🎯 Найден питомец в руке:", handTool.Name)
-        return handTool
-    end
-    
-    return nil
-end
-
--- Функция получения всех анимируемых частей из Tool (из CFrameAnimationDiagnostic)
-local function getAnimatedPartsFromTool(tool)
-    local parts = {}
-    
-    if not tool then return parts end
-    
-    for _, obj in pairs(tool:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name ~= "Handle" then
-            table.insert(parts, obj)
-        end
-    end
-    
-    return parts
-end
-
--- Функция глубокого анализа частей модели (из CFrameAnimationDiagnostic)
-local function analyzeParts(model, modelName)
-    print(string.format("\n📊 === АНАЛИЗ ЧАСТЕЙ: %s ===", modelName))
-    
-    local parts = {}
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(parts, obj)
-        end
-    end
-    
-    print(string.format("📦 Всего BasePart: %d", #parts))
-    
-    -- Группируем части по типам
-    local partsByName = {}
-    for _, part in ipairs(parts) do
-        local name = part.Name
-        if not partsByName[name] then
-            partsByName[name] = 0
-        end
-        partsByName[name] = partsByName[name] + 1
-    end
-    
-    print("📋 Части по именам:")
-    for name, count in pairs(partsByName) do
-        print(string.format("  - %s: %d шт", name, count))
-    end
-    
-    return parts, partsByName
-end
-
--- НОВАЯ ФУНКЦИЯ: Сканирование питомца с отслеживанием CFrame анимации
-local function scanPetWithAnimation()
-    print("\n🔍 === СКАНИРОВАНИЕ ПИТОМЦА С АНИМАЦИЕЙ ===")
-    
-    local pet = findHandHeldPet()
+    local pet = findPetInHands()
     if not pet then
         print("❌ Питомец в руках не найден!")
         return false
@@ -100,177 +50,69 @@ local function scanPetWithAnimation()
     
     print("✅ Найден питомец: " .. pet.Name)
     
-    -- Получаем все анимируемые части
-    local animatedParts = getAnimatedPartsFromTool(pet)
-    print(string.format("📦 Анимируемых частей: %d", #animatedParts))
+    -- Сохраняем ссылку на питомца
+    petTool = pet
     
-    -- Анализируем структуру
-    local allParts, partsByName = analyzeParts(pet, "ПИТОМЕЦ В РУКЕ")
-    
-    -- Инициализируем данные питомца
-    scannedPetData = {
-        name = pet.Name,
-        className = pet.ClassName,
-        properties = {},
-        children = {},
-        animatedParts = {},
-        staticCFrames = {},
-        motor6ds = {},
-        welds = {},
-        animations = {},
-        partsByName = partsByName
-    }
-    
-    -- Копируем основные свойства Tool
-    local importantProps = {"RequiresHandle", "CanBeDropped", "Enabled", "ManualActivationOnly"}
-    for _, prop in pairs(importantProps) do
-        pcall(function()
-            scannedPetData.properties[prop] = pet[prop]
-        end)
-    end
-    
-    -- Глубокое копирование детей с сохранением связей
-    for _, child in pairs(pet:GetChildren()) do
-        local childData = {
-            name = child.Name,
-            className = child.ClassName,
-            object = child:Clone()
-        }
+    -- КРИТИЧЕСКИ ВАЖНО: Сохраняем позицию питомца СЕЙЧАС, пока он в руках!
+    local character = player.Character
+    if character then
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local petHandle = pet:FindFirstChild("Handle")
         
-        -- Сохраняем статические CFrame для BasePart
-        if child:IsA("BasePart") then
-            scannedPetData.staticCFrames[child.Name] = child.CFrame
-            print("   📐 Сохранен статический CFrame: " .. child.Name)
-        end
-        
-        -- Сохраняем Motor6D соединения
-        if child:IsA("Motor6D") then
-            local motor6dData = {
-                name = child.Name,
-                part0Name = child.Part0 and child.Part0.Name or nil,
-                part1Name = child.Part1 and child.Part1.Name or nil,
-                c0 = child.C0,
-                c1 = child.C1,
-                currentAngle = child.CurrentAngle,
-                desiredAngle = child.DesiredAngle
-            }
-            scannedPetData.motor6ds[child.Name] = motor6dData
-            print("   🔗 Сохранен Motor6D: " .. child.Name)
-        end
-        
-        -- Сохраняем Weld соединения
-        if child:IsA("Weld") then
-            local weldData = {
-                name = child.Name,
-                part0Name = child.Part0 and child.Part0.Name or nil,
-                part1Name = child.Part1 and child.Part1.Name or nil,
-                c0 = child.C0,
-                c1 = child.C1
-            }
-            scannedPetData.welds[child.Name] = weldData
-            print("   🔗 Сохранен Weld: " .. child.Name)
-        end
-        
-        table.insert(scannedPetData.children, childData)
-    end
-    
-    -- КЛЮЧЕВАЯ ЧАСТЬ: Отслеживание CFrame анимации в реальном времени
-    print("\n🎬 === ОТСЛЕЖИВАНИЕ CFrame АНИМАЦИИ ===")
-    print("Записываю анимацию в течение 5 секунд...")
-    
-    local previousStates = {}
-    local animationFrames = {}
-    local frameCount = 0
-    
-    -- Инициализируем начальные состояния
-    for _, part in ipairs(animatedParts) do
-        if part and part.Parent then
-            previousStates[part.Name] = part.CFrame
-            animationFrames[part.Name] = {}
-        end
-    end
-    
-    local startTime = tick()
-    
-    -- Останавливаем предыдущее отслеживание если есть
-    if animationConnection then
-        animationConnection:Disconnect()
-    end
-    
-    animationConnection = RunService.Heartbeat:Connect(function()
-        local currentTime = tick()
-        local elapsed = currentTime - startTime
-        
-        -- Записываем кадры каждые 0.05 секунды
-        if elapsed % 0.05 < 0.016 then
-            frameCount = frameCount + 1
-            
-            for _, part in ipairs(animatedParts) do
-                if part and part.Parent then
-                    local partName = part.Name
-                    local currentCFrame = part.CFrame
-                    
-                    -- Сохраняем кадр анимации
-                    if not animationFrames[partName] then
-                        animationFrames[partName] = {}
-                    end
-                    
-                    table.insert(animationFrames[partName], {
-                        time = elapsed,
-                        cframe = currentCFrame
-                    })
-                    
-                    -- Проверяем изменения
-                    if previousStates[partName] then
-                        local prevCFrame = previousStates[partName]
-                        local positionDiff = (currentCFrame.Position - prevCFrame.Position).Magnitude
-                        local rotationDiff = math.abs(currentCFrame.LookVector:Dot(prevCFrame.LookVector) - 1)
-                        
-                        if positionDiff > 0.001 or rotationDiff > 0.001 then
-                            print(string.format("🔄 Анимация: %s (pos: %.3f, rot: %.3f)", partName, positionDiff, rotationDiff))
-                        end
-                    end
-                    
-                    previousStates[partName] = currentCFrame
-                end
+        if rightHand and petHandle then
+            local petGrip = rightHand:FindFirstChild("RightGrip")
+            if petGrip then
+                savedPetC0 = petGrip.C0
+                savedPetC1 = petGrip.C1
+                print("📍 ПОЗИЦИЯ ПИТОМЦА СОХРАНЕНА!")
+                print("📐 C0: " .. tostring(savedPetC0))
+                print("📐 C1: " .. tostring(savedPetC1))
+            else
+                print("⚠️ RightGrip не найден, используем стандартную позицию")
             end
         end
-        
-        -- Останавливаем через 5 секунд
-        if elapsed > 5 then
-            animationConnection:Disconnect()
-            animationConnection = nil
-            
-            -- Сохраняем записанную анимацию
-            scannedPetData.animationFrames = animationFrames
-            scannedPetData.totalFrames = frameCount
-            
-            print(string.format("\n📊 АНИМАЦИЯ ЗАПИСАНА:"))
-            print(string.format("🎬 Всего кадров: %d", frameCount))
-            print(string.format("⏱️ Длительность: %.1f сек", elapsed))
-            
-            local animatedPartsCount = 0
-            for partName, frames in pairs(animationFrames) do
-                if #frames > 0 then
-                    animatedPartsCount = animatedPartsCount + 1
-                    print(string.format("  - %s: %d кадров", partName, #frames))
-                end
-            end
-            
-            print(string.format("🎭 Анимированных частей: %d", animatedPartsCount))
-            print("✅ Питомец отсканирован с записью анимации!")
-        end
-    end)
+    end
     
+    -- НОВОЕ: Сканируем ВСЕ CFrame анимации питомца
+    print("🎬 === СКАНИРОВАНИЕ АНИМАЦИЙ ===")
+    savedAnimations = {} -- Очищаем старые данные
+    
+    local function scanPartAnimations(part, path)
+        if part:IsA("BasePart") then
+            -- Сохраняем CFrame части
+            savedAnimations[path] = {
+                CFrame = part.CFrame,
+                Position = part.Position,
+                Orientation = part.Orientation,
+                Size = part.Size
+            }
+            print("🎭 Сохранено: " .. path .. " -> CFrame: " .. tostring(part.CFrame))
+        end
+        
+        -- Рекурсивно сканируем все дочерние объекты
+        for _, child in pairs(part:GetChildren()) do
+            if child:IsA("BasePart") or child:IsA("Model") or child:IsA("Folder") then
+                scanPartAnimations(child, path .. "." .. child.Name)
+            end
+        end
+    end
+    
+    -- Начинаем сканирование с корня питомца
+    scanPartAnimations(pet, "Pet")
+    
+    print("✅ Анимации сохранены: " .. tostring(#savedAnimations) .. " частей")
+    print("🎬 Все CFrame позиции питомца записаны в память!")
+    
+    print("✅ Питомец и его позиция сохранены!")
     return true
 end
 
--- Функция замены Shovel с воспроизведением анимации
-local function replaceShovelWithAnimation()
-    print("\n🔄 === ЗАМЕНА SHOVEL С ВОСПРОИЗВЕДЕНИЕМ АНИМАЦИИ ===")
+-- ПРЯМАЯ ЗАМЕНА содержимого
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
     
-    if not scannedPetData then
-        print("❌ Питомец не отсканирован! Сначала отсканируйте питомца.")
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
         return false
     end
     
@@ -281,13 +123,19 @@ local function replaceShovelWithAnimation()
     end
     
     print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Заменяю Shovel на питомца с анимацией...")
+    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
     
-    -- Шаг 1: Меняем имя Shovel
+    -- Шаг 1: Меняем имя
     shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
-    print("✅ Имя изменено: " .. shovel.Name)
+    print("📝 Имя изменено: " .. shovel.Name)
     
-    -- Шаг 2: Удаляем всё содержимое Shovel
+    -- Шаг 2: Копируем свойства Tool
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 3: Удаляем все содержимое Shovel
     print("🗑️ Очищаю содержимое Shovel...")
     for _, child in pairs(shovel:GetChildren()) do
         child:Destroy()
@@ -295,135 +143,236 @@ local function replaceShovelWithAnimation()
     
     wait(0.1)
     
-    -- Шаг 3: Добавляем содержимое питомца
-    print("📋 Добавляю содержимое питомца...")
-    local addedParts = {}
-    
-    for _, childData in pairs(scannedPetData.children) do
-        local newChild = childData.object:Clone()
-        newChild.Parent = shovel
-        
-        if newChild:IsA("BasePart") then
-            addedParts[newChild.Name] = newChild
-            -- Устанавливаем начальный CFrame
-            if scannedPetData.staticCFrames[newChild.Name] then
-                newChild.CFrame = scannedPetData.staticCFrames[newChild.Name]
-            end
-        end
-        
-        print("   ✅ Добавлен: " .. newChild.Name .. " (" .. newChild.ClassName .. ")")
+    -- Шаг 4: Копируем все содержимое питомца
+    print("📋 Копирую содержимое питомца...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
     end
     
-    -- Шаг 4: Восстанавливаем Motor6D и Weld соединения
-    print("🔗 Восстанавливаю соединения...")
+    wait(0.1)
     
-    -- Motor6D
-    for motorName, motorData in pairs(scannedPetData.motor6ds) do
-        local motor = shovel:FindFirstChild(motorName)
-        if motor and motor:IsA("Motor6D") then
-            if motorData.part0Name then
-                motor.Part0 = addedParts[motorData.part0Name]
-            end
-            if motorData.part1Name then
-                motor.Part1 = addedParts[motorData.part1Name]
-            end
-            motor.C0 = motorData.c0
-            motor.C1 = motorData.c1
-            motor.CurrentAngle = motorData.currentAngle
-            motor.DesiredAngle = motorData.desiredAngle
-            print("   🔗 Восстановлен Motor6D: " .. motorName)
-        end
-    end
+    -- Шаг 5: ВОССТАНАВЛИВАЕМ ВСЕ АНИМАЦИИ питомца
+    print("🎬 === ВОССТАНОВЛЕНИЕ АНИМАЦИЙ ===")
     
-    -- Weld
-    for weldName, weldData in pairs(scannedPetData.welds) do
-        local weld = shovel:FindFirstChild(weldName)
-        if weld and weld:IsA("Weld") then
-            if weldData.part0Name then
-                weld.Part0 = addedParts[weldData.part0Name]
-            end
-            if weldData.part1Name then
-                weld.Part1 = addedParts[weldData.part1Name]
-            end
-            weld.C0 = weldData.c0
-            weld.C1 = weldData.c1
-            print("   🔗 Восстановлен Weld: " .. weldName)
-        end
-    end
-    
-    -- Шаг 5: Копируем свойства
-    for property, value in pairs(scannedPetData.properties) do
-        pcall(function()
-            if property ~= "Name" and property ~= "Parent" then
-                shovel[property] = value
-            end
-        end)
-    end
-    
-    -- Шаг 6: ВОСПРОИЗВОДИМ АНИМАЦИЮ
-    if scannedPetData.animationFrames and next(scannedPetData.animationFrames) then
-        print("🎬 Запускаю воспроизведение анимации...")
+    local function restorePartAnimations(part, basePath)
+        local currentPath = basePath .. "." .. part.Name
         
-        local animStartTime = tick()
-        local animConnection
-        
-        animConnection = RunService.Heartbeat:Connect(function()
-            local elapsed = tick() - animStartTime
+        if part:IsA("BasePart") and savedAnimations[currentPath] then
+            local savedData = savedAnimations[currentPath]
             
-            -- Циклически воспроизводим анимацию (5 секунд цикл)
-            local cycleTime = elapsed % 5
+            -- Применяем сохраненные CFrame и позиции
+            part.CFrame = savedData.CFrame
+            part.Position = savedData.Position
+            part.Orientation = savedData.Orientation
+            part.Size = savedData.Size
             
-            for partName, frames in pairs(scannedPetData.animationFrames) do
-                local part = addedParts[partName]
-                if part and #frames > 0 then
-                    -- Находим ближайший кадр по времени
-                    local bestFrame = frames[1]
-                    local bestTimeDiff = math.abs(cycleTime - bestFrame.time)
-                    
-                    for _, frame in ipairs(frames) do
-                        local timeDiff = math.abs(cycleTime - frame.time)
-                        if timeDiff < bestTimeDiff then
-                            bestTimeDiff = timeDiff
-                            bestFrame = frame
-                        end
-                    end
-                    
-                    -- Применяем CFrame из кадра
-                    part.CFrame = bestFrame.cframe
-                end
-            end
-        end)
+            print("🎭 Восстановлено: " .. currentPath .. " -> CFrame: " .. tostring(savedData.CFrame))
+        end
         
-        print("✅ Анимация запущена в цикле!")
+        -- Рекурсивно восстанавливаем для всех дочерних объектов
+        for _, child in pairs(part:GetChildren()) do
+            if child:IsA("BasePart") or child:IsA("Model") or child:IsA("Folder") then
+                restorePartAnimations(child, basePath)
+            end
+        end
+    end
+    
+    -- Применяем анимации ко всем частям скопированного питомца
+    if next(savedAnimations) then
+        restorePartAnimations(shovel, "Pet")
+        print("✅ Все анимации питомца восстановлены!")
+    else
+        print("⚠️ Сохраненные анимации не найдены")
+    end
+    
+    -- Шаг 6: ИСПРАВЛЯЕМ ПОЗИЦИЮ Handle с сохраненной позицией питомца
+    local character = player.Character
+    if character and savedPetC0 and savedPetC1 then
+        local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        local newHandle = shovel:FindFirstChild("Handle")
+        
+        if rightHand and newHandle then
+            print("🔧 Применяю сохраненную позицию питомца...")
+            
+            -- Удаляем старый Grip
+            local oldGrip = rightHand:FindFirstChild("RightGrip")
+            if oldGrip then oldGrip:Destroy() end
+            
+            -- Создаем новый Grip с ТОЧНОЙ позицией оригинального питомца
+            local newGrip = Instance.new("Weld")
+            newGrip.Name = "RightGrip"
+            newGrip.Part0 = rightHand
+            newGrip.Part1 = newHandle
+            newGrip.C0 = savedPetC0  -- ТОЧНАЯ позиция оригинала!
+            newGrip.C1 = savedPetC1  -- ТОЧНАЯ ориентация оригинала!
+            newGrip.Parent = rightHand
+            
+            print("✅ Позиция Handle ИСПРАВЛЕНА!")
+            print("📐 Применены C0/C1 от оригинального питомца")
+        else
+            print("⚠️ Не удалось применить позицию - используется стандартная")
+        end
+    else
+        print("⚠️ Сохраненная позиция не найдена - используется стандартная")
     end
     
     print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Shovel заменен на питомца с анимацией!")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
     print("📝 Новое имя: " .. shovel.Name)
-    print("🎬 Анимация воспроизводится циклически")
-    print("🎮 Питомец должен двигаться как оригинал!")
+    print("🎮 В руках должен быть питомец с ПРАВИЛЬНОЙ позицией!")
     
     return true
 end
 
+-- АЛЬТЕРНАТИВА: Замена содержимого существующего Tool БЕЗ создания нового
+local function alternativeReplace()
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА (FIX) ===")
+    
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
+    end
+    
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    local character = player.Character
+    if not character then
+        print("❌ Character не найден!")
+        return false
+    end
+
+    -- === 1. Используем ЗАРАНЕЕ сохраненные C0/C1 ===
+    print("📍 Используем сохраненную позицию питомца...")
+    if savedPetC0 and savedPetC1 then
+        print("✅ Позиция найдена в памяти!")
+        print("📐 C0: " .. tostring(savedPetC0))
+        print("📐 C1: " .. tostring(savedPetC1))
+    else
+        print("⚠️ Сохраненная позиция не найдена, используем стандартную")
+    end
+
+    -- === 2. Копируем свойства Tool ===
+    shovel.Name = petTool.Name
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped  
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    shovel.Enabled = petTool.Enabled
+
+    -- === 3. Удаляем старое содержимое ===
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+    end
+
+    -- === 4. Копируем содержимое питомца ===
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+
+        -- Если это Handle — временно закрепим
+        if copy.Name == "Handle" and copy:IsA("BasePart") then
+            copy.Anchored = true
+            copy.CanCollide = false
+            copy.CanTouch = false
+        end
+    end
+
+    -- === 4.5. ВОССТАНАВЛИВАЕМ ВСЕ АНИМАЦИИ питомца ===
+    print("🎬 === ВОССТАНОВЛЕНИЕ АНИМАЦИЙ ===")
+    
+    local function restorePartAnimations(part, basePath)
+        local currentPath = basePath .. "." .. part.Name
+        
+        if part:IsA("BasePart") and savedAnimations[currentPath] then
+            local savedData = savedAnimations[currentPath]
+            
+            -- Применяем сохраненные CFrame и позиции
+            part.CFrame = savedData.CFrame
+            part.Position = savedData.Position
+            part.Orientation = savedData.Orientation
+            part.Size = savedData.Size
+            
+            print("🎭 Восстановлено: " .. currentPath .. " -> CFrame: " .. tostring(savedData.CFrame))
+        end
+        
+        -- Рекурсивно восстанавливаем для всех дочерних объектов
+        for _, child in pairs(part:GetChildren()) do
+            if child:IsA("BasePart") or child:IsA("Model") or child:IsA("Folder") then
+                restorePartAnimations(child, basePath)
+            end
+        end
+    end
+    
+    -- Применяем анимации ко всем частям скопированного питомца
+    if next(savedAnimations) then
+        restorePartAnimations(shovel, "Pet")
+        print("✅ Все анимации питомца восстановлены!")
+    else
+        print("⚠️ Сохраненные анимации не найдены")
+    end
+
+    -- === 5. Создаём Weld сразу, пока физика не сработала ===
+    local newHandle = shovel:FindFirstChild("Handle")
+    local rightHand = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+
+    if newHandle and rightHand then
+        local oldGrip = rightHand:FindFirstChild("RightGrip")
+        if oldGrip then oldGrip:Destroy() end
+
+        local newGrip = Instance.new("Weld")
+        newGrip.Name = "RightGrip"
+        newGrip.Part0 = rightHand
+        newGrip.Part1 = newHandle
+        newGrip.C0 = savedPetC0 or CFrame.new(0, -1, -0.5)
+        newGrip.C1 = savedPetC1 or CFrame.new()
+        newGrip.Parent = rightHand
+
+        print("✅ Новый Weld установлен с сохранёнными C0/C1")
+    else
+        print("❌ Handle или RightHand не найдены!")
+    end
+
+    -- === 6. Включаем физику обратно ===
+    if newHandle then
+        newHandle.Anchored = false
+    end
+
+    -- === 7. Принудительно активируем Tool ===
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        shovel.Parent = player.Backpack  -- ИСПРАВЛЕНО: player.Backpack, а не character.Backpack!
+        wait()
+        shovel.Parent = character
+    end
+
+    print("🎯 Альтернативная замена завершена — позиция сохранена!")
+    return true
+end
+
+
 -- Создаем GUI
-local function createAdvancedReplacerGUI()
+local function createDirectFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "AdvancedShovelReplacerGUI"
+    screenGui.Name = "DirectShovelFixGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 450, 0, 350)
-    frame.Position = UDim2.new(0.5, -225, 0.5, -175)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.2, 0.3)
+    frame.Size = UDim2.new(0, 400, 0, 350)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.2, 0.4, 0.6)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
     title.BorderSizePixel = 0
-    title.Text = "🎬 ADVANCED SHOVEL REPLACER"
+    title.Text = "🎯 DIRECT SHOVEL FIX"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
@@ -433,42 +382,55 @@ local function createAdvancedReplacerGUI()
     status.Size = UDim2.new(1, -20, 0, 80)
     status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "1. Возьмите питомца в руки\n2. Отсканируйте с записью анимации (5 сек)\n3. Возьмите Shovel\n4. Замените с воспроизведением анимации"
+    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
     status.TextWrapped = true
     status.Parent = frame
     
-    -- Кнопка сканирования с анимацией
-    local scanBtn = Instance.new("TextButton")
-    scanBtn.Size = UDim2.new(1, -20, 0, 50)
-    scanBtn.Position = UDim2.new(0, 10, 0, 140)
-    scanBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
-    scanBtn.BorderSizePixel = 0
-    scanBtn.Text = "🎬 Сканировать с записью анимации"
-    scanBtn.TextColor3 = Color3.new(1, 1, 1)
-    scanBtn.TextScaled = true
-    scanBtn.Font = Enum.Font.SourceSansBold
-    scanBtn.Parent = frame
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить питомца"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
     
-    -- Кнопка замены с анимацией
-    local replaceBtn = Instance.new("TextButton")
-    replaceBtn.Size = UDim2.new(1, -20, 0, 50)
-    replaceBtn.Position = UDim2.new(0, 10, 0, 200)
-    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    replaceBtn.BorderSizePixel = 0
-    replaceBtn.Text = "🔄 Заменить с воспроизведением анимации"
-    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
-    replaceBtn.TextScaled = true
-    replaceBtn.Font = Enum.Font.SourceSansBold
-    replaceBtn.Visible = false
-    replaceBtn.Parent = frame
+    -- Кнопка прямой замены
+    local directBtn = Instance.new("TextButton")
+    directBtn.Size = UDim2.new(1, -20, 0, 50)
+    directBtn.Position = UDim2.new(0, 10, 0, 200)
+    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    directBtn.BorderSizePixel = 0
+    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
+    directBtn.TextColor3 = Color3.new(1, 1, 1)
+    directBtn.TextScaled = true
+    directBtn.Font = Enum.Font.SourceSansBold
+    directBtn.Visible = false
+    directBtn.Parent = frame
+    
+    -- Кнопка альтернативы
+    local altBtn = Instance.new("TextButton")
+    altBtn.Size = UDim2.new(1, -20, 0, 50)
+    altBtn.Position = UDim2.new(0, 10, 0, 260)
+    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    altBtn.BorderSizePixel = 0
+    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.TextColor3 = Color3.new(1, 1, 1)
+    altBtn.TextScaled = true
+    altBtn.Font = Enum.Font.SourceSansBold
+    altBtn.Visible = false
+    altBtn.Parent = frame
     
     -- Кнопка закрытия
     local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(1, -20, 0, 40)
-    closeBtn.Position = UDim2.new(0, 10, 0, 260)
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 310)
     closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
     closeBtn.BorderSizePixel = 0
     closeBtn.Text = "❌ Закрыть"
@@ -478,54 +440,61 @@ local function createAdvancedReplacerGUI()
     closeBtn.Parent = frame
     
     -- События
-    scanBtn.MouseButton1Click:Connect(function()
-        status.Text = "🎬 Сканирую питомца с записью анимации...\nДержите питомца в руках 5 секунд!"
-        status.TextColor3 = Color3.new(1, 1, 0)
-        scanBtn.Enabled = false
-        
-        local success = scanPetWithAnimation()
-        
-        wait(6) -- Ждем завершения записи
-        
-        if success and scannedPetData then
-            status.Text = "✅ Питомец отсканирован с анимацией!\nТеперь возьмите Shovel и замените."
-            status.TextColor3 = Color3.new(0, 1, 0)
-            replaceBtn.Visible = true
-        else
-            status.Text = "❌ Ошибка сканирования!\nВозьмите питомца в руки."
-            status.TextColor3 = Color3.new(1, 0, 0)
-        end
-        
-        scanBtn.Enabled = true
-    end)
-    
-    replaceBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Заменяю Shovel с воспроизведением анимации..."
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = replaceShovelWithAnimation()
+        local success = savePet()
         
         if success then
-            status.Text = "✅ Shovel заменен с анимацией!\nПитомец должен двигаться!"
+            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel и замените!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+            directBtn.Visible = true
+            altBtn.Visible = true
+        else
+            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    directBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Прямая замена содержимого..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = directReplace()
+        
+        if success then
+            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки."
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
+            status.TextColor3 = Color3.new(1, 0, 0)
+        end
+    end)
+    
+    altBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Альтернативная замена..."
+        status.TextColor3 = Color3.new(1, 1, 0)
+        
+        local success = alternativeReplace()
+        
+        if success then
+            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
+            status.TextColor3 = Color3.new(0, 1, 0)
+        else
+            status.Text = "❌ Ошибка альтернативы!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
     closeBtn.MouseButton1Click:Connect(function()
-        if animationConnection then
-            animationConnection:Disconnect()
-        end
         screenGui:Destroy()
     end)
 end
 
 -- Запускаем
-createAdvancedReplacerGUI()
-print("✅ AdvancedShovelReplacer готов!")
-print("🎬 Основан на методах из CFrameAnimationDiagnostic")
-print("🔍 1. Возьмите питомца в руки")
-print("🎬 2. Нажмите 'Сканировать с записью анимации'")
-print("🔄 3. Возьмите Shovel и нажмите 'Заменить с воспроизведением анимации'")
+createDirectFixGUI()
+print("✅ DirectShovelFix готов!")
+print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
+print("💾 1. Сохранить питомца")
+print("🔄 2. Заменить Shovel")
