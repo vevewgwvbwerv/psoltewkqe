@@ -1,498 +1,343 @@
--- DeepModelOriginDetective.lua
--- ДЕТЕКТИВНЫЙ АНАЛИЗАТОР: Глубокое исследование происхождения модели питомца
--- Отслеживает ВСЮ цепочку создания: ReplicatedStorage → Scripts → Events → Model
+-- 🎮 DirectShovelFix v7 - СОБСТВЕННЫЙ АНИМАЦИОННЫЙ ДВИЖОК
+-- Поскольку LocalScript не перезапускается, создаем свой движок анимации
+-- Управляем Motor6D напрямую через RunService
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local ReplicatedFirst = game:GetService("ReplicatedFirst")
-
+local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
-print("🕵️ === DEEP MODEL ORIGIN DETECTIVE ===")
-print("🎯 Цель: Найти ОТКУДА и КАК создается модель питомца")
-print("=" .. string.rep("=", 60))
+print("🎮 === DirectShovelFix v7 - CUSTOM ANIMATION ENGINE ===")
 
--- 📊 КОНФИГУРАЦИЯ ДЕТЕКТИВНОГО АНАЛИЗА
-local CONFIG = {
-    SEARCH_RADIUS = 300,
-    MONITOR_DURATION = 120,
-    DEEP_SCAN_INTERVAL = 0.02,
-    TRACK_ALL_INSTANCES = true,
-    ANALYZE_SCRIPTS = true,
-    MONITOR_EVENTS = true
-}
+-- Глобальные переменные
+local petTool = nil
+local savedPetData = {}
+local animationConnection = nil
+local animatedTool = nil
+local motor6DList = {}
 
--- 🔍 ДЕТЕКТИВНЫЕ ДАННЫЕ
-local DetectiveData = {
-    -- Источники моделей
-    modelSources = {},
-    
-    -- Скрипты и события
-    activeScripts = {},
-    detectedEvents = {},
-    
-    -- Цепочка создания
-    creationChain = {},
-    
-    -- Снимки состояния
-    beforeSnapshot = {},
-    afterSnapshot = {},
-    
-    -- Временная линия
-    timeline = {}
-}
-
--- 🖥️ ДЕТЕКТИВНАЯ КОНСОЛЬ
-local DetectiveConsole = nil
-local ConsoleLines = {}
-local MaxLines = 100
-
--- Создание детективной консоли
-local function createDetectiveConsole()
-    if DetectiveConsole then DetectiveConsole:Destroy() end
-    
-    DetectiveConsole = Instance.new("ScreenGui")
-    DetectiveConsole.Name = "DeepModelOriginDetectiveConsole"
-    DetectiveConsole.Parent = player:WaitForChild("PlayerGui")
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 700, 0, 500)
-    frame.Position = UDim2.new(0, 10, 0, 10)
-    frame.BackgroundColor3 = Color3.new(0.02, 0.02, 0.1)
-    frame.BorderSizePixel = 3
-    frame.BorderColor3 = Color3.new(0.8, 0.2, 0.2)
-    frame.Parent = DetectiveConsole
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 35)
-    title.BackgroundColor3 = Color3.new(0.8, 0.1, 0.1)
-    title.BorderSizePixel = 0
-    title.Text = "🕵️ DEEP MODEL ORIGIN DETECTIVE"
-    title.TextColor3 = Color3.new(1, 1, 1)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
-    local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, -10, 1, -45)
-    scrollFrame.Position = UDim2.new(0, 5, 0, 40)
-    scrollFrame.BackgroundColor3 = Color3.new(0.01, 0.01, 0.05)
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.ScrollBarThickness = 10
-    scrollFrame.Parent = frame
-    
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -10, 1, 0)
-    textLabel.Position = UDim2.new(0, 5, 0, 0)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = "🕵️ Детективный анализатор готов..."
-    textLabel.TextColor3 = Color3.new(1, 0.9, 0.9)
-    textLabel.TextSize = 11
-    textLabel.Font = Enum.Font.SourceSans
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.TextYAlignment = Enum.TextYAlignment.Top
-    textLabel.TextWrapped = true
-    textLabel.Parent = scrollFrame
-    
-    return textLabel
-end
-
--- Функция детективного логирования
-local function detectiveLog(category, message, data)
-    local timestamp = os.date("%H:%M:%S.") .. string.format("%03d", (tick() % 1) * 1000)
-    local prefixes = {
-        DETECTIVE = "🕵️", SOURCE = "📦", SCRIPT = "📜", EVENT = "⚡",
-        CREATION = "🏗️", CHAIN = "🔗", TIMELINE = "⏱️", CRITICAL = "🔥",
-        FOUND = "🎯", ANALYSIS = "🔬", MYSTERY = "❓", SOLVED = "✅"
-    }
-    
-    local logLine = string.format("[%s] %s %s", timestamp, prefixes[category] or "ℹ️", message)
-    
-    if data and next(data) then
-        for key, value in pairs(data) do
-            logLine = logLine .. string.format("\n    %s: %s", key, tostring(value))
-        end
-    end
-    
-    table.insert(ConsoleLines, logLine)
-    
-    if #ConsoleLines > MaxLines then
-        table.remove(ConsoleLines, 1)
-    end
-    
-    -- Обновляем консоль
-    if DetectiveConsole then
-        local textLabel = DetectiveConsole:FindFirstChild("Frame"):FindFirstChild("ScrollingFrame"):FindFirstChild("TextLabel")
-        if textLabel then
-            textLabel.Text = table.concat(ConsoleLines, "\n")
-            local scrollFrame = textLabel.Parent
-            scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 10)
-            scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.CanvasSize.Y.Offset)
-        end
-    end
-    
-    print(logLine)
-end
-
--- 🔍 ФАЗА 1: ГЛУБОКОЕ СКАНИРОВАНИЕ ИСТОЧНИКОВ
-local function scanAllModelSources()
-    detectiveLog("DETECTIVE", "🔍 НАЧАЛО ГЛУБОКОГО СКАНИРОВАНИЯ ИСТОЧНИКОВ")
-    
-    -- Сканирование ReplicatedStorage
-    detectiveLog("SOURCE", "📦 Сканирование ReplicatedStorage...")
-    local replicatedModels = 0
-    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("Tool") then
-            local name = obj.Name:lower()
-            if name:find("bunny") or name:find("dog") or name:find("pet") or name:find("animal") then
-                replicatedModels = replicatedModels + 1
-                DetectiveData.modelSources[obj:GetFullName()] = {
-                    object = obj,
-                    location = "ReplicatedStorage",
-                    path = obj:GetFullName(),
-                    children = #obj:GetChildren(),
-                    className = obj.ClassName
-                }
-                
-                detectiveLog("FOUND", "🎯 НАЙДЕН ИСТОЧНИК В REPLICATEDSTORAGE!", {
-                    Name = obj.Name,
-                    Path = obj:GetFullName(),
-                    ClassName = obj.ClassName,
-                    Children = #obj:GetChildren()
-                })
-            end
-        end
-    end
-    
-    -- Сканирование ReplicatedFirst
-    detectiveLog("SOURCE", "📦 Сканирование ReplicatedFirst...")
-    for _, obj in pairs(ReplicatedFirst:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("Tool") then
-            local name = obj.Name:lower()
-            if name:find("bunny") or name:find("dog") or name:find("pet") or name:find("animal") then
-                DetectiveData.modelSources[obj:GetFullName()] = {
-                    object = obj,
-                    location = "ReplicatedFirst",
-                    path = obj:GetFullName(),
-                    children = #obj:GetChildren(),
-                    className = obj.ClassName
-                }
-                
-                detectiveLog("FOUND", "🎯 НАЙДЕН ИСТОЧНИК В REPLICATEDFIRST!", {
-                    Name = obj.Name,
-                    Path = obj:GetFullName()
-                })
-            end
-        end
-    end
-    
-    detectiveLog("SOURCE", string.format("📊 Найдено %d потенциальных источников", replicatedModels))
-end
-
--- 📜 ФАЗА 2: АНАЛИЗ СКРИПТОВ
-local function analyzeActiveScripts()
-    detectiveLog("SCRIPT", "📜 АНАЛИЗ АКТИВНЫХ СКРИПТОВ...")
-    
-    -- Поиск скриптов в workspace
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Script") or obj:IsA("LocalScript") then
-            local scriptName = obj.Name:lower()
-            if scriptName:find("pet") or scriptName:find("egg") or scriptName:find("tool") or 
-               scriptName:find("model") or scriptName:find("spawn") or scriptName:find("create") then
-                
-                DetectiveData.activeScripts[obj:GetFullName()] = {
-                    script = obj,
-                    name = obj.Name,
-                    path = obj:GetFullName(),
-                    parent = obj.Parent and obj.Parent.Name or "NIL",
-                    className = obj.ClassName
-                }
-                
-                detectiveLog("SCRIPT", "📜 НАЙДЕН ПОДОЗРИТЕЛЬНЫЙ СКРИПТ!", {
-                    Name = obj.Name,
-                    Path = obj:GetFullName(),
-                    Parent = obj.Parent and obj.Parent.Name or "NIL"
-                })
-            end
-        end
-    end
-    
-    -- Поиск скриптов в ReplicatedStorage
-    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
-            local scriptName = obj.Name:lower()
-            if scriptName:find("pet") or scriptName:find("egg") or scriptName:find("tool") then
-                detectiveLog("SCRIPT", "📜 СКРИПТ В REPLICATEDSTORAGE!", {
-                    Name = obj.Name,
-                    Path = obj:GetFullName(),
-                    Type = obj.ClassName
-                })
-            end
-        end
-    end
-end
-
--- ⚡ ФАЗА 3: МОНИТОРИНГ СОБЫТИЙ И ИЗМЕНЕНИЙ
-local function monitorCreationEvents()
-    detectiveLog("EVENT", "⚡ МОНИТОРИНГ СОБЫТИЙ СОЗДАНИЯ...")
-    
-    -- Мониторинг добавления новых объектов в workspace
-    local workspaceConnection = Workspace.DescendantAdded:Connect(function(obj)
-        if obj:IsA("Model") or obj:IsA("Tool") then
-            local name = obj.Name:lower()
-            if name:find("bunny") or name:find("dog") or name:find("pet") or name:find("animal") then
-                local creationTime = tick()
-                
-                DetectiveData.creationChain[obj:GetFullName()] = {
-                    object = obj,
-                    createdAt = creationTime,
-                    parent = obj.Parent and obj.Parent.Name or "NIL",
-                    location = "Workspace"
-                }
-                
-                detectiveLog("CREATION", "🏗️ НОВАЯ МОДЕЛЬ СОЗДАНА В WORKSPACE!", {
-                    Name = obj.Name,
-                    Parent = obj.Parent and obj.Parent.Name or "NIL",
-                    ClassName = obj.ClassName,
-                    Time = string.format("%.3f", creationTime)
-                })
-                
-                -- Глубокий анализ новой модели
-                analyzeNewModel(obj)
-            end
-        end
-    end)
-    
-    -- Мониторинг добавления в character
+-- Поиск питомца в руках
+local function findPetInHands()
     local character = player.Character
-    if character then
-        local characterConnection = character.ChildAdded:Connect(function(obj)
-            if obj:IsA("Tool") then
-                local name = obj.Name:lower()
-                if name:find("bunny") or name:find("dog") or name:find("pet") or name:find("animal") then
-                    detectiveLog("CREATION", "🎮 TOOL ДОБАВЛЕН В CHARACTER!", {
-                        Name = obj.Name,
-                        ClassName = obj.ClassName,
-                        Children = #obj:GetChildren()
-                    })
-                    
-                    -- Анализ происхождения Tool
-                    analyzeToolOrigin(obj)
-                end
-            end
-        end)
-    end
+    if not character then return nil end
     
-    return workspaceConnection
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and string.find(tool.Name, "%[") and string.find(tool.Name, "KG%]") then
+            return tool
+        end
+    end
+    return nil
 end
 
--- 🔬 ГЛУБОКИЙ АНАЛИЗ НОВОЙ МОДЕЛИ
-local function analyzeNewModel(model)
-    detectiveLog("ANALYSIS", "🔬 ГЛУБОКИЙ АНАЛИЗ НОВОЙ МОДЕЛИ: " .. model.Name)
+-- Поиск инструмента для замены
+local function findToolToReplace()
+    local character = player.Character
+    if not character then return nil end
     
-    -- Анализ структуры
-    local structure = {
-        baseParts = 0,
-        meshParts = 0,
-        motor6ds = 0,
-        welds = 0,
-        scripts = 0,
-        animators = 0,
-        handles = 0
+    print("🔍 Поиск инструмента для замены...")
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") then
+            print("   Найден инструмент: " .. tool.Name)
+            -- Любой инструмент БЕЗ скобок [KG] (не питомец)
+            if not string.find(tool.Name, "%[") and not string.find(tool.Name, "KG%]") then
+                print("✅ Найден инструмент для замены: " .. tool.Name)
+                return tool
+            end
+        end
+    end
+    print("❌ Инструмент для замены не найден")
+    return nil
+end
+
+-- Сохранение данных питомца с Motor6D
+local function savePetWithMotor6D()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА + MOTOR6D ===")
+    
+    petTool = findPetInHands()
+    if not petTool then
+        print("❌ Питомец в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден питомец: " .. petTool.Name)
+    
+    -- Сохраняем базовые свойства
+    savedPetData = {
+        name = petTool.Name,
+        requiresHandle = petTool.RequiresHandle,
+        canBeDropped = petTool.CanBeDropped,
+        manualActivationOnly = petTool.ManualActivationOnly,
+        children = {},
+        motor6DData = {}
     }
     
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            structure.baseParts = structure.baseParts + 1
-            if obj.Name == "Handle" then
-                structure.handles = structure.handles + 1
+    -- Сохраняем все дочерние объекты
+    for _, child in pairs(petTool:GetChildren()) do
+        table.insert(savedPetData.children, child)
+    end
+    
+    -- Сохраняем данные Motor6D для анимации
+    local function collectMotor6D(parent, path)
+        path = path or ""
+        for _, child in pairs(parent:GetChildren()) do
+            if child:IsA("Motor6D") then
+                local motorData = {
+                    name = child.Name,
+                    path = path,
+                    part0Name = child.Part0 and child.Part0.Name or nil,
+                    part1Name = child.Part1 and child.Part1.Name or nil,
+                    originalC0 = child.C0,
+                    originalC1 = child.C1,
+                    currentC0 = child.C0,
+                    currentC1 = child.C1
+                }
+                table.insert(savedPetData.motor6DData, motorData)
+                print("🔧 Сохранен Motor6D: " .. child.Name)
             end
-        elseif obj:IsA("MeshPart") then
-            structure.meshParts = structure.meshParts + 1
-        elseif obj:IsA("Motor6D") then
-            structure.motor6ds = structure.motor6ds + 1
-        elseif obj:IsA("Weld") then
-            structure.welds = structure.welds + 1
-        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
-            structure.scripts = structure.scripts + 1
-            detectiveLog("SCRIPT", "📜 СКРИПТ В МОДЕЛИ: " .. obj.Name)
-        elseif obj:IsA("Animator") then
-            structure.animators = structure.animators + 1
+            collectMotor6D(child, path .. "/" .. child.Name)
         end
     end
     
-    detectiveLog("ANALYSIS", "📊 Структура модели:", structure)
+    collectMotor6D(petTool)
     
-    -- Поиск похожих моделей в источниках
-    for sourcePath, sourceData in pairs(DetectiveData.modelSources) do
-        if sourceData.object.Name == model.Name or 
-           sourceData.object.Name:lower():find(model.Name:lower()) then
-            detectiveLog("CHAIN", "🔗 ВОЗМОЖНАЯ СВЯЗЬ С ИСТОЧНИКОМ!", {
-                Source = sourcePath,
-                Model = model.Name,
-                Match = "Name similarity"
-            })
-        end
-    end
+    print("📊 Сохранено объектов: " .. #savedPetData.children)
+    print("🔧 Сохранено Motor6D: " .. #savedPetData.motor6DData)
+    
+    return true
 end
 
--- 🎯 АНАЛИЗ ПРОИСХОЖДЕНИЯ TOOL
-local function analyzeToolOrigin(tool)
-    detectiveLog("ANALYSIS", "🎯 АНАЛИЗ ПРОИСХОЖДЕНИЯ TOOL: " .. tool.Name)
+-- Создание собственного анимационного движка
+local function createCustomAnimationEngine(tool)
+    print("\n🎮 === СОЗДАНИЕ СОБСТВЕННОГО АНИМАЦИОННОГО ДВИЖКА ===")
     
-    -- Проверяем Handle
-    local handle = tool:FindFirstChild("Handle")
-    if handle then
-        detectiveLog("ANALYSIS", "🎮 Handle найден!", {
-            Position = tostring(handle.Position),
-            Size = tostring(handle.Size),
-            Material = tostring(handle.Material)
-        })
+    -- Останавливаем предыдущую анимацию
+    if animationConnection then
+        animationConnection:Disconnect()
+        animationConnection = nil
     end
     
-    -- Анализ содержимого
-    for _, child in pairs(tool:GetChildren()) do
-        detectiveLog("ANALYSIS", string.format("📦 Содержимое Tool: %s (%s)", child.Name, child.ClassName))
-        
-        if child:IsA("Model") then
-            detectiveLog("ANALYSIS", "🎯 МОДЕЛЬ ВНУТРИ TOOL!", {
-                ModelName = child.Name,
-                Children = #child:GetChildren()
-            })
-            
-            -- Сравниваем с источниками
-            for sourcePath, sourceData in pairs(DetectiveData.modelSources) do
-                if sourceData.object.Name == child.Name then
-                    detectiveLog("SOLVED", "✅ НАЙДЕНО СООТВЕТСТВИЕ С ИСТОЧНИКОМ!", {
-                        ToolModel = child.Name,
-                        SourcePath = sourcePath,
-                        SourceLocation = sourceData.location
-                    })
-                end
+    motor6DList = {}
+    
+    -- Собираем все Motor6D из нового инструмента
+    local function collectNewMotor6D(parent)
+        for _, child in pairs(parent:GetChildren()) do
+            if child:IsA("Motor6D") then
+                table.insert(motor6DList, child)
+                print("🔧 Найден Motor6D для анимации: " .. child.Name)
             end
+            collectNewMotor6D(child)
         end
     end
-}
-
--- 📊 ГЕНЕРАЦИЯ ДЕТЕКТИВНОГО ОТЧЕТА
-local function generateDetectiveReport()
-    detectiveLog("CRITICAL", "📊 === ДЕТЕКТИВНЫЙ ОТЧЕТ ===")
     
-    -- Источники моделей
-    detectiveLog("SOURCE", string.format("📦 Найдено %d источников моделей:", #DetectiveData.modelSources))
-    for path, data in pairs(DetectiveData.modelSources) do
-        detectiveLog("SOURCE", string.format("  • %s (%s)", data.object.Name, data.location))
+    collectNewMotor6D(tool)
+    
+    if #motor6DList == 0 then
+        print("❌ Motor6D не найдены для анимации!")
+        return false
     end
     
-    -- Активные скрипты
-    detectiveLog("SCRIPT", string.format("📜 Найдено %d подозрительных скриптов:", #DetectiveData.activeScripts))
-    for path, data in pairs(DetectiveData.activeScripts) do
-        detectiveLog("SCRIPT", string.format("  • %s", data.name))
-    end
+    print("✅ Найдено Motor6D для анимации: " .. #motor6DList)
     
-    -- Цепочка создания
-    detectiveLog("CREATION", string.format("🏗️ Отслежено %d событий создания:", #DetectiveData.creationChain))
-    for path, data in pairs(DetectiveData.creationChain) do
-        detectiveLog("CREATION", string.format("  • %s в %s", data.object.Name, data.location))
-    end
-    
-    detectiveLog("CRITICAL", "🕵️ ДЕТЕКТИВНОЕ РАССЛЕДОВАНИЕ ЗАВЕРШЕНО!")
-}
-
--- 🚀 ГЛАВНАЯ ФУНКЦИЯ ДЕТЕКТИВНОГО АНАЛИЗА
-local function startDetectiveInvestigation()
-    detectiveLog("DETECTIVE", "🚀 ЗАПУСК ДЕТЕКТИВНОГО РАССЛЕДОВАНИЯ")
-    detectiveLog("DETECTIVE", "🎯 Цель: Найти ОТКУДА и КАК создается модель питомца")
-    
-    -- Фаза 1: Сканирование источников
-    scanAllModelSources()
-    
-    -- Фаза 2: Анализ скриптов
-    analyzeActiveScripts()
-    
-    -- Фаза 3: Мониторинг событий
-    local workspaceConnection = monitorCreationEvents()
-    
-    -- Основной цикл расследования
+    -- Создаем анимационный цикл
     local startTime = tick()
-    local mainConnection
-    mainConnection = RunService.Heartbeat:Connect(function()
-        local elapsed = tick() - startTime
+    animatedTool = tool
+    
+    animationConnection = RunService.Heartbeat:Connect(function()
+        local currentTime = tick() - startTime
         
-        if elapsed > CONFIG.MONITOR_DURATION then
-            detectiveLog("DETECTIVE", "⏰ Расследование завершено по таймауту")
-            mainConnection:Disconnect()
-            if workspaceConnection then workspaceConnection:Disconnect() end
-            generateDetectiveReport()
+        -- Простая анимация: покачивание и движение
+        for i, motor6D in pairs(motor6DList) do
+            if motor6D and motor6D.Parent then
+                -- Находим соответствующие сохраненные данные
+                local savedMotor = nil
+                for _, savedData in pairs(savedPetData.motor6DData) do
+                    if savedData.name == motor6D.Name then
+                        savedMotor = savedData
+                        break
+                    end
+                end
+                
+                if savedMotor then
+                    -- Создаем анимацию на основе времени
+                    local wave1 = math.sin(currentTime * 2 + i) * 0.1
+                    local wave2 = math.cos(currentTime * 1.5 + i) * 0.05
+                    
+                    -- Применяем анимацию к C0
+                    local newC0 = savedMotor.originalC0 * CFrame.Angles(wave1, wave2, wave1 * 0.5)
+                    motor6D.C0 = newC0
+                    
+                    -- Небольшие изменения C1 для дополнительного движения
+                    local newC1 = savedMotor.originalC1 * CFrame.Angles(wave2 * 0.5, wave1 * 0.3, wave2)
+                    motor6D.C1 = newC1
+                end
+            end
         end
     end)
     
-    detectiveLog("DETECTIVE", "🕵️ ДЕТЕКТИВНОЕ РАССЛЕДОВАНИЕ АКТИВНО!")
-    detectiveLog("DETECTIVE", "🥚 ОТКРОЙТЕ ЯЙЦО ДЛЯ НАЧАЛА РАССЛЕДОВАНИЯ!")
+    print("✅ Анимационный движок запущен!")
+    print("🎮 Питомец должен анимироваться!")
+    
+    return true
 end
 
--- Создаем GUI
-local function createDetectiveGUI()
+-- Основная функция замены с собственной анимацией
+local function replaceWithCustomAnimation()
+    print("\n🔄 === ЗАМЕНА С СОБСТВЕННОЙ АНИМАЦИЕЙ ===")
+    
+    if not petTool or #savedPetData.children == 0 then
+        print("❌ Сначала сохраните данные питомца!")
+        return false
+    end
+    
+    local toolToReplace = findToolToReplace()
+    if not toolToReplace then
+        print("❌ Инструмент для замены не найден!")
+        return false
+    end
+    
+    print("✅ Заменяем: " .. toolToReplace.Name)
+    
+    -- Шаг 1: Меняем свойства
+    toolToReplace.Name = savedPetData.name
+    toolToReplace.RequiresHandle = savedPetData.requiresHandle
+    toolToReplace.CanBeDropped = savedPetData.canBeDropped
+    toolToReplace.ManualActivationOnly = savedPetData.manualActivationOnly
+    print("📝 Свойства обновлены")
+    
+    -- Шаг 2: Очищаем содержимое
+    for _, child in pairs(toolToReplace:GetChildren()) do
+        child:Destroy()
+    end
+    wait(0.1)
+    print("🗑️ Содержимое очищено")
+    
+    -- Шаг 3: Копируем все содержимое
+    for _, child in pairs(savedPetData.children) do
+        if child and child.Parent then
+            local copy = child:Clone()
+            copy.Parent = toolToReplace
+            print("📋 Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+        end
+    end
+    
+    wait(0.3) -- Даем время на инициализацию
+    
+    -- Шаг 4: ЗАПУСКАЕМ СОБСТВЕННЫЙ АНИМАЦИОННЫЙ ДВИЖОК
+    print("\n🎯 === ЗАПУСК СОБСТВЕННОГО АНИМАЦИОННОГО ДВИЖКА ===")
+    local success = createCustomAnimationEngine(toolToReplace)
+    
+    if success then
+        print("✅ УСПЕХ! Собственный анимационный движок запущен!")
+        print("🎮 Питомец должен анимироваться собственным движком!")
+    else
+        print("⚠️ Проблемы с запуском анимационного движка")
+    end
+    
+    print("\n🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Инструмент заменен на: " .. toolToReplace.Name)
+    print("🎮 Анимация: Собственный движок")
+    
+    return true
+end
+
+-- Остановка анимации
+local function stopAnimation()
+    if animationConnection then
+        animationConnection:Disconnect()
+        animationConnection = nil
+        print("🛑 Анимационный движок остановлен")
+    end
+end
+
+-- Создание GUI
+local function createGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "DeepModelOriginDetectiveGUI"
+    screenGui.Name = "DirectShovelFixV7"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 350, 0, 150)
-    frame.Position = UDim2.new(1, -370, 0, 10)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.05, 0.05)
+    frame.Size = UDim2.new(0, 500, 0, 250)
+    frame.Position = UDim2.new(0.5, -250, 0.5, -125)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
+    -- Заголовок
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.new(0.8, 0.1, 0.1)
-    title.BorderSizePixel = 0
-    title.Text = "🕵️ MODEL ORIGIN DETECTIVE"
+    title.BackgroundTransparency = 1
+    title.Text = "🎮 DirectShovelFix v7 - Custom Animation"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
+    title.Font = Enum.Font.GothamBold
     title.Parent = frame
     
-    local startBtn = Instance.new("TextButton")
-    startBtn.Size = UDim2.new(1, -20, 0, 50)
-    startBtn.Position = UDim2.new(0, 10, 0, 50)
-    startBtn.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
-    startBtn.BorderSizePixel = 0
-    startBtn.Text = "🚀 НАЧАТЬ РАССЛЕДОВАНИЕ"
-    startBtn.TextColor3 = Color3.new(1, 1, 1)
-    startBtn.TextScaled = true
-    startBtn.Font = Enum.Font.SourceSansBold
-    startBtn.Parent = frame
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(0.45, 0, 0, 50)
+    saveBtn.Position = UDim2.new(0.025, 0, 0, 50)
+    saveBtn.BackgroundColor3 = Color3.new(0.2, 0.6, 0.2)
+    saveBtn.Text = "💾 СОХРАНИТЬ\nПИТОМЦА"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.Gotham
+    saveBtn.Parent = frame
     
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 40)
-    status.Position = UDim2.new(0, 10, 0, 110)
-    status.BackgroundTransparency = 1
-    status.Text = "Готов к расследованию.\nОткройте яйцо после запуска."
-    status.TextColor3 = Color3.new(1, 1, 1)
-    status.TextScaled = true
-    status.Font = Enum.Font.SourceSans
-    status.TextWrapped = true
-    status.Parent = frame
+    -- Кнопка замены
+    local replaceBtn = Instance.new("TextButton")
+    replaceBtn.Size = UDim2.new(0.45, 0, 0, 50)
+    replaceBtn.Position = UDim2.new(0.525, 0, 0, 50)
+    replaceBtn.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
+    replaceBtn.Text = "🎮 ЗАМЕНИТЬ\n+ АНИМАЦИЯ"
+    replaceBtn.TextColor3 = Color3.new(1, 1, 1)
+    replaceBtn.TextScaled = true
+    replaceBtn.Font = Enum.Font.Gotham
+    replaceBtn.Parent = frame
     
-    startBtn.MouseButton1Click:Connect(function()
-        status.Text = "🕵️ Расследование активно!\nОткройте яйцо сейчас!"
-        status.TextColor3 = Color3.new(1, 0.2, 0.2)
-        startBtn.Text = "✅ РАССЛЕДОВАНИЕ АКТИВНО"
-        startBtn.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
-        startBtn.Active = false
-        
-        startDetectiveInvestigation()
+    -- Кнопка остановки анимации
+    local stopBtn = Instance.new("TextButton")
+    stopBtn.Size = UDim2.new(0.45, 0, 0, 30)
+    stopBtn.Position = UDim2.new(0.025, 0, 0, 110)
+    stopBtn.BackgroundColor3 = Color3.new(0.6, 0.3, 0.1)
+    stopBtn.Text = "🛑 ОСТАНОВИТЬ АНИМАЦИЮ"
+    stopBtn.TextColor3 = Color3.new(1, 1, 1)
+    stopBtn.TextScaled = true
+    stopBtn.Font = Enum.Font.Gotham
+    stopBtn.Parent = frame
+    
+    -- Информационная панель
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Size = UDim2.new(0.95, 0, 0, 80)
+    infoLabel.Position = UDim2.new(0.025, 0, 0, 150)
+    infoLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    infoLabel.Text = "НОВЫЙ ПОДХОД: Собственный анимационный движок!\n1. Возьмите питомца → СОХРАНИТЬ\n2. Возьмите любой инструмент → ЗАМЕНИТЬ\n3. Наслаждайтесь анимацией!"
+    infoLabel.TextColor3 = Color3.new(1, 1, 1)
+    infoLabel.TextScaled = true
+    infoLabel.Font = Enum.Font.Gotham
+    infoLabel.Parent = frame
+    
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0.45, 0, 0, 15)
+    closeBtn.Position = UDim2.new(0.525, 0, 0, 235)
+    closeBtn.BackgroundColor3 = Color3.new(0.6, 0.1, 0.1)
+    closeBtn.Text = "❌ ЗАКРЫТЬ"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.Gotham
+    closeBtn.Parent = frame
+    
+    -- Обработчики событий
+    saveBtn.MouseButton1Click:Connect(savePetWithMotor6D)
+    replaceBtn.MouseButton1Click:Connect(replaceWithCustomAnimation)
+    stopBtn.MouseButton1Click:Connect(stopAnimation)
+    closeBtn.MouseButton1Click:Connect(function()
+        stopAnimation()
+        screenGui:Destroy()
     end)
+    
+    print("🎮 GUI создан! Новый подход: собственный анимационный движок!")
 end
 
--- Запускаем
-local consoleTextLabel = createDetectiveConsole()
-createDetectiveGUI()
-
-detectiveLog("DETECTIVE", "✅ DeepModelOriginDetective готов!")
-detectiveLog("DETECTIVE", "🕵️ Детективное расследование происхождения модели")
-detectiveLog("DETECTIVE", "🚀 Нажмите 'НАЧАТЬ РАССЛЕДОВАНИЕ' и откройте яйцо!")
+-- Запуск
+createGUI()
