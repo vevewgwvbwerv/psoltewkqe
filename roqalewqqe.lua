@@ -1,28 +1,15 @@
--- PerfectShovelReplacer.lua
--- РАДИКАЛЬНЫЙ ПОДХОД: Полная замена Tool на клонированный питомец
+-- DirectShovelFix.lua
+-- ПРЯМОЕ РЕШЕНИЕ: Меняем содержимое Shovel на содержимое питомца
 
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
-print("=== PERFECT SHOVEL REPLACER ===")
+print("=== DIRECT SHOVEL FIX ===")
 
--- Глобальная переменная для хранения клонированного питомца
-local clonedPetTool = nil
+-- Глобальные переменные
+local petTool = nil
 
--- Функция поиска Shovel в руках
-local function findShovelInHands()
-    local character = player.Character
-    if not character then return nil end
-    
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
-            return tool
-        end
-    end
-    return nil
-end
-
--- Функция поиска питомца в руках
+-- Поиск питомца в руках
 local function findPetInHands()
     local character = player.Character
     if not character then return nil end
@@ -35,9 +22,22 @@ local function findPetInHands()
     return nil
 end
 
--- НОВЫЙ ПОДХОД: Полное клонирование питомца Tool
-local function clonePetTool()
-    print("\n📋 === КЛОНИРОВАНИЕ ПИТОМЦА TOOL ===")
+-- Поиск Shovel в руках
+local function findShovelInHands()
+    local character = player.Character
+    if not character then return nil end
+    
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") and (string.find(tool.Name, "Shovel") or string.find(tool.Name, "Destroy")) then
+            return tool
+        end
+    end
+    return nil
+end
+
+-- СОХРАНИТЬ питомца
+local function savePet()
+    print("\n💾 === СОХРАНЕНИЕ ПИТОМЦА ===")
     
     local pet = findPetInHands()
     if not pet then
@@ -47,47 +47,71 @@ local function clonePetTool()
     
     print("✅ Найден питомец: " .. pet.Name)
     
-    -- Создаем ПОЛНУЮ копию Tool питомца
-    clonedPetTool = pet:Clone()
-    clonedPetTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    -- Сохраняем ссылку на питомца
+    petTool = pet
     
-    print("✅ Создан клон питомца: " .. clonedPetTool.Name)
-    print("📊 Структура клона:")
+    print("✅ Питомец сохранен!")
+    return true
+end
+
+-- ПРЯМАЯ ЗАМЕНА содержимого
+local function directReplace()
+    print("\n🔄 === ПРЯМАЯ ЗАМЕНА СОДЕРЖИМОГО ===")
     
-    -- Анализируем структуру клона
-    local partCount = 0
-    local meshCount = 0
-    local scriptCount = 0
-    
-    for _, obj in pairs(clonedPetTool:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            partCount = partCount + 1
-            print("   📦 Part: " .. obj.Name)
-        elseif obj:IsA("SpecialMesh") then
-            meshCount = meshCount + 1
-            print("   🎨 Mesh: " .. obj.Name)
-        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
-            scriptCount = scriptCount + 1
-            print("   📜 Script: " .. obj.Name)
-        elseif obj:IsA("Motor6D") then
-            print("   🔗 Motor6D: " .. obj.Name)
-        elseif obj:IsA("Weld") then
-            print("   🔗 Weld: " .. obj.Name)
-        end
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
+        return false
     end
     
-    print(string.format("📊 Итого: %d частей, %d мешей, %d скриптов", partCount, meshCount, scriptCount))
-    print("✅ Клонирование завершено!")
+    local shovel = findShovelInHands()
+    if not shovel then
+        print("❌ Shovel в руках не найден!")
+        return false
+    end
+    
+    print("✅ Найден Shovel: " .. shovel.Name)
+    print("🔧 Меняю содержимое Shovel на содержимое питомца...")
+    
+    -- Шаг 1: Меняем имя
+    shovel.Name = "Dragonfly [6.36 KG] [Age 35]"
+    print("📝 Имя изменено: " .. shovel.Name)
+    
+    -- Шаг 2: Копируем свойства Tool
+    shovel.RequiresHandle = petTool.RequiresHandle
+    shovel.CanBeDropped = petTool.CanBeDropped
+    shovel.ManualActivationOnly = petTool.ManualActivationOnly
+    print("🔧 Свойства Tool скопированы")
+    
+    -- Шаг 3: Удаляем все содержимое Shovel
+    print("🗑️ Очищаю содержимое Shovel...")
+    for _, child in pairs(shovel:GetChildren()) do
+        child:Destroy()
+    end
+    
+    wait(0.1)
+    
+    -- Шаг 4: Копируем все содержимое питомца
+    print("📋 Копирую содержимое питомца...")
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = shovel
+        print("   ✅ Скопировано: " .. child.Name .. " (" .. child.ClassName .. ")")
+    end
+    
+    print("🎯 === РЕЗУЛЬТАТ ===")
+    print("✅ Shovel ПОЛНОСТЬЮ заменен содержимым питомца!")
+    print("📝 Новое имя: " .. shovel.Name)
+    print("🎮 В руках должен быть питомец с именем Dragonfly!")
     
     return true
 end
 
--- РАДИКАЛЬНАЯ ЗАМЕНА: Удаляем Shovel, добавляем клон питомца
-local function perfectReplace()
-    print("\n🔄 === ИДЕАЛЬНАЯ ЗАМЕНА SHOVEL ===")
+-- АЛЬТЕРНАТИВА: Замена через удаление и создание
+local function alternativeReplace()
+    print("\n🔄 === АЛЬТЕРНАТИВНАЯ ЗАМЕНА ===")
     
-    if not clonedPetTool then
-        print("❌ Клон питомца не создан! Сначала клонируйте питомца.")
+    if not petTool then
+        print("❌ Сначала сохраните питомца!")
         return false
     end
     
@@ -104,93 +128,73 @@ local function perfectReplace()
     end
     
     print("✅ Найден Shovel: " .. shovel.Name)
-    print("🔧 Выполняю идеальную замену...")
+    print("🔧 Альтернативная замена...")
     
-    -- Шаг 1: Удаляем Shovel полностью
-    print("🗑️ Удаляю Shovel...")
+    -- Создаем новый Tool на основе питомца
+    local newTool = Instance.new("Tool")
+    newTool.Name = "Dragonfly [6.36 KG] [Age 35]"
+    newTool.RequiresHandle = true
+    newTool.CanBeDropped = true
+    newTool.ManualActivationOnly = false
+    
+    -- ИСПРАВЛЕНО: Сохраняем позицию Shovel Handle ПЕРЕД удалением
+    local shovelHandle = shovel:FindFirstChild("Handle")
+    local shovelPosition = nil
+    if shovelHandle then
+        shovelPosition = shovelHandle.CFrame
+        print("📍 Сохранена позиция Shovel Handle")
+    end
+    
+    -- Копируем содержимое питомца
+    for _, child in pairs(petTool:GetChildren()) do
+        local copy = child:Clone()
+        copy.Parent = newTool
+        
+        -- ИСПРАВЛЕНО: Настраиваем Anchored для правильной работы
+        if copy:IsA("BasePart") then
+            copy.Anchored = false  -- Все части свободны для анимации
+        end
+    end
+    
+    -- ИСПРАВЛЕНО: Устанавливаем правильную позицию Handle ПЕРЕД удалением Shovel
+    local newHandle = newTool:FindFirstChild("Handle")
+    if newHandle and shovelPosition then
+        newHandle.CFrame = shovelPosition
+        print("📍 Установлена позиция нового Handle")
+    end
+    
+    -- Удаляем Shovel
     shovel:Destroy()
     
-    -- Шаг 2: Небольшая пауза для стабилизации
     wait(0.1)
     
-    -- Шаг 3: Добавляем клон питомца в руки
-    print("🐉 Добавляю клон питомца в руки...")
-    clonedPetTool.Parent = character
-    
-    print("🎯 === РЕЗУЛЬТАТ ===")
-    print("✅ Shovel ПОЛНОСТЬЮ заменен на клон питомца!")
-    print("📝 Имя: " .. clonedPetTool.Name)
-    print("📍 Местоположение: " .. (clonedPetTool.Parent and clonedPetTool.Parent.Name or "NIL"))
-    print("🎮 В руках должен быть ТОЧНЫЙ клон питомца!")
-    print("🎭 Со всеми анимациями и правильным положением!")
-    
-    return true
-end
-
--- АЛЬТЕРНАТИВНЫЙ ПОДХОД: Замена через Backpack
-local function replaceViaBackpack()
-    print("\n🔄 === ЗАМЕНА ЧЕРЕЗ BACKPACK ===")
-    
-    if not clonedPetTool then
-        print("❌ Клон питомца не создан!")
-        return false
-    end
-    
-    local character = player.Character
-    if not character then
-        print("❌ Character не найден!")
-        return false
-    end
-    
+    -- ИСПРАВЛЕНО: Добавляем в Backpack сначала, потом в руки
     local backpack = character:FindFirstChild("Backpack")
     if not backpack then
         backpack = Instance.new("Backpack")
         backpack.Parent = character
-        print("✅ Создан Backpack")
     end
     
-    -- Удаляем все Tool из Backpack и Character
-    print("🗑️ Очищаю инвентарь...")
-    
-    for _, tool in pairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            print("   🗑️ Удаляю из Backpack: " .. tool.Name)
-            tool:Destroy()
-        end
-    end
-    
-    for _, tool in pairs(character:GetChildren()) do
-        if tool:IsA("Tool") then
-            print("   🗑️ Удаляю из рук: " .. tool.Name)
-            tool:Destroy()
-        end
-    end
-    
-    wait(0.2)
-    
-    -- Добавляем клон питомца в Backpack
-    print("🐉 Добавляю клон в Backpack...")
-    clonedPetTool.Parent = backpack
-    
+    -- Сначала в Backpack
+    newTool.Parent = backpack
     wait(0.1)
     
-    -- Перемещаем в руки
-    print("🔄 Перемещаю в руки...")
-    clonedPetTool.Parent = character
+    -- Затем в руки
+    newTool.Parent = character
     
-    print("✅ Замена через Backpack завершена!")
+    print("✅ Альтернативная замена завершена!")
     return true
 end
 
 -- Создаем GUI
-local function createPerfectReplacerGUI()
+local function createDirectFixGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PerfectShovelReplacerGUI"
+    screenGui.Name = "DirectShovelFixGUI"
     screenGui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 450, 0, 400)
-    frame.Position = UDim2.new(0.5, -225, 0.5, -200)
+    frame.Size = UDim2.new(0, 400, 0, 350)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -175)
     frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.3)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
@@ -199,7 +203,7 @@ local function createPerfectReplacerGUI()
     title.Size = UDim2.new(1, 0, 0, 40)
     title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.6)
     title.BorderSizePixel = 0
-    title.Text = "🎯 PERFECT SHOVEL REPLACER"
+    title.Text = "🎯 DIRECT SHOVEL FIX"
     title.TextColor3 = Color3.new(1, 1, 1)
     title.TextScaled = true
     title.Font = Enum.Font.SourceSansBold
@@ -209,55 +213,55 @@ local function createPerfectReplacerGUI()
     status.Size = UDim2.new(1, -20, 0, 80)
     status.Position = UDim2.new(0, 10, 0, 50)
     status.BackgroundTransparency = 1
-    status.Text = "РАДИКАЛЬНЫЙ ПОДХОД:\n1. Возьмите питомца в руки\n2. Клонируйте питомца\n3. Возьмите Shovel\n4. Выполните идеальную замену"
+    status.Text = "ПРОСТОЕ РЕШЕНИЕ:\n1. Возьмите питомца → Сохранить\n2. Возьмите Shovel → Заменить\nБЕЗ СЛОЖНОСТЕЙ!"
     status.TextColor3 = Color3.new(1, 1, 1)
     status.TextScaled = true
     status.Font = Enum.Font.SourceSans
     status.TextWrapped = true
     status.Parent = frame
     
-    -- Кнопка клонирования
-    local cloneBtn = Instance.new("TextButton")
-    cloneBtn.Size = UDim2.new(1, -20, 0, 50)
-    cloneBtn.Position = UDim2.new(0, 10, 0, 140)
-    cloneBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
-    cloneBtn.BorderSizePixel = 0
-    cloneBtn.Text = "📋 Клонировать питомца Tool"
-    cloneBtn.TextColor3 = Color3.new(1, 1, 1)
-    cloneBtn.TextScaled = true
-    cloneBtn.Font = Enum.Font.SourceSansBold
-    cloneBtn.Parent = frame
+    -- Кнопка сохранения
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1, -20, 0, 50)
+    saveBtn.Position = UDim2.new(0, 10, 0, 140)
+    saveBtn.BackgroundColor3 = Color3.new(0, 0.8, 0)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "💾 Сохранить питомца"
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.TextScaled = true
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = frame
     
-    -- Кнопка идеальной замены
-    local perfectBtn = Instance.new("TextButton")
-    perfectBtn.Size = UDim2.new(1, -20, 0, 50)
-    perfectBtn.Position = UDim2.new(0, 10, 0, 200)
-    perfectBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    perfectBtn.BorderSizePixel = 0
-    perfectBtn.Text = "🎯 ИДЕАЛЬНАЯ ЗАМЕНА"
-    perfectBtn.TextColor3 = Color3.new(1, 1, 1)
-    perfectBtn.TextScaled = true
-    perfectBtn.Font = Enum.Font.SourceSansBold
-    perfectBtn.Visible = false
-    perfectBtn.Parent = frame
+    -- Кнопка прямой замены
+    local directBtn = Instance.new("TextButton")
+    directBtn.Size = UDim2.new(1, -20, 0, 50)
+    directBtn.Position = UDim2.new(0, 10, 0, 200)
+    directBtn.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    directBtn.BorderSizePixel = 0
+    directBtn.Text = "🔄 ПРЯМАЯ ЗАМЕНА"
+    directBtn.TextColor3 = Color3.new(1, 1, 1)
+    directBtn.TextScaled = true
+    directBtn.Font = Enum.Font.SourceSansBold
+    directBtn.Visible = false
+    directBtn.Parent = frame
     
-    -- Кнопка замены через Backpack
-    local backpackBtn = Instance.new("TextButton")
-    backpackBtn.Size = UDim2.new(1, -20, 0, 50)
-    backpackBtn.Position = UDim2.new(0, 10, 0, 260)
-    backpackBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
-    backpackBtn.BorderSizePixel = 0
-    backpackBtn.Text = "🔄 Замена через Backpack"
-    backpackBtn.TextColor3 = Color3.new(1, 1, 1)
-    backpackBtn.TextScaled = true
-    backpackBtn.Font = Enum.Font.SourceSansBold
-    backpackBtn.Visible = false
-    backpackBtn.Parent = frame
+    -- Кнопка альтернативы
+    local altBtn = Instance.new("TextButton")
+    altBtn.Size = UDim2.new(1, -20, 0, 50)
+    altBtn.Position = UDim2.new(0, 10, 0, 260)
+    altBtn.BackgroundColor3 = Color3.new(0.6, 0, 0.8)
+    altBtn.BorderSizePixel = 0
+    altBtn.Text = "🔄 АЛЬТЕРНАТИВА"
+    altBtn.TextColor3 = Color3.new(1, 1, 1)
+    altBtn.TextScaled = true
+    altBtn.Font = Enum.Font.SourceSansBold
+    altBtn.Visible = false
+    altBtn.Parent = frame
     
     -- Кнопка закрытия
     local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(1, -20, 0, 40)
-    closeBtn.Position = UDim2.new(0, 10, 0, 320)
+    closeBtn.Size = UDim2.new(1, -20, 0, 30)
+    closeBtn.Position = UDim2.new(0, 10, 0, 310)
     closeBtn.BackgroundColor3 = Color3.new(0.6, 0.2, 0.2)
     closeBtn.BorderSizePixel = 0
     closeBtn.Text = "❌ Закрыть"
@@ -267,49 +271,49 @@ local function createPerfectReplacerGUI()
     closeBtn.Parent = frame
     
     -- События
-    cloneBtn.MouseButton1Click:Connect(function()
-        status.Text = "📋 Клонирую питомца Tool...\nАнализирую структуру..."
+    saveBtn.MouseButton1Click:Connect(function()
+        status.Text = "💾 Сохраняю питомца..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = clonePetTool()
+        local success = savePet()
         
         if success then
-            status.Text = "✅ Питомец клонирован!\nТеперь возьмите Shovel и выполните замену."
+            status.Text = "✅ Питомец сохранен!\nТеперь возьмите Shovel и замените!"
             status.TextColor3 = Color3.new(0, 1, 0)
-            perfectBtn.Visible = true
-            backpackBtn.Visible = true
+            directBtn.Visible = true
+            altBtn.Visible = true
         else
-            status.Text = "❌ Ошибка клонирования!\nВозьмите питомца в руки."
+            status.Text = "❌ Ошибка!\nВозьмите питомца в руки!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    perfectBtn.MouseButton1Click:Connect(function()
-        status.Text = "🎯 Выполняю идеальную замену...\nУдаляю Shovel, добавляю клон питомца..."
+    directBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Прямая замена содержимого..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = perfectReplace()
+        local success = directReplace()
         
         if success then
-            status.Text = "✅ ИДЕАЛЬНАЯ ЗАМЕНА ЗАВЕРШЕНА!\nВ руках точный клон питомца!"
+            status.Text = "✅ ЗАМЕНА ЗАВЕРШЕНА!\nShovel = Питомец!"
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки."
+            status.Text = "❌ Ошибка замены!\nВозьмите Shovel в руки!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
     
-    backpackBtn.MouseButton1Click:Connect(function()
-        status.Text = "🔄 Замена через Backpack...\nОчищаю инвентарь и добавляю клон..."
+    altBtn.MouseButton1Click:Connect(function()
+        status.Text = "🔄 Альтернативная замена..."
         status.TextColor3 = Color3.new(1, 1, 0)
         
-        local success = replaceViaBackpack()
+        local success = alternativeReplace()
         
         if success then
-            status.Text = "✅ Замена через Backpack завершена!\nКлон питомца в руках!"
+            status.Text = "✅ АЛЬТЕРНАТИВА ЗАВЕРШЕНА!\nНовый Tool создан!"
             status.TextColor3 = Color3.new(0, 1, 0)
         else
-            status.Text = "❌ Ошибка замены через Backpack!"
+            status.Text = "❌ Ошибка альтернативы!"
             status.TextColor3 = Color3.new(1, 0, 0)
         end
     end)
@@ -320,10 +324,8 @@ local function createPerfectReplacerGUI()
 end
 
 -- Запускаем
-createPerfectReplacerGUI()
-print("✅ PerfectShovelReplacer готов!")
-print("🎯 РАДИКАЛЬНЫЙ ПОДХОД:")
-print("   📋 1. Клонируем ВЕСЬ Tool питомца")
-print("   🗑️ 2. Полностью удаляем Shovel")
-print("   🐉 3. Добавляем клон питомца в руки")
-print("🎮 Результат: ТОЧНАЯ копия питомца вместо Shovel!")
+createDirectFixGUI()
+print("✅ DirectShovelFix готов!")
+print("🎯 ПРОСТОЕ РЕШЕНИЕ БЕЗ СЛОЖНОСТЕЙ!")
+print("💾 1. Сохранить питомца")
+print("🔄 2. Заменить Shovel")
