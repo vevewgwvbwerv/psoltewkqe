@@ -1573,55 +1573,56 @@ if initSuccess then
     print("=" .. string.rep("=", 70))
     print("✅ PetScaler v2.0 успешно запущен!")
     
-    -- === МГНОВЕННОЕ СКРЫТИЕ ОРИГИНАЛА ===
-    print("\n⚡ === МГНОВЕННОЕ СКРЫТИЕ ОРИГИНАЛА ===")
-    print("💡 Оригинальный питомец будет скрываться МОМЕНТАЛЬНО при взятии в руки!")
-    
-    -- СОБЫТИЙНОЕ МГНОВЕННОЕ СКРЫТИЕ ОРИГИНАЛА!
-    local player = Players.LocalPlayer
-    if player and player.Character then
-        player.Character.ChildAdded:Connect(function(child)
-            if child:IsA("Tool") then
-                -- Проверяем что это питомец
-                local isPet = false
-                if child.Name:find("KG") or child.Name:find("Dragonfly") or 
-                   child.Name:find("%{") and child.Name:find("%}") or
-                   child.Name:find("%[") and child.Name:find("%]") and child.Name:find("Age") then
-                    isPet = true
-                end
-                
-                if isPet then
-                    print("⚡ МОМЕНТАЛЬНО скрываю оригинального питомца:", child.Name)
-                    
-                    -- МГНОВЕННО СКРЫВАЕМ ВСЕ ЧАСТИ ОРИГИНАЛА!
-                    spawn(function()
-                        for _, obj in pairs(child:GetDescendants()) do
-                            if obj:IsA("Model") then
-                                for _, part in pairs(obj:GetDescendants()) do
-                                    if part:IsA("BasePart") then
-                                        part.Transparency = 1
-                                    end
-                                end
-                            elseif obj:IsA("BasePart") then
-                                obj.Transparency = 1
-                            end
-                        end
-                        print("✅ Оригинальный питомец скрыт МОМЕНТАЛЬНО!")
-                    end)
-                end
-            end
-        end)
-    end
-    
     -- === АВТОМАТИЧЕСКИЙ КЛИК КНОПКИ ЗАМЕНЫ В РУКЕ ===
     print("\n🔄 === АВТОМАТИЧЕСКИЙ КЛИК КНОПКИ ===")
     print("💡 Теперь кнопка будет нажиматься АВТОМАТИЧЕСКИ когда вы берете питомца в руки!")
     
     local processedTools = {} -- Чтобы не кликать по одному Tool много раз
     
+    -- ФУНКЦИЯ ПРОВЕРКИ ГОТОВНОСТИ ПИТОМЦА
+    local function isPetReady(handTool)
+        -- Проверяем что Tool стабилен
+        if not handTool or not handTool.Parent then
+            return false
+        end
+        
+        -- Ищем модель питомца в Tool
+        local petModel = nil
+        for _, obj in pairs(handTool:GetDescendants()) do
+            if obj:IsA("Model") and obj.Name ~= handTool.Name then
+                petModel = obj
+                break
+            end
+        end
+        
+        if not petModel then
+            return false
+        end
+        
+        -- Проверяем что у модели есть PrimaryPart
+        if not petModel.PrimaryPart then
+            return false
+        end
+        
+        -- Проверяем что модель не движется быстро (стабилизировалась)
+        local velocity = petModel.PrimaryPart.Velocity
+        if velocity.Magnitude > 1 then -- Если скорость больше 1, еще движется
+            return false
+        end
+        
+        -- Проверяем что Handle существует и стабилен
+        local handle = handTool:FindFirstChild("Handle")
+        if not handle then
+            return false
+        end
+        
+        print("✅ Питомец готов и стабилизировался!")
+        return true
+    end
+
     spawn(function()
         while true do
-            wait(0.5) -- Проверяем каждые 0.5 секунды
+            wait(0.08) -- Проверяем каждые 0.08 секунды
             
             local player = Players.LocalPlayer
             if player and player.Character then
@@ -1636,7 +1637,10 @@ if initSuccess then
                     end
                     
                     if isPet and not processedTools[handTool] then
-                        print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
+                        -- ЖДЕМ ПОКА ПИТОМЕЦ БУДЕТ ГОТОВ!
+                        print("🔍 Проверяю готовность питомца...")
+                        if isPetReady(handTool) then
+                            print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
                         
                         -- МГНОВЕННО СКРЫВАЕМ ОРИГИНАЛЬНОГО ПИТОМЦА!
                         print("⚡ МГНОВЕННО скрываю оригинального питомца...")
@@ -1694,6 +1698,10 @@ if initSuccess then
                             
                             print("✅ Автоматическая замена завершена!")
                         end)
+                        else
+                            -- Питомец еще НЕ готов - ждем следующую проверку
+                            print("⏳ Питомец еще не готов, жду стабилизации...")
+                        end
                     end
                 end
             end
