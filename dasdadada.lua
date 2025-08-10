@@ -1622,7 +1622,7 @@ if initSuccess then
 
     spawn(function()
         while true do
-            wait(0.02) -- Проверяем каждые 0.02 секунды
+            wait(0.0115) -- Проверяем каждые 0.0115 секунды
             
             local player = Players.LocalPlayer
             if player and player.Character then
