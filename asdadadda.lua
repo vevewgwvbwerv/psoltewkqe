@@ -809,6 +809,19 @@ local function replaceHandPetWithAnimation()
     
     print("🎯 Найден Tool в руке:", handTool.Name)
     
+    -- СРАЗУ СКРЫВАЕМ ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ!
+    print("⚡ СРАЗУ скрываю оригинального питомца в руке...")
+    for _, obj in pairs(handTool:GetDescendants()) do
+        if obj:IsA("Model") then
+            for _, part in pairs(obj:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Transparency = 1
+                end
+            end
+        end
+    end
+    print("✅ Оригинальный питомец скрыт В НАЧАЛЕ функции!")
+    
     -- Шаг 2: НАЙТИ UUID ПИТОМЦА НА ЗЕМЛЕ ДЛЯ КОПИРОВАНИЯ АНИМАЦИЙ
     local petModel = findAndScalePet()
     if not petModel then
@@ -857,6 +870,20 @@ local function replaceHandPetWithAnimation()
                 print("📍 Копия позиционирована по Handle (fallback)")
             end
         end
+    end
+    
+    -- ПРОСТОЕ СКРЫТИЕ ОРИГИНАЛЬНОГО ПИТОМЦА (НЕ ТРОГАЯ КОПИЮ!)
+    if originalHandPet then
+        print("👻 Скрываю оригинального питомца в руке...")
+        
+        -- Делаем оригинального питомца невидимым
+        for _, obj in pairs(originalHandPet:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.Transparency = 1
+            end
+        end
+        
+        print("✅ Оригинальный питомец скрыт! Видна только копия!")
     end
     
     -- Шаг 4: ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ ДЛЯ КОПИИ В РУКЕ
@@ -1567,7 +1594,7 @@ if initSuccess then
     
     spawn(function()
         while true do
-            wait(0.5) -- Проверяем каждые 0.5 секунды
+            wait(0.5) -- Проверяем каждые 0.5 секунды (ОРИГИНАЛЬНАЯ БЕЗОПАСНАЯ СКОРОСТЬ)
             
             local player = Players.LocalPlayer
             if player and player.Character then
@@ -1588,19 +1615,44 @@ if initSuccess then
                         -- Отмечаем что этот Tool уже обработан
                         processedTools[handTool] = true
                         
-                        -- АВТОМАТИЧЕСКИ НАЖИМАЕМ КНОПКУ!
-                        local playerGui = player:WaitForChild("PlayerGui")
-                        local gui = playerGui:FindFirstChild("PetScalerV2GUI")
-                        if gui then
-                            local handButton = gui:FindFirstChild("HandButton")
-                            if handButton then
-                                -- Симулируем клик кнопки
-                                for _, connection in pairs(getconnections(handButton.MouseButton1Click)) do
-                                    connection:Fire()
+                        -- АВТОМАТИЧЕСКИ ВЫЗЫВАЕМ ФУНКЦИЮ КНОПКИ!
+                        spawn(function()
+                            -- Меняем текст кнопки (как при клике)
+                            local playerGui = player:WaitForChild("PlayerGui")
+                            local gui = playerGui:FindFirstChild("PetScalerV2GUI")
+                            if gui then
+                                local handButton = gui:FindFirstChild("HandButton")
+                                if handButton then
+                                    handButton.Text = "⏳ Заменяю питомца в руке..."
+                                    handButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
                                 end
-                                print("✅ Кнопка нажата автоматически!")
                             end
-                        end
+                            
+                            -- ПРЯМО ВЫЗЫВАЕМ ФУНКЦИЮ ЗАМЕНЫ!
+                            local success = replaceHandPetWithAnimation()
+                            
+                            -- Обновляем кнопку (как при клике)
+                            if gui then
+                                local handButton = gui:FindFirstChild("HandButton")
+                                if handButton then
+                                    if success then
+                                        handButton.Text = "✅ Питомец заменен!"
+                                        handButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                                        wait(2)
+                                        handButton.Text = "✋ Заменить питомца в руке"
+                                        handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+                                    else
+                                        handButton.Text = "❌ Ошибка замены!"
+                                        handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                                        wait(2)
+                                        handButton.Text = "✋ Заменить питомца в руке"
+                                        handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+                                    end
+                                end
+                            end
+                            
+                            print("✅ Автоматическая замена завершена!")
+                        end)
                     end
                 end
             end
