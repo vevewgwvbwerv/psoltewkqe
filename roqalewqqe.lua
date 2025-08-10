@@ -859,34 +859,18 @@ local function replaceHandPetWithAnimation()
         end
     end
     
-    -- СКРЫВАЕМ ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ (НЕ УДАЛЯЯ!)
+    -- ПРОСТОЕ СКРЫТИЕ ОРИГИНАЛЬНОГО ПИТОМЦА (НЕ ТРОГАЯ КОПИЮ!)
     if originalHandPet then
-        print("👻 Скрываю оригинального питомца в руке (делаю невидимым)...")
+        print("👻 Скрываю оригинального питомца в руке...")
         
-        -- Делаем все части оригинального питомца невидимыми
+        -- Делаем оригинального питомца невидимым
         for _, obj in pairs(originalHandPet:GetDescendants()) do
             if obj:IsA("BasePart") then
-                obj.Transparency = 1 -- Полностью прозрачный
-            elseif obj:IsA("Decal") or obj:IsA("Texture") or obj:IsA("SurfaceGui") then
-                obj.Transparency = 1 -- Скрываем текстуры
-            elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
-                obj.Enabled = false -- Отключаем GUI элементы
-            elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") then
-                obj.Enabled = false -- Отключаем эффекты
-            elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
-                obj.Enabled = false -- Отключаем освещение
+                obj.Transparency = 1
             end
         end
         
-        -- Дополнительно: перемещаем оригинального питомца далеко вниз (но не удаляем!)
-        if originalHandPet.PrimaryPart then
-            local hiddenPosition = originalHandPet.PrimaryPart.CFrame - Vector3.new(0, 1000, 0)
-            originalHandPet:SetPrimaryPartCFrame(hiddenPosition)
-        end
-        
-        print("✅ Оригинальный питомец скрыт! Теперь видна только копия в руке!")
-    else
-        print("⚠️ Оригинальный питомец в руке не найден для скрытия")
+        print("✅ Оригинальный питомец скрыт! Видна только копия!")
     end
     
     -- Шаг 4: ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ ДЛЯ КОПИИ В РУКЕ
@@ -1613,6 +1597,20 @@ if initSuccess then
                     
                     if isPet and not processedTools[handTool] then
                         print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
+                        
+                        -- БЫСТРО СКРЫВАЕМ ОРИГИНАЛЬНОГО ПИТОМЦА (КАК В РАБОЧЕЙ ФУНКЦИИ!)
+                        print("⚡ Быстро скрываю оригинального питомца...")
+                        for _, obj in pairs(handTool:GetDescendants()) do
+                            if obj:IsA("Model") then
+                                for _, part in pairs(obj:GetDescendants()) do
+                                    if part:IsA("BasePart") then
+                                        part.Transparency = 1
+                                    end
+                                end
+                            end
+                        end
+                        print("✅ Оригинальный питомец скрыт быстро!")
+                        
                         print("🚀 Автоматически нажимаю кнопку замены...")
                         
                         -- Отмечаем что этот Tool уже обработан
