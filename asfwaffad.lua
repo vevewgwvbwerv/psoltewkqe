@@ -808,30 +808,105 @@ local function replaceHandPetWithAnimation()
     local petCopy = petModel:Clone()
     petCopy.Name = petModel.Name .. "_HAND_COPY"
     
-    -- КРИТИЧНО: Размещаем копию В РУКЕ (не в Workspace!)
+    -- КРИТИЧНО: Находим Tool в руке (ТОЧНО КАК В PetScaler_v3.226.lua)
     local playerChar = Players.LocalPlayer.Character
     if not playerChar then
         print("❌ Персонаж не найден!")
         return false
     end
     
-    local handle = playerChar:FindFirstChild("Handle")
-    if not handle then
-        print("❌ Handle не найден в руке!")
+    print("🔍 Поиск питомца в руке...")
+    print("👤 Проверяем character...")
+    
+    -- ТОЧНО КАК В PetScaler_v3.226.lua - поиск Tool в character
+    local handTool = playerChar:FindFirstChildOfClass("Tool")
+    if not handTool then
+        print("❌ Tool в руке не найден!")
         return false
     end
     
-    -- Находим и удаляем старого питомца из руки
-    for _, obj in pairs(handle:GetChildren()) do
+    print("🎯 Найден Tool:", handTool.Name)
+    
+    -- ПРОВЕРЯЕМ ЧТО ЭТО ПИТОМЕЦ (точно как в PetScaler_v3.226.lua)
+    local isPet = false
+    local petType = "Unknown"
+    
+    -- Проверка на Dog (содержит KG)
+    if handTool.Name:find("KG") then
+        isPet = true
+        petType = "Dog"
+    end
+    
+    -- Проверка на Dragonfly
+    if handTool.Name:find("Dragonfly") then
+        isPet = true
+        petType = "Dragonfly"
+    elseif handTool.Name:find("%{") and handTool.Name:find("%}") then
+        isPet = true
+        petType = "Dragonfly (UUID)"
+    elseif handTool.Name:find("%[") and handTool.Name:find("%]") and handTool.Name:find("Age") then
+        isPet = true
+        petType = "Dragonfly (UUID Age)"
+    end
+    
+    if not isPet then
+        print("⚠️ Tool не является питомцем (ни Dog, ни Dragonfly не найден)")
+        print("🔍 Имя Tool:", handTool.Name)
+        return false
+    end
+    
+    print(string.format("✅ %s питомец найден в руках: %s", petType, handTool.Name))
+    
+    -- Находим и удаляем старого питомца из Tool (исключая Handle)
+    for _, obj in pairs(handTool:GetDescendants()) do
         if obj:IsA("Model") then
-            print("🗑️ Удаляю старого питомца из руки:", obj.Name)
+            print("🗑️ Удаляю старую модель из Tool:", obj.Name)
+            obj:Destroy()
+        elseif obj:IsA("BasePart") and obj.Name ~= "Handle" then
+            print("🗑️ Удаляю старую часть из Tool:", obj.Name)
             obj:Destroy()
         end
     end
     
-    -- РАЗМЕЩАЕМ КОПИЮ В РУКЕ (это ключевой момент!)
-    petCopy.Parent = handle
-    print("✅ Копия размещена в Handle (руке)!")
+    -- КРИТИЧНО: НЕ размещаем в Tool, а оставляем в Workspace (как в PetScaler_v3.226.lua)
+    petCopy.Parent = Workspace
+    print("✅ Копия размещена в Workspace (как в PetScaler_v3.226.lua)!")
+    
+    -- ПОЗИЦИОНИРУЕМ КОПИЮ РЯДОМ С ИГРОКОМ (как в PetScaler_v3.226.lua)
+    if petCopy.PrimaryPart and petModel.PrimaryPart then
+        local originalCFrame = petModel.PrimaryPart.CFrame
+        local offset = Vector3.new(15, 0, 0)  -- Рядом с оригиналом
+        
+        local targetPosition = originalCFrame.Position + offset
+        
+        -- Raycast на землю (точно как в PetScaler_v3.226.lua)
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {petCopy, petModel}
+        
+        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            local groundY = raycastResult.Position.Y
+            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
+            local upVector = Vector3.new(0, 1, 0)
+            local lookVector = originalCFrame.LookVector
+            lookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+            local newCFrame = CFrame.lookAt(finalPosition, finalPosition + lookVector, upVector)
+            petCopy:SetPrimaryPartCFrame(newCFrame)
+            print("📍 Копия размещена на земле в стоячем положении")
+        else
+            local newPosition = originalCFrame.Position + offset
+            local upVector = Vector3.new(0, 1, 0)
+            local lookVector = Vector3.new(originalCFrame.LookVector.X, 0, originalCFrame.LookVector.Z).Unit
+            local newCFrame = CFrame.lookAt(newPosition, newPosition + lookVector, upVector)
+            petCopy:SetPrimaryPartCFrame(newCFrame)
+            print("📍 Копия размещена на уровне оригинала в стоячем положении")
+        end
+    end
     
     -- Шаг 3: ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ (точно как в PetScaler_v3.226.lua)
     print("🔧 Исправляю Attachment связи...")
@@ -863,7 +938,7 @@ local function replaceHandPetWithAnimation()
     
     print("✅ Исправлено Attachment связей:", fixedCount)
     
-    -- Шаг 4: УМНОЕ УПРАВЛЕНИЕ ANCHORED (точно как в PetScaler_v3.226.lua)
+    -- Шаг 4: УМНОЕ УПРАВЛЕНИЕ ANCHORED (ТОЧНО как в PetScaler_v3.226.lua)
     print("🧠 Умное управление Anchored...")
     local copyParts = getAllParts(petCopy)
     
@@ -887,16 +962,16 @@ local function replaceHandPetWithAnimation()
         print("  ✅ Корневая часть:", rootPart.Name)
     end
     
-    -- Применяем умный Anchored (КЛЮЧЕВОЙ МОМЕНТ ДЛЯ ЗАКРЕПЛЕНИЯ В РУКЕ!)
+    -- КРИТИЧНО: Применяем умный Anchored (ТОЧНО как в PetScaler_v3.226.lua)
     for _, part in ipairs(copyParts) do
         if part == rootPart then
-            part.Anchored = false -- В руке корень НЕ должен быть заякорен!
+            part.Anchored = true -- КОРЕНЬ ЗАЯКОРЕН (предотвращает падение!)
         else
-            part.Anchored = false -- Остальные тоже свободны для анимации
+            part.Anchored = false -- Остальные свободны для анимации
         end
     end
     
-    print("  ✅ Anchored настроен для руки: все части свободны для анимации")
+    print("  ✅ Anchored настроен: корень заякорен, остальные свободны (как в PetScaler_v3.226.lua)")
     
     -- Шаг 5: ПРЯМОЕ КОПИРОВАНИЕ АНИМАЦИЙ (точно как в PetScaler_v3.226.lua)
     print("\n🎭 === ПРЯМОЕ КОПИРОВАНИЕ АНИМАЦИЙ ===")
