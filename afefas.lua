@@ -791,125 +791,76 @@ end
 
 -- === НОВАЯ ФУНКЦИЯ: ЗАМЕНА ПИТОМЦА В РУКЕ (ТОЧНО КАК PetScaler_v3.226.lua) ===
 local function replaceHandPetWithAnimation()
-    print("\n✋ === ЗАМЕНА ПИТОМЦА В РУКЕ (ТОЧНО КАК PetScaler_v3.226.lua) ===")
+    print("\n✋ === ЗАМЕНА ПИТОМЦА В РУКЕ НА АНИМИРОВАННУЮ КОПИЮ ===")
+    print("🔍 Ищу питомца в руке и создаю копию В РУКЕ...")
     
-    -- Шаг 1: Найти UUID питомца (точно как в PetScaler_v3.226.lua)
-    local petModel = findAndScalePet()
-    if not petModel then
-        print("❌ UUID питомец не найден!")
-        return false
-    end
-    
-    print("🎯 Найден UUID питомец:", petModel.Name)
-    
-    -- Шаг 2: Создать копию UUID питомца (ТОЧНО КАК В PetScaler_v3.226.lua)
-    print("📋 Создаю глубокую копию модели:", petModel.Name)
-    
-    local petCopy = petModel:Clone()
-    petCopy.Name = petModel.Name .. "_HAND_COPY"
-    
-    -- КРИТИЧНО: Находим Tool в руке (ТОЧНО КАК В PetScaler_v3.226.lua)
+    -- Шаг 1: НАЙТИ TOOL В РУКЕ
     local playerChar = Players.LocalPlayer.Character
     if not playerChar then
         print("❌ Персонаж не найден!")
         return false
     end
     
-    print("🔍 Поиск питомца в руке...")
-    print("👤 Проверяем character...")
-    
-    -- ТОЧНО КАК В PetScaler_v3.226.lua - поиск Tool в character
     local handTool = playerChar:FindFirstChildOfClass("Tool")
     if not handTool then
         print("❌ Tool в руке не найден!")
         return false
     end
     
-    print("🎯 Найден Tool:", handTool.Name)
+    print("🎯 Найден Tool в руке:", handTool.Name)
     
-    -- ПРОВЕРЯЕМ ЧТО ЭТО ПИТОМЕЦ (точно как в PetScaler_v3.226.lua)
-    local isPet = false
-    local petType = "Unknown"
-    
-    -- Проверка на Dog (содержит KG)
-    if handTool.Name:find("KG") then
-        isPet = true
-        petType = "Dog"
-    end
-    
-    -- Проверка на Dragonfly
-    if handTool.Name:find("Dragonfly") then
-        isPet = true
-        petType = "Dragonfly"
-    elseif handTool.Name:find("%{") and handTool.Name:find("%}") then
-        isPet = true
-        petType = "Dragonfly (UUID)"
-    elseif handTool.Name:find("%[") and handTool.Name:find("%]") and handTool.Name:find("Age") then
-        isPet = true
-        petType = "Dragonfly (UUID Age)"
-    end
-    
-    if not isPet then
-        print("⚠️ Tool не является питомцем (ни Dog, ни Dragonfly не найден)")
-        print("🔍 Имя Tool:", handTool.Name)
+    -- Шаг 2: НАЙТИ UUID ПИТОМЦА НА ЗЕМЛЕ ДЛЯ КОПИРОВАНИЯ АНИМАЦИЙ
+    local petModel = findAndScalePet()
+    if not petModel then
+        print("❌ UUID питомец на земле не найден!")
         return false
     end
     
-    print(string.format("✅ %s питомец найден в руках: %s", petType, handTool.Name))
+    print("✅ Найден UUID питомец на земле:", petModel.Name)
     
-    -- Находим и удаляем старого питомца из Tool (исключая Handle)
+    -- Шаг 3: СОЗДАТЬ КОПИЮ UUID ПИТОМЦА В РУКЕ (НЕ удаляя оригинала!)
+    print("📋 Создаю копию UUID питомца В РУКЕ...")
+    
+    -- Создаем копию БЕЗ автоматического размещения в Workspace
+    local petCopy = petModel:Clone()
+    petCopy.Name = petModel.Name .. "_HAND_COPY"
+    
+    -- РАЗМЕЩАЕМ КОПИЮ В РУКЕ (в Tool) рядом с оригинальным питомцем
+    petCopy.Parent = handTool
+    print("✅ Копия размещена В РУКЕ (в Tool)!")
+    
+    -- НАХОДИМ ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ ДЛЯ КОПИРОВАНИЯ ПОЗИЦИИ
+    print("🔍 Ищу оригинального питомца в Tool для копирования позиции...")
+    
+    local originalHandPet = nil
     for _, obj in pairs(handTool:GetDescendants()) do
-        if obj:IsA("Model") then
-            print("🗑️ Удаляю старую модель из Tool:", obj.Name)
-            obj:Destroy()
-        elseif obj:IsA("BasePart") and obj.Name ~= "Handle" then
-            print("🗑️ Удаляю старую часть из Tool:", obj.Name)
-            obj:Destroy()
+        if obj:IsA("Model") and obj ~= petCopy then
+            originalHandPet = obj
+            print("✅ Найден оригинальный питомец в руке:", obj.Name)
+            break
         end
     end
     
-    -- КРИТИЧНО: НЕ размещаем в Tool, а оставляем в Workspace (как в PetScaler_v3.226.lua)
-    petCopy.Parent = Workspace
-    print("✅ Копия размещена в Workspace (как в PetScaler_v3.226.lua)!")
-    
-    -- ПОЗИЦИОНИРУЕМ КОПИЮ РЯДОМ С ИГРОКОМ (как в PetScaler_v3.226.lua)
-    if petCopy.PrimaryPart and petModel.PrimaryPart then
-        local originalCFrame = petModel.PrimaryPart.CFrame
-        local offset = Vector3.new(15, 0, 0)  -- Рядом с оригиналом
-        
-        local targetPosition = originalCFrame.Position + offset
-        
-        -- Raycast на землю (точно как в PetScaler_v3.226.lua)
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {petCopy, petModel}
-        
-        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
-        local rayDirection = Vector3.new(0, -200, 0)
-        
-        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        
-        if raycastResult then
-            local groundY = raycastResult.Position.Y
-            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
-            local upVector = Vector3.new(0, 1, 0)
-            local lookVector = originalCFrame.LookVector
-            lookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-            local newCFrame = CFrame.lookAt(finalPosition, finalPosition + lookVector, upVector)
-            petCopy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на земле в стоячем положении")
+    -- Позиционируем копию ТОЧНО КАК ОРИГИНАЛЬНЫЙ ПИТОМЕЦ В РУКЕ
+    if petCopy.PrimaryPart then
+        if originalHandPet and originalHandPet.PrimaryPart then
+            -- КОПИРУЕМ ТОЧНУЮ ПОЗИЦИЮ ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ
+            local originalCFrame = originalHandPet.PrimaryPart.CFrame
+            petCopy:SetPrimaryPartCFrame(originalCFrame)
+            print("📍 Копия позиционирована ТОЧНО как оригинальный питомец в руке")
         else
-            local newPosition = originalCFrame.Position + offset
-            local upVector = Vector3.new(0, 1, 0)
-            local lookVector = Vector3.new(originalCFrame.LookVector.X, 0, originalCFrame.LookVector.Z).Unit
-            local newCFrame = CFrame.lookAt(newPosition, newPosition + lookVector, upVector)
-            petCopy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия размещена на уровне оригинала в стоячем положении")
+            -- Fallback к Handle если оригинальный питомец не найден
+            local handle = handTool:FindFirstChild("Handle")
+            if handle then
+                local handleCFrame = handle.CFrame
+                petCopy:SetPrimaryPartCFrame(handleCFrame)
+                print("📍 Копия позиционирована по Handle (fallback)")
+            end
         end
     end
     
-    -- Шаг 3: ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ (точно как в PetScaler_v3.226.lua)
-    print("🔧 Исправляю Attachment связи...")
+    -- Шаг 4: ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ ДЛЯ КОПИИ В РУКЕ
+    print("🔧 Исправляю Attachment связи для копии в руке...")
     local attachments = {}
     local fixedCount = 0
     
@@ -938,10 +889,11 @@ local function replaceHandPetWithAnimation()
     
     print("✅ Исправлено Attachment связей:", fixedCount)
     
-    -- Шаг 4: УМНОЕ УПРАВЛЕНИЕ ANCHORED (ТОЧНО как в PetScaler_v3.226.lua)
-    print("🧠 Умное управление Anchored...")
+    -- Шаг 5: УМНОЕ УПРАВЛЕНИЕ ANCHORED ДЛЯ КОПИИ В РУКЕ (КАК В PetScaler_v3.226.lua)
+    print("🧠 Настройка Anchored для копии в руке...")
     local copyParts = getAllParts(petCopy)
     
+    -- Находим корневую часть для якорения (точно как в PetScaler_v3.226.lua)
     local rootPart = nil
     local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
     
@@ -971,99 +923,50 @@ local function replaceHandPetWithAnimation()
         end
     end
     
-    print("  ✅ Anchored настроен: корень заякорен, остальные свободны (как в PetScaler_v3.226.lua)")
+    print("✅ Anchored настроен: корень заякорен, остальные свободны (как в PetScaler_v3.226.lua)")
     
-    -- Шаг 5: LIVE КОПИРОВАНИЕ АНИМАЦИЙ ОТ ПИТОМЦА В РУКЕ (точно как в PetScaler_v3.226.lua)
-    print("\n🎭 === LIVE КОПИРОВАНИЕ АНИМАЦИЙ ОТ ПИТОМЦА В РУКЕ ===")
-    print("🔄 Копирую анимации от питомца в руке к копии в Workspace...")
+    -- Шаг 6: ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ОТ ОРИГИНАЛА НА ЗЕМЛЕ К КОПИИ В РУКЕ
+    print("\n🎭 === ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ===")
+    print("🔄 Передаю Motor6D анимации от оригинала на земле к копии в руке...")
     
-    -- Функция получения анимируемых частей из Tool (исключая Handle)
-    local function getAnimatedPartsFromTool(tool)
-        local parts = {}
-        if not tool then return parts end
-        
-        for _, obj in pairs(tool:GetDescendants()) do
-            if obj:IsA("BasePart") and obj.Name ~= "Handle" then
-                table.insert(parts, obj)
-            end
+    -- Находим Motor6D в оригинале и копии
+    local originalMotors = {}
+    local copyMotors = {}
+    
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            originalMotors[obj.Name] = obj
         end
-        
-        return parts
     end
     
-    -- Функция поиска соответствующей части в копии
-    local function findCorrespondingPart(copyModel, partName)
-        for _, obj in pairs(copyModel:GetDescendants()) do
-            if obj:IsA("BasePart") and obj.Name == partName then
-                return obj
-            end
+    for _, obj in pairs(petCopy:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            copyMotors[obj.Name] = obj
         end
-        return nil
     end
     
-    -- Получаем части питомца в руке для копирования анимаций
-    local handPetParts = getAnimatedPartsFromTool(handTool)
-    print("📦 Анимируемых частей в руке:", #handPetParts)
+    print("🔧 Motor6D в оригинале:", table.getn and table.getn(originalMotors) or "много")
+    print("🔧 Motor6D в копии:", table.getn and table.getn(copyMotors) or "много")
     
-    if #handPetParts > 0 then
-        -- LIVE копирование CFrame состояний (точно как в PetScaler_v3.226.lua)
-        local previousCFrameStates = {}
-        local INTERPOLATION_SPEED = 0.3
-        local POSITION_THRESHOLD = 0.001
-        local ROTATION_THRESHOLD = 0.001
-        
+    -- ПРЯМОЕ КОПИРОВАНИЕ MOTOR6D TRANSFORM ОТ ОРИГИНАЛА К КОПИИ
+    if next(originalMotors) and next(copyMotors) then
         local directConnection = RunService.Heartbeat:Connect(function()
-            local appliedCount = 0
-            local changesDetected = 0
-            
-            -- Копируем CFrame изменения от питомца в руке к копии
-            for _, handPart in ipairs(handPetParts) do
-                if handPart and handPart.Parent then
-                    local partName = handPart.Name
-                    local currentCFrame = handPart.CFrame
-                    
-                    -- Проверяем изменилось ли CFrame состояние
-                    local hasChanged = false
-                    if previousCFrameStates[partName] then
-                        local prevCFrame = previousCFrameStates[partName]
-                        local positionDiff = (currentCFrame.Position - prevCFrame.Position).Magnitude
-                        local rotationDiff = math.abs(currentCFrame.LookVector:Dot(prevCFrame.LookVector) - 1)
-                        
-                        if positionDiff > POSITION_THRESHOLD or rotationDiff > ROTATION_THRESHOLD then
-                            hasChanged = true
-                            changesDetected = changesDetected + 1
-                        end
-                    end
-                    
-                    -- Обновляем предыдущее состояние
-                    previousCFrameStates[partName] = currentCFrame
-                    
-                    -- Находим соответствующую часть в копии и применяем CFrame
-                    local copyPart = findCorrespondingPart(petCopy, partName)
-                    if copyPart then
-                        local success, errorMsg = pcall(function()
-                            -- Применяем с интерполяцией для плавности (только к незаякоренным частям)
-                            if not copyPart.Anchored and copyPart.Parent then
-                                copyPart.CFrame = copyPart.CFrame:Lerp(currentCFrame, INTERPOLATION_SPEED)
-                                appliedCount = appliedCount + 1
-                            end
-                        end)
-                        
-                        if not success then
-                            print("⚠️ Ошибка применения CFrame:", errorMsg)
-                        end
-                    end
+            for motorName, originalMotor in pairs(originalMotors) do
+                local copyMotor = copyMotors[motorName]
+                if copyMotor and originalMotor.Parent and copyMotor.Parent then
+                    -- Прямое копирование Transform от оригинала на земле к копии в руке
+                    copyMotor.Transform = originalMotor.Transform
                 end
             end
         end)
         
-        print("✅ LIVE копирование анимаций от питомца в руке запущено!")
-        print("🎭 Копия следует за движениями питомца в руке!")
-        print("🔥 Точно как в PetScaler_v3.226.lua - два питомца с синхронными анимациями!")
+        print("✅ Motor6D анимации передаются от оригинала на земле к копии в руке!")
+        print("🎭 Копия в руке получает живые анимации от оригинала!")
+        print("🔥 Два питомца: оригинал на земле + анимированная копия в руке!")
         
         return true
     else
-        print("⚠️ Анимируемые части в руке не найдены")
+        print("⚠️ Motor6D не найдены для передачи анимаций")
         return false
     end
 end
