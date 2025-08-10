@@ -1581,7 +1581,7 @@ if initSuccess then
     
     spawn(function()
         while true do
-            wait(0.5) -- Проверяем каждые 0.5 секунды
+            wait(0.05) -- Проверяем каждые 0.05 секунды (в 10 раз быстрее!)
             
             local player = Players.LocalPlayer
             if player and player.Character then
@@ -1597,20 +1597,6 @@ if initSuccess then
                     
                     if isPet and not processedTools[handTool] then
                         print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
-                        
-                        -- МОМЕНТАЛЬНО СКРЫВАЕМ ОРИГИНАЛЬНОГО ПИТОМЦА!
-                        print("⚡ МОМЕНТАЛЬНО скрываю оригинального питомца...")
-                        for _, obj in pairs(handTool:GetDescendants()) do
-                            if obj:IsA("Model") then
-                                for _, part in pairs(obj:GetDescendants()) do
-                                    if part:IsA("BasePart") then
-                                        part.Transparency = 1
-                                    end
-                                end
-                            end
-                        end
-                        print("✅ Оригинальный питомец скрыт МОМЕНТАЛЬНО!")
-                        
                         print("🚀 Автоматически нажимаю кнопку замены...")
                         
                         -- Отмечаем что этот Tool уже обработан
