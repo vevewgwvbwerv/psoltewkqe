@@ -789,6 +789,207 @@ local function createAnimatedCopyAtPosition(originalPet, targetPosition)
     end
 end
 
+-- === НОВАЯ ФУНКЦИЯ: ЗАМЕНА ПИТОМЦА В РУКЕ (ТОЧНО КАК PetScaler_v3.226.lua) ===
+local function replaceHandPetWithAnimation()
+    print("\n✋ === ЗАМЕНА ПИТОМЦА В РУКЕ НА АНИМИРОВАННУЮ КОПИЮ ===")
+    print("🔍 Ищу питомца в руке и создаю копию В РУКЕ...")
+    
+    -- Шаг 1: НАЙТИ TOOL В РУКЕ
+    local playerChar = Players.LocalPlayer.Character
+    if not playerChar then
+        print("❌ Персонаж не найден!")
+        return false
+    end
+    
+    local handTool = playerChar:FindFirstChildOfClass("Tool")
+    if not handTool then
+        print("❌ Tool в руке не найден!")
+        return false
+    end
+    
+    print("🎯 Найден Tool в руке:", handTool.Name)
+    
+    -- Шаг 2: НАЙТИ UUID ПИТОМЦА НА ЗЕМЛЕ ДЛЯ КОПИРОВАНИЯ АНИМАЦИЙ
+    local petModel = findAndScalePet()
+    if not petModel then
+        print("❌ UUID питомец на земле не найден!")
+        return false
+    end
+    
+    print("✅ Найден UUID питомец на земле:", petModel.Name)
+    
+    -- Шаг 3: СОЗДАТЬ КОПИЮ UUID ПИТОМЦА В РУКЕ (НЕ удаляя оригинала!)
+    print("📋 Создаю копию UUID питомца В РУКЕ...")
+    
+    -- Создаем копию БЕЗ автоматического размещения в Workspace
+    local petCopy = petModel:Clone()
+    petCopy.Name = petModel.Name .. "_HAND_COPY"
+    
+    -- РАЗМЕЩАЕМ КОПИЮ В РУКЕ (в Tool) рядом с оригинальным питомцем
+    petCopy.Parent = handTool
+    print("✅ Копия размещена В РУКЕ (в Tool)!")
+    
+    -- НАХОДИМ ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ ДЛЯ КОПИРОВАНИЯ ПОЗИЦИИ
+    print("🔍 Ищу оригинального питомца в Tool для копирования позиции...")
+    
+    local originalHandPet = nil
+    for _, obj in pairs(handTool:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= petCopy then
+            originalHandPet = obj
+            print("✅ Найден оригинальный питомец в руке:", obj.Name)
+            break
+        end
+    end
+    
+    -- Позиционируем копию ТОЧНО КАК ОРИГИНАЛЬНЫЙ ПИТОМЕЦ В РУКЕ
+    if petCopy.PrimaryPart then
+        if originalHandPet and originalHandPet.PrimaryPart then
+            -- КОПИРУЕМ ТОЧНУЮ ПОЗИЦИЮ ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ
+            local originalCFrame = originalHandPet.PrimaryPart.CFrame
+            petCopy:SetPrimaryPartCFrame(originalCFrame)
+            print("📍 Копия позиционирована ТОЧНО как оригинальный питомец в руке")
+        else
+            -- Fallback к Handle если оригинальный питомец не найден
+            local handle = handTool:FindFirstChild("Handle")
+            if handle then
+                local handleCFrame = handle.CFrame
+                petCopy:SetPrimaryPartCFrame(handleCFrame)
+                print("📍 Копия позиционирована по Handle (fallback)")
+            end
+        end
+    end
+    
+    -- ПРОСТОЕ СКРЫТИЕ ОРИГИНАЛЬНОГО ПИТОМЦА (НЕ ТРОГАЯ КОПИЮ!)
+    if originalHandPet then
+        print("👻 Скрываю оригинального питомца в руке...")
+        
+        -- Делаем оригинального питомца невидимым
+        for _, obj in pairs(originalHandPet:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.Transparency = 1
+            end
+        end
+        
+        print("✅ Оригинальный питомец скрыт! Видна только копия!")
+    end
+    
+    -- Шаг 4: ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ ДЛЯ КОПИИ В РУКЕ
+    print("🔧 Исправляю Attachment связи для копии в руке...")
+    local attachments = {}
+    local fixedCount = 0
+    
+    for _, obj in pairs(petCopy:GetDescendants()) do
+        if obj:IsA("Attachment") then
+            table.insert(attachments, obj)
+        end
+    end
+    
+    for _, attachment in pairs(attachments) do
+        if attachment.Parent and not attachment.Parent:IsA("BasePart") then
+            local parent = attachment.Parent
+            while parent and not parent:IsA("BasePart") do
+                parent = parent.Parent
+            end
+            
+            if parent and parent:IsA("BasePart") then
+                attachment.Parent = parent
+                fixedCount = fixedCount + 1
+            else
+                print("⚠️ Удаляю проблемный Attachment:", attachment.Name)
+                attachment:Destroy()
+            end
+        end
+    end
+    
+    print("✅ Исправлено Attachment связей:", fixedCount)
+    
+    -- Шаг 5: УМНОЕ УПРАВЛЕНИЕ ANCHORED ДЛЯ КОПИИ В РУКЕ (КАК В PetScaler_v3.226.lua)
+    print("🧠 Настройка Anchored для копии в руке...")
+    local copyParts = getAllParts(petCopy)
+    
+    -- Находим корневую часть для якорения (точно как в PetScaler_v3.226.lua)
+    local rootPart = nil
+    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    
+    for _, candidate in ipairs(rootCandidates) do
+        for _, part in ipairs(copyParts) do
+            if part.Name == candidate then
+                rootPart = part
+                break
+            end
+        end
+        if rootPart then break end
+    end
+    
+    if not rootPart then
+        rootPart = copyParts[1]
+        print("  ⚠️ Корневая часть не найдена, использую:", rootPart and rootPart.Name or "nil")
+    else
+        print("  ✅ Корневая часть:", rootPart.Name)
+    end
+    
+    -- КРИТИЧНО: Все части свободны для анимации И следования за рукой
+    for _, part in ipairs(copyParts) do
+        part.Anchored = false -- Все части свободны для движения с рукой
+    end
+    
+    print("✅ Anchored настроен: все части свободны для следования за рукой")
+    
+    -- Шаг 6: ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ОТ ОРИГИНАЛА НА ЗЕМЛЕ К КОПИИ В РУКЕ
+    print("\n🎭 === ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ===")
+    print("🔄 Передаю Motor6D анимации от оригинала на земле к копии в руке...")
+    
+    -- Находим Motor6D в оригинале и копии
+    local originalMotors = {}
+    local copyMotors = {}
+    
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            originalMotors[obj.Name] = obj
+        end
+    end
+    
+    for _, obj in pairs(petCopy:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            copyMotors[obj.Name] = obj
+        end
+    end
+    
+    print("🔧 Motor6D в оригинале:", table.getn and table.getn(originalMotors) or "много")
+    print("🔧 Motor6D в копии:", table.getn and table.getn(copyMotors) or "много")
+    
+    -- ПРЯМОЕ КОПИРОВАНИЕ MOTOR6D TRANSFORM ОТ ОРИГИНАЛА К КОПИИ + СЛЕДОВАНИЕ ЗА РУКОЙ
+    if next(originalMotors) and next(copyMotors) then
+        local directConnection = RunService.Heartbeat:Connect(function()
+            -- 1. ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ
+            for motorName, originalMotor in pairs(originalMotors) do
+                local copyMotor = copyMotors[motorName]
+                if copyMotor and originalMotor.Parent and copyMotor.Parent then
+                    -- Прямое копирование Transform от оригинала на земле к копии в руке
+                    copyMotor.Transform = originalMotor.Transform
+                end
+            end
+            
+            -- 2. ПОСТОЯННОЕ ОБНОВЛЕНИЕ ПОЗИЦИИ КОПИИ ОТНОСИТЕЛЬНО ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ
+            if originalHandPet and originalHandPet.PrimaryPart and petCopy.PrimaryPart then
+                -- Копируем текущую позицию оригинального питомца в руке
+                local currentOriginalCFrame = originalHandPet.PrimaryPart.CFrame
+                petCopy:SetPrimaryPartCFrame(currentOriginalCFrame)
+            end
+        end)
+        
+        print("✅ Motor6D анимации передаются от оригинала на земле к копии в руке!")
+        print("✅ Копия постоянно следует за позицией оригинального питомца в руке!")
+        print("🎭 Копия в руке получает живые анимации от оригинала!")
+        print("🔥 Два питомца: оригинал на земле + анимированная копия в руке!")
+        
+        return true
+    else
+        print("⚠️ Motor6D не найдены для передачи анимаций")
+        return false
+    end
+end
+
 -- Функция строгой проверки модели питомца (ИСПРАВЛЕНО)
 local function isPetModel(model)
     -- 1. Должна быть Model
@@ -1177,7 +1378,7 @@ local function createGUI()
     
     local frame = Instance.new("Frame")
     frame.Name = "MainFrame"
-    frame.Size = UDim2.new(0, 250, 0, 85)
+    frame.Size = UDim2.new(0, 250, 0, 120) -- Увеличиваем высоту для третьей кнопки
     frame.Position = UDim2.new(0, 50, 0, 150) -- Под оригинальным PetScaler
     frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     frame.BorderSizePixel = 2
@@ -1210,6 +1411,19 @@ local function createGUI()
     autoButton.Font = Enum.Font.SourceSansBold
     autoButton.Parent = frame
     
+    -- НОВАЯ КНОПКА: Замена питомца в руке (как PetScaler_v3.226.lua)
+    local handButton = Instance.new("TextButton")
+    handButton.Name = "HandReplaceButton"
+    handButton.Size = UDim2.new(0, 230, 0, 30)
+    handButton.Position = UDim2.new(0, 10, 0, 80) -- Третья кнопка
+    handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255) -- Фиолетовая
+    handButton.BorderSizePixel = 0
+    handButton.Text = "✋ Заменить питомца в руке"
+    handButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    handButton.TextSize = 12
+    handButton.Font = Enum.Font.SourceSansBold
+    handButton.Parent = frame
+    
     -- Переменная для отслеживания состояния автозамены
     local autoReplaceActive = false
     local visualsConnection = nil
@@ -1232,6 +1446,30 @@ local function createGUI()
                 print("❌ Ошибка в main():", errorMsg)
                 manualButton.Text = "❌ Ошибка! Попробуйте снова"
                 manualButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            end
+        end)
+    end)
+    
+    -- Обработчик НОВОЙ кнопки замены в руке
+    handButton.MouseButton1Click:Connect(function()
+        handButton.Text = "⏳ Заменяю питомца в руке..."
+        handButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+        
+        spawn(function()
+            local success = replaceHandPetWithAnimation()
+            
+            if success then
+                handButton.Text = "✅ Питомец заменен!"
+                handButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                wait(2)
+                handButton.Text = "✋ Заменить питомца в руке"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+            else
+                handButton.Text = "❌ Ошибка замены!"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                wait(2)
+                handButton.Text = "✋ Заменить питомца в руке"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
             end
         end)
     end)
@@ -1334,6 +1572,97 @@ if initSuccess then
     print("   🥚 Оранжевая кнопка - Вкл/Откл автозамену питомцев")
     print("=" .. string.rep("=", 70))
     print("✅ PetScaler v2.0 успешно запущен!")
+    
+    -- === АВТОМАТИЧЕСКИЙ КЛИК КНОПКИ ЗАМЕНЫ В РУКЕ ===
+    print("\n🔄 === АВТОМАТИЧЕСКИЙ КЛИК КНОПКИ ===")
+    print("💡 Теперь кнопка будет нажиматься АВТОМАТИЧЕСКИ когда вы берете питомца в руки!")
+    
+    local processedTools = {} -- Чтобы не кликать по одному Tool много раз
+    
+    spawn(function()
+        while true do
+            wait(0.1) -- Проверяем каждые 0.1 секунды (быстро, но разумно)
+            
+            local player = Players.LocalPlayer
+            if player and player.Character then
+                local handTool = player.Character:FindFirstChildOfClass("Tool")
+                if handTool then
+                    -- Проверяем что это питомец и мы его еще не обрабатывали
+                    local isPet = false
+                    if handTool.Name:find("KG") or handTool.Name:find("Dragonfly") or 
+                       handTool.Name:find("%{") and handTool.Name:find("%}") or
+                       handTool.Name:find("%[") and handTool.Name:find("%]") and handTool.Name:find("Age") then
+                        isPet = true
+                    end
+                    
+                    if isPet and not processedTools[handTool] then
+                        print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
+                        
+                        -- МГНОВЕННО ПЕРЕМЕЩАЕМ ОРИГИНАЛЬНОГО ПИТОМЦА ПОД ЗЕМЛЮ!
+                        print("⚡ МГНОВЕННО перемещаю оригинального питомца под землю...")
+                        for _, obj in pairs(handTool:GetDescendants()) do
+                            if obj:IsA("Model") and obj.PrimaryPart then
+                                -- Перемещаем питомца на 10000 единиц под землю
+                                local currentCFrame = obj.PrimaryPart.CFrame
+                                local undergroundCFrame = currentCFrame - Vector3.new(0, 10000, 0)
+                                obj:SetPrimaryPartCFrame(undergroundCFrame)
+                                print("✅ Питомец", obj.Name, "перемещен под землю!")
+                            end
+                        end
+                        print("✅ Оригинальный питомец скрыт под землей!")
+                        
+                        print("🚀 Автоматически нажимаю кнопку замены...")
+                        
+                        -- Отмечаем что этот Tool уже обработан
+                        processedTools[handTool] = true
+                        
+                        -- АВТОМАТИЧЕСКИ ВЫЗЫВАЕМ ФУНКЦИЮ КНОПКИ!
+                        spawn(function()
+                            -- Меняем текст кнопки (как при клике)
+                            local playerGui = player:WaitForChild("PlayerGui")
+                            local gui = playerGui:FindFirstChild("PetScalerV2GUI")
+                            if gui then
+                                local handButton = gui:FindFirstChild("HandButton")
+                                if handButton then
+                                    handButton.Text = "⏳ Заменяю питомца в руке..."
+                                    handButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+                                end
+                            end
+                            
+                            -- ПРЯМО ВЫЗЫВАЕМ ФУНКЦИЮ ЗАМЕНЫ!
+                            local success = replaceHandPetWithAnimation()
+                            
+                            -- Обновляем кнопку (как при клике)
+                            if gui then
+                                local handButton = gui:FindFirstChild("HandButton")
+                                if handButton then
+                                    if success then
+                                        handButton.Text = "✅ Питомец заменен!"
+                                        handButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                                        wait(2)
+                                        handButton.Text = "✋ Заменить питомца в руке"
+                                        handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+                                    else
+                                        handButton.Text = "❌ Ошибка замены!"
+                                        handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                                        wait(2)
+                                        handButton.Text = "✋ Заменить питомца в руке"
+                                        handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+                                    end
+                                end
+                            end
+                            
+                            print("✅ Автоматическая замена завершена!")
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+    
+    print("✅ Автоматический клик кнопки запущен!")
+    print("💡 Просто возьмите питомца в руки - кнопка нажмется сама!")
+    
 else
     print("❌ КРИТИЧЕСКАЯ ОШИБКА при запуске PetScaler v2.0:")
     print("📝 Ошибка:", initError)
