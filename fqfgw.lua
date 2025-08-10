@@ -1436,59 +1436,27 @@ local function createGUI()
         end)
     end)
     
-    -- Обработчик НОВОЙ кнопки замены в руке (С ОЖИДАНИЕМ TOOL)
+    -- Обработчик НОВОЙ кнопки замены в руке
     handButton.MouseButton1Click:Connect(function()
-        handButton.Text = "⏳ Ожидаю Tool в руках..."
+        handButton.Text = "⏳ Заменяю питомца в руке..."
         handButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
         
         spawn(function()
-            print("🔄 Ожидаю когда вы возьмете Tool в руки...")
+            local success = replaceHandPetWithAnimation()
             
-            -- Объявляем переменную ДО создания соединения
-            local waitingConnection
-            
-            -- Ждем пока игрок возьмет Tool в руки
-            waitingConnection = RunService.Heartbeat:Connect(function()
-                local player = Players.LocalPlayer
-                if not player or not player.Character then return end
-                
-                local handTool = player.Character:FindFirstChildOfClass("Tool")
-                if handTool then
-                    print("🎯 Tool обнаружен в руках:", handTool.Name)
-                    
-                    -- Проверяем что это питомец
-                    local isPet = false
-                    if handTool.Name:find("KG") or handTool.Name:find("Dragonfly") or 
-                       handTool.Name:find("%{") and handTool.Name:find("%}") or
-                       handTool.Name:find("%[") and handTool.Name:find("%]") and handTool.Name:find("Age") then
-                        isPet = true
-                    end
-                    
-                    if isPet then
-                        print("✅ Питомец взят в руки! Начинаю замену...")
-                        waitingConnection:Disconnect() -- Останавливаем ожидание
-                        
-                        handButton.Text = "⏳ Заменяю питомца..."
-                        local success = replaceHandPetWithAnimation()
-                        
-                        if success then
-                            handButton.Text = "✅ Питомец заменен!"
-                            handButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-                            wait(2)
-                            handButton.Text = "✋ Заменить питомца в руке"
-                            handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
-                        else
-                            handButton.Text = "❌ Ошибка замены!"
-                            handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-                            wait(2)
-                            handButton.Text = "✋ Заменить питомца в руке"
-                            handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
-                        end
-                    else
-                        print("⚠️ Tool не является питомцем:", handTool.Name)
-                    end
-                end
-            end)
+            if success then
+                handButton.Text = "✅ Питомец заменен!"
+                handButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                wait(2)
+                handButton.Text = "✋ Заменить питомца в руке"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+            else
+                handButton.Text = "❌ Ошибка замены!"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                wait(2)
+                handButton.Text = "✋ Заменить питомца в руке"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+            end
         end)
     end)
     
@@ -1590,6 +1558,50 @@ if initSuccess then
     print("   🥚 Оранжевая кнопка - Вкл/Откл автозамену питомцев")
     print("=" .. string.rep("=", 70))
     print("✅ PetScaler v2.0 успешно запущен!")
+    
+    -- === АВТОМАТИЧЕСКИЙ МОНИТОРИНГ TOOL В РУКАХ ===
+    print("\n🔄 === ЗАПУСК АВТОМАТИЧЕСКОГО МОНИТОРИНГА TOOL ===")
+    print("💡 Теперь замена будет происходить АВТОМАТИЧЕСКИ когда вы берете питомца в руки!")
+    
+    local processedTools = {} -- Чтобы не заменять один Tool много раз
+    
+    local autoToolConnection = RunService.Heartbeat:Connect(function()
+        local player = Players.LocalPlayer
+        if not player or not player.Character then return end
+        
+        local handTool = player.Character:FindFirstChildOfClass("Tool")
+        if handTool then
+            -- Проверяем что это питомец и мы его еще не обрабатывали
+            local isPet = false
+            if handTool.Name:find("KG") or handTool.Name:find("Dragonfly") or 
+               handTool.Name:find("%{") and handTool.Name:find("%}") or
+               handTool.Name:find("%[") and handTool.Name:find("%]") and handTool.Name:find("Age") then
+                isPet = true
+            end
+            
+            if isPet and not processedTools[handTool] then
+                print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
+                print("🚀 Запускаю автоматическую замену...")
+                
+                -- Отмечаем что этот Tool уже обработан
+                processedTools[handTool] = true
+                
+                -- Автоматически вызываем функцию замены
+                spawn(function()
+                    local success = replaceHandPetWithAnimation()
+                    if success then
+                        print("✅ АВТОМАТИЧЕСКАЯ замена питомца завершена!")
+                    else
+                        print("❌ Ошибка автоматической замены")
+                    end
+                end)
+            end
+        end
+    end)
+    
+    print("✅ Автоматический мониторинг Tool активирован!")
+    print("💡 Теперь просто возьмите питомца в руки - замена произойдет автоматически!")
+    
 else
     print("❌ КРИТИЧЕСКАЯ ОШИБКА при запуске PetScaler v2.0:")
     print("📝 Ошибка:", initError)
