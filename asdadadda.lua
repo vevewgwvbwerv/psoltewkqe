@@ -829,23 +829,33 @@ local function replaceHandPetWithAnimation()
     petCopy.Parent = handTool
     print("✅ Копия размещена В РУКЕ (в Tool)!")
     
-    -- Позиционируем копию в руке и ПРИКРЕПЛЯЕМ К HANDLE
+    -- НАХОДИМ ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ ДЛЯ КОПИРОВАНИЯ ПОЗИЦИИ
+    print("🔍 Ищу оригинального питомца в Tool для копирования позиции...")
+    
+    local originalHandPet = nil
+    for _, obj in pairs(handTool:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= petCopy then
+            originalHandPet = obj
+            print("✅ Найден оригинальный питомец в руке:", obj.Name)
+            break
+        end
+    end
+    
+    -- Позиционируем копию ТОЧНО КАК ОРИГИНАЛЬНЫЙ ПИТОМЕЦ В РУКЕ
     if petCopy.PrimaryPart then
-        local handle = handTool:FindFirstChild("Handle")
-        if handle then
-            local handleCFrame = handle.CFrame
-            local offset = Vector3.new(1, 0, 0)  -- Небольшой offset в руке
-            local newPosition = handleCFrame.Position + offset
-            local newCFrame = CFrame.new(newPosition, newPosition + handleCFrame.LookVector)
-            petCopy:SetPrimaryPartCFrame(newCFrame)
-            print("📍 Копия позиционирована в руке рядом с Handle")
-            
-            -- КРИТИЧНО: СОЗДАЕМ WELD СОЕДИНЕНИЕ ЧТОБЫ КОПИЯ НЕ ПАДАЛА
-            local weld = Instance.new("WeldConstraint")
-            weld.Part0 = handle
-            weld.Part1 = petCopy.PrimaryPart
-            weld.Parent = handle
-            print("🔗 Создано Weld соединение между Handle и копией - копия не упадет!")
+        if originalHandPet and originalHandPet.PrimaryPart then
+            -- КОПИРУЕМ ТОЧНУЮ ПОЗИЦИЮ ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ
+            local originalCFrame = originalHandPet.PrimaryPart.CFrame
+            petCopy:SetPrimaryPartCFrame(originalCFrame)
+            print("📍 Копия позиционирована ТОЧНО как оригинальный питомец в руке")
+        else
+            -- Fallback к Handle если оригинальный питомец не найден
+            local handle = handTool:FindFirstChild("Handle")
+            if handle then
+                local handleCFrame = handle.CFrame
+                petCopy:SetPrimaryPartCFrame(handleCFrame)
+                print("📍 Копия позиционирована по Handle (fallback)")
+            end
         end
     end
     
@@ -879,16 +889,37 @@ local function replaceHandPetWithAnimation()
     
     print("✅ Исправлено Attachment связей:", fixedCount)
     
-    -- Шаг 5: УМНОЕ УПРАВЛЕНИЕ ANCHORED ДЛЯ КОПИИ В РУКЕ
+    -- Шаг 5: УМНОЕ УПРАВЛЕНИЕ ANCHORED ДЛЯ КОПИИ В РУКЕ (КАК В PetScaler_v3.226.lua)
     print("🧠 Настройка Anchored для копии в руке...")
     local copyParts = getAllParts(petCopy)
     
-    -- Все части копии в руке должны быть не заякорены для анимации
-    for _, part in ipairs(copyParts) do
-        part.Anchored = false -- Все части свободны для анимации в руке
+    -- Находим корневую часть для якорения (точно как в PetScaler_v3.226.lua)
+    local rootPart = nil
+    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    
+    for _, candidate in ipairs(rootCandidates) do
+        for _, part in ipairs(copyParts) do
+            if part.Name == candidate then
+                rootPart = part
+                break
+            end
+        end
+        if rootPart then break end
     end
     
-    print("✅ Anchored настроен: все части свободны для анимации в руке")
+    if not rootPart then
+        rootPart = copyParts[1]
+        print("  ⚠️ Корневая часть не найдена, использую:", rootPart and rootPart.Name or "nil")
+    else
+        print("  ✅ Корневая часть:", rootPart.Name)
+    end
+    
+    -- КРИТИЧНО: Все части свободны для анимации И следования за рукой
+    for _, part in ipairs(copyParts) do
+        part.Anchored = false -- Все части свободны для движения с рукой
+    end
+    
+    print("✅ Anchored настроен: все части свободны для следования за рукой")
     
     -- Шаг 6: ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ОТ ОРИГИНАЛА НА ЗЕМЛЕ К КОПИИ В РУКЕ
     print("\n🎭 === ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ===")
@@ -913,9 +944,10 @@ local function replaceHandPetWithAnimation()
     print("🔧 Motor6D в оригинале:", table.getn and table.getn(originalMotors) or "много")
     print("🔧 Motor6D в копии:", table.getn and table.getn(copyMotors) or "много")
     
-    -- ПРЯМОЕ КОПИРОВАНИЕ MOTOR6D TRANSFORM ОТ ОРИГИНАЛА К КОПИИ
+    -- ПРЯМОЕ КОПИРОВАНИЕ MOTOR6D TRANSFORM ОТ ОРИГИНАЛА К КОПИИ + СЛЕДОВАНИЕ ЗА РУКОЙ
     if next(originalMotors) and next(copyMotors) then
         local directConnection = RunService.Heartbeat:Connect(function()
+            -- 1. ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ
             for motorName, originalMotor in pairs(originalMotors) do
                 local copyMotor = copyMotors[motorName]
                 if copyMotor and originalMotor.Parent and copyMotor.Parent then
@@ -923,9 +955,17 @@ local function replaceHandPetWithAnimation()
                     copyMotor.Transform = originalMotor.Transform
                 end
             end
+            
+            -- 2. ПОСТОЯННОЕ ОБНОВЛЕНИЕ ПОЗИЦИИ КОПИИ ОТНОСИТЕЛЬНО ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ
+            if originalHandPet and originalHandPet.PrimaryPart and petCopy.PrimaryPart then
+                -- Копируем текущую позицию оригинального питомца в руке
+                local currentOriginalCFrame = originalHandPet.PrimaryPart.CFrame
+                petCopy:SetPrimaryPartCFrame(currentOriginalCFrame)
+            end
         end)
         
         print("✅ Motor6D анимации передаются от оригинала на земле к копии в руке!")
+        print("✅ Копия постоянно следует за позицией оригинального питомца в руке!")
         print("🎭 Копия в руке получает живые анимации от оригинала!")
         print("🔥 Два питомца: оригинал на земле + анимированная копия в руке!")
         
@@ -1518,6 +1558,58 @@ if initSuccess then
     print("   🥚 Оранжевая кнопка - Вкл/Откл автозамену питомцев")
     print("=" .. string.rep("=", 70))
     print("✅ PetScaler v2.0 успешно запущен!")
+    
+    -- === АВТОМАТИЧЕСКИЙ КЛИК КНОПКИ ЗАМЕНЫ В РУКЕ ===
+    print("\n🔄 === АВТОМАТИЧЕСКИЙ КЛИК КНОПКИ ===")
+    print("💡 Теперь кнопка будет нажиматься АВТОМАТИЧЕСКИ когда вы берете питомца в руки!")
+    
+    local processedTools = {} -- Чтобы не кликать по одному Tool много раз
+    
+    spawn(function()
+        while true do
+            wait(0.5) -- Проверяем каждые 0.5 секунды
+            
+            local player = Players.LocalPlayer
+            if player and player.Character then
+                local handTool = player.Character:FindFirstChildOfClass("Tool")
+                if handTool then
+                    -- Проверяем что это питомец и мы его еще не обрабатывали
+                    local isPet = false
+                    if handTool.Name:find("KG") or handTool.Name:find("Dragonfly") or 
+                       handTool.Name:find("%{") and handTool.Name:find("%}") or
+                       handTool.Name:find("%[") and handTool.Name:find("%]") and handTool.Name:find("Age") then
+                        isPet = true
+                    end
+                    
+                    if isPet and not processedTools[handTool] then
+                        print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
+                        print("🚀 Автоматически нажимаю кнопку замены...")
+                        
+                        -- Отмечаем что этот Tool уже обработан
+                        processedTools[handTool] = true
+                        
+                        -- АВТОМАТИЧЕСКИ НАЖИМАЕМ КНОПКУ!
+                        local playerGui = player:WaitForChild("PlayerGui")
+                        local gui = playerGui:FindFirstChild("PetScalerV2GUI")
+                        if gui then
+                            local handButton = gui:FindFirstChild("HandButton")
+                            if handButton then
+                                -- Симулируем клик кнопки
+                                for _, connection in pairs(getconnections(handButton.MouseButton1Click)) do
+                                    connection:Fire()
+                                end
+                                print("✅ Кнопка нажата автоматически!")
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    print("✅ Автоматический клик кнопки запущен!")
+    print("💡 Просто возьмите питомца в руки - кнопка нажмется сама!")
+    
 else
     print("❌ КРИТИЧЕСКАЯ ОШИБКА при запуске PetScaler v2.0:")
     print("📝 Ошибка:", initError)
