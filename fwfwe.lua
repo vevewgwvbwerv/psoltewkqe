@@ -1,608 +1,413 @@
--- ULTIMATE EGG CLONE DIAGNOSTIC SCRIPT (CLEAN VERSION)
--- Полный анализ яйца для создания визуального симулятора
+-- TW2LOCK Premium GUI Script for Roblox
+-- Современный высококачественный интерфейс
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-print("🥚 === ULTIMATE EGG DIAGNOSTIC STARTED ===")
-print("🎯 Цель: Полный анализ яйца для создания визуального симулятора")
+-- Создаем ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TW2LOCK_Premium_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
 
--- Конфигурация
-local CONFIG = {
-    SEARCH_RADIUS = 50,
-    ANALYSIS_TIME = 30, -- 30 секунд анализа
-    EGG_NAMES = {
-        "Common Egg", "Rare Egg", "Legendary Egg", "Mythical Egg",
-        "Bug Egg", "Bee Egg", "Anti Bee Egg", "Night Egg",
-        "Oasis Egg", "Paradise Egg", "Dinosaur Egg", "Primal Egg",
-        "Common Summer Egg", "Rare Summer Egg", "Zen Egg"
-    }
+-- Убираем затемнение экрана
+
+-- Основной контейнер с современным дизайном (уменьшенный размер)
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainContainer"
+mainFrame.Size = UDim2.new(0, 340, 0, 190)
+mainFrame.Position = UDim2.new(0.5, -170, 0.5, -95)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+-- Современные скругленные углы
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 16)
+mainCorner.Parent = mainFrame
+
+-- Градиентная рамка
+local borderFrame = Instance.new("Frame")
+borderFrame.Size = UDim2.new(1, 4, 1, 4)
+borderFrame.Position = UDim2.new(0, -2, 0, -2)
+borderFrame.BackgroundTransparency = 1
+borderFrame.BorderSizePixel = 0
+borderFrame.ZIndex = mainFrame.ZIndex - 1
+borderFrame.Parent = mainFrame
+
+local borderStroke = Instance.new("UIStroke")
+borderStroke.Thickness = 2
+borderStroke.Color = Color3.fromRGB(100, 200, 255)
+borderStroke.Transparency = 0.3
+borderStroke.Parent = mainFrame
+
+local borderGradient = Instance.new("UIGradient")
+borderGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 150))
 }
+borderGradient.Rotation = 45
+borderGradient.Parent = borderStroke
 
--- Структура для хранения данных яйца
-local EggData = {
-    model = nil,
-    position = nil,
-    structure = {},
-    animations = {},
-    effects = {},
-    scripts = {},
-    sounds = {},
-    clickDetector = nil,
-    timer = nil,
-    petChances = {},
-    materials = {},
-    textures = {}
+-- Заголовок с градиентом
+local headerFrame = Instance.new("Frame")
+headerFrame.Name = "Header"
+headerFrame.Size = UDim2.new(1, 0, 0, 50)
+headerFrame.Position = UDim2.new(0, 0, 0, 0)
+headerFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+headerFrame.BorderSizePixel = 0
+headerFrame.Parent = mainFrame
+
+local headerCorner = Instance.new("UICorner")
+headerCorner.CornerRadius = UDim.new(0, 16)
+headerCorner.Parent = headerFrame
+
+local headerGradient = Instance.new("UIGradient")
+headerGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 60, 80)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 35, 50))
 }
+headerGradient.Rotation = 90
+headerGradient.Parent = headerFrame
 
--- Функция поиска яйца рядом с игроком
-local function findNearbyEgg()
-    local playerChar = player.Character
-    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
-        return nil
-    end
-    
-    local playerPos = playerChar.HumanoidRootPart.Position
-    
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local objName = obj.Name
-            
-            -- Проверяем является ли это яйцом
-            for _, eggName in pairs(CONFIG.EGG_NAMES) do
-                if objName:find(eggName) or objName:lower():find("egg") then
-                    local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-                    if success then
-                        local distance = (modelCFrame.Position - playerPos).Magnitude
-                        if distance <= CONFIG.SEARCH_RADIUS then
-                            print("🥚 НАЙДЕНО ЯЙЦО:", objName, "на расстоянии", math.floor(distance))
-                            return obj
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return nil
-end
+-- Заголовочный текст с эффектами
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(1, -20, 1, 0)
+titleLabel.Position = UDim2.new(0, 20, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "TW2LOCK"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 24
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = headerFrame
 
--- Функция анализа структуры модели
-local function analyzeModelStructure(model)
-    print("\n📐 === АНАЛИЗ СТРУКТУРЫ МОДЕЛИ ===")
-    print("📛 Имя модели:", model.Name)
-    print("📍 Позиция:", model:GetModelCFrame().Position)
-    print("📏 Размер:", model:GetModelSize())
+-- Светящийся эффект для заголовка
+local titleGlow = titleLabel:Clone()
+titleGlow.Name = "TitleGlow"
+titleGlow.Position = UDim2.new(0, 22, 0, 2)
+titleGlow.TextColor3 = Color3.fromRGB(100, 200, 255)
+titleGlow.TextTransparency = 0.7
+titleGlow.ZIndex = titleLabel.ZIndex - 1
+titleGlow.Parent = headerFrame
+
+-- Функция создания идеального премиум тумблера
+local function createPremiumToggle(name, displayText, yPosition, initialState)
+    -- Контейнер строки с современным дизайном
+    local rowFrame = Instance.new("Frame")
+    rowFrame.Name = name .. "Row"
+    rowFrame.Size = UDim2.new(1, -40, 0, 60)
+    rowFrame.Position = UDim2.new(0, 20, 0, yPosition)
+    rowFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    rowFrame.BorderSizePixel = 0
+    rowFrame.Parent = mainFrame
     
-    local structure = {
-        name = model.Name,
-        className = model.ClassName,
-        position = model:GetModelCFrame().Position,
-        size = model:GetModelSize(),
-        children = {}
+    -- Скругленные углы для строки
+    local rowCorner = Instance.new("UICorner")
+    rowCorner.CornerRadius = UDim.new(0, 12)
+    rowCorner.Parent = rowFrame
+    
+    -- Тонкая светящаяся рамка
+    local rowStroke = Instance.new("UIStroke")
+    rowStroke.Color = Color3.fromRGB(60, 60, 80)
+    rowStroke.Thickness = 1
+    rowStroke.Transparency = 0.5
+    rowStroke.Parent = rowFrame
+    
+    -- Градиентный фон
+    local rowGradient = Instance.new("UIGradient")
+    rowGradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 55)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 30, 45))
     }
+    rowGradient.Rotation = 90
+    rowGradient.Parent = rowFrame
     
-    -- Анализируем всех детей
-    for _, child in pairs(model:GetChildren()) do
-        local childData = {
-            name = child.Name,
-            className = child.ClassName,
-            properties = {}
+    -- Текст переключателя с современным шрифтом
+    local toggleLabel = Instance.new("TextLabel")
+    toggleLabel.Name = "Label"
+    toggleLabel.Size = UDim2.new(0, 200, 1, 0)
+    toggleLabel.Position = UDim2.new(0, 20, 0, 0)
+    toggleLabel.BackgroundTransparency = 1
+    toggleLabel.Text = displayText
+    toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleLabel.TextSize = 18
+    toggleLabel.Font = Enum.Font.Gotham
+    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    toggleLabel.TextYAlignment = Enum.TextYAlignment.Center
+    toggleLabel.Parent = rowFrame
+    
+    -- Светящийся эффект для текста
+    local labelGlow = toggleLabel:Clone()
+    labelGlow.Name = "LabelGlow"
+    labelGlow.Position = UDim2.new(0, 22, 0, 2)
+    labelGlow.TextColor3 = initialState and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(100, 100, 150)
+    labelGlow.TextTransparency = 0.8
+    labelGlow.ZIndex = toggleLabel.ZIndex - 1
+    labelGlow.Parent = rowFrame
+    
+    -- Идеальный тумблер в стиле iOS
+    local toggleTrack = Instance.new("Frame")
+    toggleTrack.Name = "ToggleTrack"
+    toggleTrack.Size = UDim2.new(0, 70, 0, 35)
+    toggleTrack.Position = UDim2.new(1, -90, 0.5, -17.5)
+    toggleTrack.BackgroundColor3 = initialState and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(80, 80, 100)
+    toggleTrack.BorderSizePixel = 0
+    toggleTrack.Parent = rowFrame
+    
+    -- Скругленные углы для трека
+    local trackCorner = Instance.new("UICorner")
+    trackCorner.CornerRadius = UDim.new(0.5, 0)
+    trackCorner.Parent = toggleTrack
+    
+    -- Внутренняя тень трека
+    local trackStroke = Instance.new("UIStroke")
+    trackStroke.Color = Color3.fromRGB(0, 0, 0)
+    trackStroke.Thickness = 2
+    trackStroke.Transparency = 0.8
+    trackStroke.Parent = toggleTrack
+    
+    -- Градиент для трека
+    local trackGradient = Instance.new("UIGradient")
+    trackGradient.Color = initialState and ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 255, 170)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 200, 130))
+    } or ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 120)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
+    }
+    trackGradient.Rotation = 90
+    trackGradient.Parent = toggleTrack
+    
+    -- Слайдер (кнопка)
+    local slider = Instance.new("Frame")
+    slider.Name = "Slider"
+    slider.Size = UDim2.new(0, 29, 0, 29)
+    slider.Position = initialState and UDim2.new(1, -32, 0.5, -14.5) or UDim2.new(0, 3, 0.5, -14.5)
+    slider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    slider.BorderSizePixel = 0
+    slider.Parent = toggleTrack
+    
+    -- Скругленный слайдер
+    local sliderCorner = Instance.new("UICorner")
+    sliderCorner.CornerRadius = UDim.new(0.5, 0)
+    sliderCorner.Parent = slider
+    
+    -- Тень слайдера
+    local sliderStroke = Instance.new("UIStroke")
+    sliderStroke.Color = Color3.fromRGB(0, 0, 0)
+    sliderStroke.Thickness = 1
+    sliderStroke.Transparency = 0.9
+    sliderStroke.Parent = slider
+    
+    -- Градиент слайдера
+    local sliderGradient = Instance.new("UIGradient")
+    sliderGradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 240, 240))
+    }
+    sliderGradient.Rotation = 90
+    sliderGradient.Parent = slider
+    
+    -- Состояние переключателя
+    local isToggled = initialState
+    
+    -- Функция переключения с потрясающими анимациями
+    local function toggle()
+        isToggled = not isToggled
+        
+        -- Анимация слайдера
+        local sliderTween = TweenService:Create(slider, 
+            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), 
+            {Position = isToggled and UDim2.new(1, -32, 0.5, -14.5) or UDim2.new(0, 3, 0.5, -14.5)}
+        )
+        
+        -- Анимация цвета трека
+        local trackTween = TweenService:Create(toggleTrack,
+            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {BackgroundColor3 = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(80, 80, 100)}
+        )
+        
+        -- Анимация градиента трека
+        local newGradient = isToggled and ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 255, 170)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 200, 130))
+        } or ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 120)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
         }
         
-        -- Анализируем свойства BasePart
-        if child:IsA("BasePart") then
-            childData.properties = {
-                size = child.Size,
-                material = child.Material.Name,
-                color = child.Color,
-                transparency = child.Transparency,
-                canCollide = child.CanCollide,
-                anchored = child.Anchored,
-                cframe = child.CFrame
-            }
-            
-            -- Проверяем текстуры
-            for _, desc in pairs(child:GetChildren()) do
-                if desc:IsA("Decal") or desc:IsA("Texture") then
-                    childData.properties.texture = desc.Texture
-                    print("🎨 Найдена текстура:", desc.Texture)
-                end
-            end
-        end
+        -- Анимация свечения текста
+        local glowTween = TweenService:Create(labelGlow,
+            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {TextColor3 = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(100, 100, 150)}
+        )
         
-        table.insert(structure.children, childData)
-        print("  📦 Ребенок:", child.Name, "(" .. child.ClassName .. ")")
-    end
-    
-    return structure
-end
-
--- Функция анализа скриптов
-local function analyzeScripts(model)
-    print("\n📜 === АНАЛИЗ СКРИПТОВ ===")
-    local scripts = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("LocalScript") or obj:IsA("Script") then
-            local scriptData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                source = obj.Source or "Недоступен",
-                parent = obj.Parent.Name
-            }
-            
-            table.insert(scripts, scriptData)
-            print("📜 СКРИПТ:", obj.Name, "(" .. obj.ClassName .. ") в", obj.Parent.Name)
-            
-            -- Пытаемся получить исходный код
-            local success, source = pcall(function() return obj.Source end)
-            if success and source and #source > 0 then
-                print("  💻 Код доступен:", #source, "символов")
-                -- Ищем ключевые слова
-                if source:find("timer") or source:find("Timer") then
-                    print("  ⏰ НАЙДЕН ТАЙМЕР в скрипте!")
-                end
-                if source:find("random") or source:find("Random") then
-                    print("  🎲 НАЙДЕН РАНДОМ в скрипте!")
-                end
-                if source:find("pet") or source:find("Pet") then
-                    print("  🐾 НАЙДЕНЫ ПИТОМЦЫ в скрипте!")
-                end
-            else
-                print("  ❌ Код недоступен (защищен)")
-            end
-        end
-    end
-    
-    return scripts
-end
-
--- Функция анализа ClickDetector
-local function analyzeClickDetector(model)
-    print("\n🖱️ === АНАЛИЗ CLICK DETECTOR ===")
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("ClickDetector") then
-            print("🖱️ НАЙДЕН ClickDetector в:", obj.Parent.Name)
-            print("  MaxActivationDistance:", obj.MaxActivationDistance)
-            print("  CursorIcon:", obj.CursorIcon)
-            
-            return {
-                maxDistance = obj.MaxActivationDistance,
-                cursorIcon = obj.CursorIcon,
-                parent = obj.Parent.Name
-            }
-        end
-    end
-    
-    print("❌ ClickDetector не найден")
-    return nil
-end
-
--- Функция анализа звуков
-local function analyzeSounds(model)
-    print("\n🎵 === АНАЛИЗ ЗВУКОВ ===")
-    local sounds = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("Sound") then
-            local soundData = {
-                name = obj.Name,
-                soundId = obj.SoundId,
-                volume = obj.Volume,
-                pitch = obj.Pitch,
-                looped = obj.Looped,
-                parent = obj.Parent.Name
-            }
-            
-            table.insert(sounds, soundData)
-            print("🎵 ЗВУК:", obj.Name, "ID:", obj.SoundId, "в", obj.Parent.Name)
-        end
-    end
-    
-    return sounds
-end
-
--- Функция анализа эффектов
-local function analyzeEffects(model)
-    print("\n✨ === АНАЛИЗ ЭФФЕКТОВ ===")
-    local effects = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or 
-           obj:IsA("Sparkles") or obj:IsA("PointLight") or obj:IsA("SpotLight") then
-            
-            local effectData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                parent = obj.Parent.Name,
-                properties = {}
-            }
-            
-            -- Анализируем свойства эффекта
-            if obj:IsA("ParticleEmitter") then
-                effectData.properties = {
-                    texture = obj.Texture,
-                    rate = obj.Rate,
-                    lifetime = obj.Lifetime,
-                    speed = obj.Speed,
-                    color = obj.Color
-                }
-            elseif obj:IsA("PointLight") then
-                effectData.properties = {
-                    brightness = obj.Brightness,
-                    color = obj.Color,
-                    range = obj.Range
-                }
-            end
-            
-            table.insert(effects, effectData)
-            print("✨ ЭФФЕКТ:", obj.Name, "(" .. obj.ClassName .. ") в", obj.Parent.Name)
-        end
-    end
-    
-    return effects
-end
-
--- Функция анализа GUI элементов
-local function analyzeGUI(model)
-    print("\n🖼️ === АНАЛИЗ GUI ЭЛЕМЕНТОВ ===")
-    local guiElements = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("SurfaceGui") or obj:IsA("BillboardGui") then
-            local guiData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                parent = obj.Parent.Name,
-                children = {}
-            }
-            
-            -- Анализируем содержимое GUI
-            for _, child in pairs(obj:GetChildren()) do
-                table.insert(guiData.children, {
-                    name = child.Name,
-                    className = child.ClassName,
-                    text = child:IsA("TextLabel") and child.Text or nil
-                })
-                
-                if child:IsA("TextLabel") and child.Text then
-                    print("📝 GUI ТЕКСТ:", child.Text, "в", child.Name)
-                    
-                    -- Ищем таймер в тексте
-                    if child.Text:find(":") or child.Text:find("timer") or child.Text:find("Timer") then
-                        print("⏰ ВОЗМОЖНЫЙ ТАЙМЕР найден в GUI!")
-                    end
-                end
-            end
-            
-            table.insert(guiElements, guiData)
-            print("🖼️ GUI:", obj.Name, "(" .. obj.ClassName .. ") в", obj.Parent.Name)
-        end
-    end
-    
-    return guiElements
-end
-
--- Функция поиска связанных объектов
-local function findRelatedObjects(eggModel)
-    print("\n🔗 === ПОИСК СВЯЗАННЫХ ОБЪЕКТОВ ===")
-    local related = {}
-    
-    -- Ищем EggExplode эффекты
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj.Name:find("EggExplode") or obj.Name:find("Explosion") then
-            print("💥 НАЙДЕН ЭФФЕКТ ВЗРЫВА:", obj.Name, "в", obj.Parent and obj.Parent.Name or "nil")
-            table.insert(related, {
-                name = obj.Name,
-                type = "explosion",
-                className = obj.ClassName,
-                parent = obj.Parent and obj.Parent.Name or "nil"
-            })
-        end
-    end
-    
-    -- Ищем связанные скрипты в ReplicatedStorage
-    if ReplicatedStorage then
-        for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
-            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                if obj.Name:lower():find("egg") or obj.Name:lower():find("hatch") then
-                    print("📡 НАЙДЕН REMOTE:", obj.Name, "(" .. obj.ClassName .. ")")
-                    table.insert(related, {
-                        name = obj.Name,
-                        type = "remote",
-                        className = obj.ClassName
-                    })
-                end
-            end
-        end
-    end
-    
-    return related
-end
-
--- Функция мониторинга открытия яйца
-local function monitorEggOpening(eggModel)
-    print("\n👁️ === МОНИТОРИНГ ОТКРЫТИЯ ЯЙЦА ===")
-    print("🎯 Нажмите E рядом с яйцом для анализа процесса открытия!")
-    
-    local openingData = {
-        timeline = {},
-        startTime = nil,
-        endTime = nil,
-        petSpawned = nil,
-        effectsUsed = {}
-    }
-    
-    -- Отслеживаем нажатие клавиши E
-    local keyConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
+        -- Анимация рамки строки
+        local strokeTween = TweenService:Create(rowStroke,
+            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {Color = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(60, 60, 80)}
+        )
         
-        if input.KeyCode == Enum.KeyCode.E then
-            local playerChar = player.Character
-            if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-                local playerPos = playerChar.HumanoidRootPart.Position
-                local eggPos = eggModel:GetModelCFrame().Position
-                local distance = (eggPos - playerPos).Magnitude
-                
-                if distance <= 10 then -- В пределах 10 единиц от яйца
-                    if not openingData.startTime then
-                        openingData.startTime = tick()
-                        print("🚀 НАЖАТА КЛАВИША E - НАЧАЛО ОТКРЫТИЯ ЯЙЦА!")
-                        table.insert(openingData.timeline, {
-                            time = 0,
-                            event = "e_key_pressed",
-                            object = "player_input"
-                        })
-                    end
-                end
-            end
-        end
-    end)
-    
-    -- Отслеживаем изменения в модели
-    local connection = RunService.Heartbeat:Connect(function()
-        if not eggModel or not eggModel.Parent then
-            print("🥚 Яйцо исчезло!")
-            if openingData.startTime then
-                openingData.endTime = tick()
-                local duration = openingData.endTime - openingData.startTime
-                print("⏱️ ВРЕМЯ ОТКРЫТИЯ:", string.format("%.2f секунд", duration))
-            end
-            if connection then
-                connection:Disconnect()
-            end
-            if keyConnection then
-                keyConnection:Disconnect()
-            end
-            return
-        end
+        -- Эффект пульсации при переключении
+        local pulseScale = TweenService:Create(slider,
+            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 33, 0, 33)}
+        )
         
-        -- Ищем новые эффекты
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj.Name:find("EggExplode") and not openingData.effectsUsed[obj.Name] then
-                if not openingData.startTime then
-                    openingData.startTime = tick()
-                    print("🚀 НАЧАЛО ОТКРЫТИЯ ЯЙЦА!")
-                end
-                
-                openingData.effectsUsed[obj.Name] = true
-                table.insert(openingData.timeline, {
-                    time = tick() - openingData.startTime,
-                    event = "effect_spawned",
-                    object = obj.Name
-                })
-                print("💥 ЭФФЕКТ:", obj.Name, "время:", string.format("%.2f", tick() - openingData.startTime))
-            end
-        end
+        local pulseBack = TweenService:Create(slider,
+            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 29, 0, 29)}
+        )
         
-        -- Ищем появившихся питомцев
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj ~= player.Character then
-                local objName = obj.Name:lower()
-                local eggPets = {
-                    "dog", "bunny", "golden lab", "cat", "rabbit", "crab",
-                    "wasp", "snail", "bee", "cow", "monkey", "hedgehog"
-                }
-                
-                for _, petName in pairs(eggPets) do
-                    if objName == petName and not openingData.petSpawned then
-                        openingData.petSpawned = obj.Name
-                        table.insert(openingData.timeline, {
-                            time = tick() - (openingData.startTime or tick()),
-                            event = "pet_spawned",
-                            object = obj.Name
-                        })
-                        print("🐾 ПИТОМЕЦ ПОЯВИЛСЯ:", obj.Name, "время:", string.format("%.2f", tick() - (openingData.startTime or tick())))
-                        break
-                    end
-                end
-            end
-        end
-    end)
-    
-    return openingData, connection, keyConnection
-end
-
--- Модифицированная функция диагностики с GUI обновлениями
-local function runEggDiagnosticWithGUI(eggModel, statusLabel)
-    print("✅ Найдено яйцо для анализа:", eggModel.Name)
-    EggData.model = eggModel
-    
-    statusLabel.Text = "📐 Анализирую структуру модели..."
-    wait(0.5)
-    
-    -- Запускаем все виды анализа
-    EggData.structure = analyzeModelStructure(eggModel)
-    statusLabel.Text = "📜 Анализирую скрипты..."
-    wait(0.5)
-    
-    EggData.scripts = analyzeScripts(eggModel)
-    statusLabel.Text = "🖱️ Ищу ClickDetector..."
-    wait(0.5)
-    
-    EggData.clickDetector = analyzeClickDetector(eggModel)
-    statusLabel.Text = "🎵 Анализирую звуки..."
-    wait(0.5)
-    
-    EggData.sounds = analyzeSounds(eggModel)
-    statusLabel.Text = "✨ Анализирую эффекты..."
-    wait(0.5)
-    
-    EggData.effects = analyzeEffects(eggModel)
-    statusLabel.Text = "🖼️ Анализирую GUI элементы..."
-    wait(0.5)
-    
-    EggData.gui = analyzeGUI(eggModel)
-    statusLabel.Text = "🔗 Ищу связанные объекты..."
-    wait(0.5)
-    
-    EggData.related = findRelatedObjects(eggModel)
-    
-    statusLabel.Text = "👁️ ГОТОВ! Нажмите E на яйце для мониторинга"
-    statusLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 150)
-    
-    -- Запускаем мониторинг открытия
-    local openingData, connection, keyConnection = monitorEggOpening(eggModel)
-    
-    print("\n📊 === ИТОГОВЫЙ ОТЧЕТ ===")
-    print("🥚 Модель:", EggData.model.Name)
-    print("📜 Скриптов:", #EggData.scripts)
-    print("🎵 Звуков:", #EggData.sounds)
-    print("✨ Эффектов:", #EggData.effects)
-    print("🖼️ GUI элементов:", #EggData.gui)
-    print("🔗 Связанных объектов:", #EggData.related)
-    print("🖱️ ClickDetector:", EggData.clickDetector and "Найден" or "Не найден")
-    
-    print("\n🎯 === ГОТОВНОСТЬ К КЛОНИРОВАНИЮ ===")
-    print("📐 Структура модели: ✅ Проанализирована")
-    print("🎨 Визуальные данные: ✅ Извлечены")
-    print("🔧 Механика клика: " .. (EggData.clickDetector and "✅ Найдена" or "❌ Не найдена"))
-    print("📜 Скрипты: " .. (#EggData.scripts > 0 and "✅ Найдены" or "❌ Не найдены"))
-    
-    print("\n💡 Нажмите E рядом с яйцом для анализа процесса открытия!")
-    print("⏰ Мониторинг активен в течение", CONFIG.ANALYSIS_TIME, "секунд")
-    print("🎯 Скрипт отслеживает: нажатие E, эффекты, звуки, появление питомца")
-    
-    -- Автоматическое завершение через время
-    spawn(function()
-        wait(CONFIG.ANALYSIS_TIME)
-        if connection then
-            connection:Disconnect()
-        end
-        if keyConnection then
-            keyConnection:Disconnect()
-        end
-        statusLabel.Text = "🏁 Диагностика завершена!"
-        statusLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-        print("\n🏁 === ДИАГНОСТИКА ЗАВЕРШЕНА ===")
-        print("📊 Все данные собраны для создания визуального симулятора!")
-    end)
-    
-    return EggData
-end
-
--- Создание GUI для управления
-local function createDiagnosticGUI()
-    -- Создаем ScreenGui
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "EggDiagnosticGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
-    
-    -- Главный фрейм
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 300, 0, 200)
-    mainFrame.Position = UDim2.new(0, 10, 0, 10)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    mainFrame.BorderSizePixel = 2
-    mainFrame.BorderColor3 = Color3.fromRGB(0, 255, 255)
-    mainFrame.Parent = screenGui
-    
-    -- Заголовок
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "Title"
-    titleLabel.Size = UDim2.new(1, 0, 0, 30)
-    titleLabel.Position = UDim2.new(0, 0, 0, 0)
-    titleLabel.BackgroundColor3 = Color3.fromRGB(0, 100, 100)
-    titleLabel.Text = "🥚 EGG CLONE DIAGNOSTIC"
-    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleLabel.TextScaled = true
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.Parent = mainFrame
-    
-    -- Кнопка запуска диагностики
-    local startButton = Instance.new("TextButton")
-    startButton.Name = "StartButton"
-    startButton.Size = UDim2.new(0.9, 0, 0, 40)
-    startButton.Position = UDim2.new(0.05, 0, 0, 40)
-    startButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-    startButton.Text = "🔍 ЗАПУСТИТЬ ДИАГНОСТИКУ"
-    startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    startButton.TextScaled = true
-    startButton.Font = Enum.Font.SourceSansBold
-    startButton.Parent = mainFrame
-    
-    -- Статус лейбл
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Name = "Status"
-    statusLabel.Size = UDim2.new(0.9, 0, 0, 60)
-    statusLabel.Position = UDim2.new(0.05, 0, 0, 90)
-    statusLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    statusLabel.Text = "📍 Подойдите к яйцу и нажмите кнопку"
-    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    statusLabel.TextScaled = true
-    statusLabel.Font = Enum.Font.SourceSans
-    statusLabel.TextWrapped = true
-    statusLabel.Parent = mainFrame
-    
-    -- Кнопка закрытия
-    local closeButton = Instance.new("TextButton")
-    closeButton.Name = "CloseButton"
-    closeButton.Size = UDim2.new(0.9, 0, 0, 30)
-    closeButton.Position = UDim2.new(0.05, 0, 0, 160)
-    closeButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-    closeButton.Text = "❌ ЗАКРЫТЬ"
-    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextScaled = true
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.Parent = mainFrame
-    
-    -- Обработчик кнопки запуска
-    startButton.MouseButton1Click:Connect(function()
-        statusLabel.Text = "🔍 Ищу яйцо рядом с игроком..."
-        statusLabel.BackgroundColor3 = Color3.fromRGB(100, 100, 0)
+        -- Запуск всех анимаций
+        sliderTween:Play()
+        trackTween:Play()
+        glowTween:Play()
+        strokeTween:Play()
+        pulseScale:Play()
         
-        spawn(function()
-            local eggModel = findNearbyEgg()
-            if not eggModel then
-                statusLabel.Text = "❌ Яйцо не найдено! Подойдите ближе"
-                statusLabel.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-                return
-            end
-            
-            statusLabel.Text = "✅ Яйцо найдено: " .. eggModel.Name
-            statusLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-            
-            -- Запускаем полную диагностику
-            runEggDiagnosticWithGUI(eggModel, statusLabel)
+        pulseScale.Completed:Connect(function()
+            pulseBack:Play()
         end)
+        
+        -- Обновляем градиент
+        trackGradient.Color = newGradient
+        
+        -- Консольный вывод
+        print(displayText .. ": " .. (isToggled and "ENABLED" or "DISABLED"))
+        
+        return isToggled
+    end
+    
+    -- Обработчик клика
+    local clickDetector = Instance.new("TextButton")
+    clickDetector.Size = UDim2.new(1, 0, 1, 0)
+    clickDetector.BackgroundTransparency = 1
+    clickDetector.Text = ""
+    clickDetector.Parent = rowFrame
+    
+    clickDetector.MouseButton1Click:Connect(function()
+        toggle()
     end)
     
-    -- Обработчик кнопки закрытия
-    closeButton.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
+    -- Hover эффекты
+    clickDetector.MouseEnter:Connect(function()
+        local hoverTween = TweenService:Create(rowFrame,
+            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {BackgroundColor3 = Color3.fromRGB(45, 45, 65)}
+        )
+        hoverTween:Play()
     end)
     
-    return screenGui, statusLabel
+    clickDetector.MouseLeave:Connect(function()
+        local hoverTween = TweenService:Create(rowFrame,
+            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {BackgroundColor3 = Color3.fromRGB(35, 35, 50)}
+        )
+        hoverTween:Play()
+    end)
+    
+    return {
+        frame = rowFrame,
+        toggle = toggle,
+        getState = function() return isToggled end
+    }
 end
 
--- Создание GUI и запуск
-createDiagnosticGUI()
-print("🎮 GUI создан! Используйте кнопки для управления диагностикой.")
+-- Создание премиум переключателей (изначально выключены)
+local freezeTradeToggle = createPremiumToggle("FreezeTrade", "FREEZE TRADE", 65, false)
+local autoAcceptToggle = createPremiumToggle("AutoAccept", "AUTO ACCEPT", 115, false)
+
+-- Сделать интерфейс перетаскиваемым с плавными эффектами
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+local function updateInput(input)
+    local delta = input.Position - dragStart
+    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+headerFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        
+        -- Эффект нажатия
+        local pressEffect = TweenService:Create(headerFrame,
+            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}
+        )
+        pressEffect:Play()
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+                -- Возврат к нормальному цвету
+                local releaseEffect = TweenService:Create(headerFrame,
+                    TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    {BackgroundColor3 = Color3.fromRGB(45, 45, 60)}
+                )
+                releaseEffect:Play()
+            end
+        end)
+    end
+end)
+
+headerFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        if dragging then
+            updateInput(input)
+        end
+    end
+end)
+
+-- Потрясающая анимация появления GUI
+mainFrame.Size = UDim2.new(0, 0, 0, 0)
+mainFrame.BackgroundTransparency = 1
+
+-- Анимация появления основного контейнера
+local sizeAppear = TweenService:Create(mainFrame,
+    TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+    {Size = UDim2.new(0, 340, 0, 190)}
+)
+
+local fadeAppear = TweenService:Create(mainFrame,
+    TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    {BackgroundTransparency = 0}
+)
+
+-- Анимация градиентной рамки
+local borderRotation = TweenService:Create(borderGradient,
+    TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
+    {Rotation = 405}
+)
+
+-- Запуск анимаций
+sizeAppear:Play()
+fadeAppear:Play()
+wait(0.5)
+borderRotation:Play()
+
+-- Анимация пульсации заголовка
+local function pulseTitle()
+    local pulseTween = TweenService:Create(titleGlow,
+        TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        {TextTransparency = 0.4}
+    )
+    pulseTween:Play()
+end
+
+pulseTitle()
+
+print("🚀 TW2LOCK Premium GUI успешно загружен! 🚀")
