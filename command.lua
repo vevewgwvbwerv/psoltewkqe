@@ -340,6 +340,32 @@ local function monitorEggOpening(eggModel)
         effectsUsed = {}
     }
     
+    -- Отслеживаем нажатие клавиши E
+    local keyConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == Enum.KeyCode.E then
+            local playerChar = player.Character
+            if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                local playerPos = playerChar.HumanoidRootPart.Position
+                local eggPos = eggModel:GetModelCFrame().Position
+                local distance = (eggPos - playerPos).Magnitude
+                
+                if distance <= 10 then -- В пределах 10 единиц от яйца
+                    if not openingData.startTime then
+                        openingData.startTime = tick()
+                        print("🚀 НАЖАТА КЛАВИША E - НАЧАЛО ОТКРЫТИЯ ЯЙЦА!")
+                        table.insert(openingData.timeline, {
+                            time = 0,
+                            event = "e_key_pressed",
+                            object = "player_input"
+                        })
+                    end
+                end
+            end
+        end
+    end)
+    
     -- Отслеживаем изменения в модели
     local connection = RunService.Heartbeat:Connect(function()
         if not eggModel or not eggModel.Parent then
@@ -350,6 +376,7 @@ local function monitorEggOpening(eggModel)
                 print("⏱️ ВРЕМЯ ОТКРЫТИЯ:", string.format("%.2f секунд", duration))
             end
             connection:Disconnect()
+            keyConnection:Disconnect()
             return
         end
         
@@ -440,8 +467,9 @@ local function runEggDiagnostic()
     print("🔧 Механика клика: " .. (EggData.clickDetector and "✅ Найдена" or "❌ Не найдена"))
     print("📜 Скрипты: " .. (#EggData.scripts > 0 and "✅ Найдены" or "❌ Не найдены"))
     
-    print("\n💡 Кликните на яйцо для анализа процесса открытия!")
+    print("\n💡 Нажмите E рядом с яйцом для анализа процесса открытия!")
     print("⏰ Мониторинг активен в течение", CONFIG.ANALYSIS_TIME, "секунд")
+    print("🎯 Скрипт отслеживает: нажатие E, эффекты, звуки, появление питомца")
     
     -- Автоматическое завершение через время
     spawn(function()
