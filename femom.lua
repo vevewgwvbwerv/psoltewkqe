@@ -1071,6 +1071,11 @@ local function startWorkspaceScanning()
     connection = RunService.Heartbeat:Connect(function()
         local elapsed = tick() - scanStartTime
         
+        -- ОПТИМИЗАЦИЯ: Сканируем только каждые 0.1 секунды вместо каждого кадра!
+        if elapsed % 0.1 > 0.02 then
+            return -- Пропускаем большинство кадров для снижения нагрузки
+        end
+        
         -- Ограничиваем время сканирования
         if elapsed > 300 then -- 5 минут максимум
             print("⏰ Сканирование остановлено по таймауту")
@@ -1085,11 +1090,6 @@ local function startWorkspaceScanning()
             return
         end
         
-        -- УБИРАЕМ ИНТЕРВАЛЬНОЕ СКАНИРОВАНИЕ - сканируем каждый кадр для надежности
-        -- if elapsed % 0.1 > 0.05 then
-        --     return
-        -- end
-        
         -- ОТЛАДКА: Показываем все модели в workspace для диагностики
         if math.floor(elapsed) % 5 == 0 and elapsed > 1 then -- Каждые 5 секунд
             print("\n🔍 === ОТЛАДКА АВТОЗАМЕНЫ (" .. string.format("%.1f сек", elapsed) .. ") ===")
@@ -1100,7 +1100,50 @@ local function startWorkspaceScanning()
             for _, child in pairs(Workspace:GetDescendants()) do
                 if child:IsA("Model") and child ~= player.Character then
                     local childName = child.Name:lower()
-                    local isPet = childName == "golden lab" or childName == "bunny" or childName == "dog" or childName == "cat" or childName == "rabbit"
+                    -- Используем тот же полный список питомцев из яиц
+                    local eggPets = {
+                        -- Anti Bee Egg
+                        "wasp", "tarantula hawk", "moth", "butterfly", "disco bee (divine)",
+                        -- Bee Egg  
+                        "bee", "honey bee", "bear bee", "petal bee", "queen bee",
+                        -- Bug Egg
+                        "snail", "giant ant", "caterpillar", "praying mantis", "dragonfly (divine)",
+                        -- Common Egg
+                        "dog", "bunny", "golden lab",
+                        -- Common Summer Egg
+                        "starfish", "seagull", "crab",
+                        -- Dinosaur Egg
+                        "raptor", "triceratops", "stegosaurus", "pterodactyl", "brontosaurus", "t-rex (divine)",
+                        -- Legendary Egg
+                        "cow", "silver monkey", "sea otter", "turtle", "polar bear",
+                        -- Mythical Egg
+                        "grey mouse", "brown mouse", "squirrel", "red giant ant", "red fox",
+                        -- Night Egg
+                        "hedgehog", "mole", "frog", "echo frog", "night owl", "raccoon",
+                        -- Oasis Egg
+                        "meerkat", "sand snake", "axolotl", "hyacinth macaw", "fennec fox",
+                        -- Paradise Egg
+                        "ostrich", "peacock", "capybara", "scarlet macaw", "mimic octopus",
+                        -- Primal Egg
+                        "parasaurolophus", "iguanodon", "pachycephalosaurus", "dilophosaurus", "ankylosaurus", "spinosaurus (divine)",
+                        -- Rare Egg
+                        "orange tabby", "spotted deer", "pig", "rooster", "monkey",
+                        -- Rare Summer Egg
+                        "flamingo", "toucan", "sea turtle", "orangutan", "seal",
+                        -- Uncommon Egg
+                        "black bunny", "chicken", "cat", "deer",
+                        -- Zen Egg
+                        "shiba inu", "nihonzaru", "tanuki", "tanchozuru", "kappa", "kitsune"
+                    }
+                    
+                    local isPet = false
+                    for _, petName in pairs(eggPets) do
+                        if childName == petName then
+                            isPet = true
+                            break
+                        end
+                    end
+                    
                     if isPet then
                         petCount = petCount + 1
                         print("  🐾 ПИТОМЕЦ:", child.Name, "- Родитель:", child.Parent and child.Parent.Name or "nil")
@@ -1132,10 +1175,52 @@ local function startWorkspaceScanning()
         for _, obj in pairs(Workspace:GetDescendants()) do
             if obj:IsA("Model") and obj ~= player.Character and not processedPetNames[obj.Name] then
                 
-                -- КРИТИЧНО: У визуального питомца ПРОСТОЕ ИМЯ (НЕ UUID!)
+                -- КРИТИЧНО: У визуального питомца ПРОСТОЕ ИМЯ (НЕ UUID!) - полный список всех питомцев из яиц
                 local objName = obj.Name:lower()
-                if objName == "golden lab" or objName == "bunny" or objName == "dog" or 
-                   objName == "cat" or objName == "rabbit" or objName:find("lab") then
+                local eggPets = {
+                    -- Anti Bee Egg
+                    "wasp", "tarantula hawk", "moth", "butterfly", "disco bee (divine)",
+                    -- Bee Egg  
+                    "bee", "honey bee", "bear bee", "petal bee", "queen bee",
+                    -- Bug Egg
+                    "snail", "giant ant", "caterpillar", "praying mantis", "dragonfly (divine)",
+                    -- Common Egg
+                    "dog", "bunny", "golden lab",
+                    -- Common Summer Egg
+                    "starfish", "seagull", "crab",
+                    -- Dinosaur Egg
+                    "raptor", "triceratops", "stegosaurus", "pterodactyl", "brontosaurus", "t-rex (divine)",
+                    -- Legendary Egg
+                    "cow", "silver monkey", "sea otter", "turtle", "polar bear",
+                    -- Mythical Egg
+                    "grey mouse", "brown mouse", "squirrel", "red giant ant", "red fox",
+                    -- Night Egg
+                    "hedgehog", "mole", "frog", "echo frog", "night owl", "raccoon",
+                    -- Oasis Egg
+                    "meerkat", "sand snake", "axolotl", "hyacinth macaw", "fennec fox",
+                    -- Paradise Egg
+                    "ostrich", "peacock", "capybara", "scarlet macaw", "mimic octopus",
+                    -- Primal Egg
+                    "parasaurolophus", "iguanodon", "pachycephalosaurus", "dilophosaurus", "ankylosaurus", "spinosaurus (divine)",
+                    -- Rare Egg
+                    "orange tabby", "spotted deer", "pig", "rooster", "monkey",
+                    -- Rare Summer Egg
+                    "flamingo", "toucan", "sea turtle", "orangutan", "seal",
+                    -- Uncommon Egg
+                    "black bunny", "chicken", "cat", "deer",
+                    -- Zen Egg
+                    "shiba inu", "nihonzaru", "tanuki", "tanchozuru", "kappa", "kitsune"
+                }
+                
+                local isPetFromEgg = false
+                for _, petName in pairs(eggPets) do
+                    if objName == petName then
+                        isPetFromEgg = true
+                        break
+                    end
+                end
+                
+                if isPetFromEgg then
                     foundVisualsPet = obj
                     print("🎭 НАЙДЕН визуальный питомец в Workspace:", obj.Name, "- Родитель:", obj.Parent and obj.Parent.Name or "nil")
                     break
@@ -1579,9 +1664,50 @@ if initSuccess then
     
     local processedTools = {} -- Чтобы не кликать по одному Tool много раз
     
+    -- ФУНКЦИЯ ПРОВЕРКИ ГОТОВНОСТИ ПИТОМЦА
+    local function isPetReady(handTool)
+        -- Проверяем что Tool стабилен
+        if not handTool or not handTool.Parent then
+            return false
+        end
+        
+        -- Ищем модель питомца в Tool
+        local petModel = nil
+        for _, obj in pairs(handTool:GetDescendants()) do
+            if obj:IsA("Model") and obj.Name ~= handTool.Name then
+                petModel = obj
+                break
+            end
+        end
+        
+        if not petModel then
+            return false
+        end
+        
+        -- Проверяем что у модели есть PrimaryPart
+        if not petModel.PrimaryPart then
+            return false
+        end
+        
+        -- Проверяем что модель не движется быстро (стабилизировалась)
+        local velocity = petModel.PrimaryPart.Velocity
+        if velocity.Magnitude > 1 then -- Если скорость больше 1, еще движется
+            return false
+        end
+        
+        -- Проверяем что Handle существует и стабилен
+        local handle = handTool:FindFirstChild("Handle")
+        if not handle then
+            return false
+        end
+        
+        print("✅ Питомец готов и стабилизировался!")
+        return true
+    end
+
     spawn(function()
         while true do
-            wait(0.5) -- Проверяем каждые 0.5 секунды
+            wait(0.0105) -- Проверяем каждые 0.0105 секунды
             
             local player = Players.LocalPlayer
             if player and player.Character then
@@ -1596,20 +1722,23 @@ if initSuccess then
                     end
                     
                     if isPet and not processedTools[handTool] then
-                        print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
+                        -- ЖДЕМ ПОКА ПИТОМЕЦ БУДЕТ ГОТОВ!
+                        print("🔍 Проверяю готовность питомца...")
+                        if isPetReady(handTool) then
+                            print("🎯 АВТОМАТИЧЕСКИ обнаружен питомец в руках:", handTool.Name)
                         
-                        -- МГНОВЕННО ПЕРЕМЕЩАЕМ ОРИГИНАЛЬНОГО ПИТОМЦА ПОД ЗЕМЛЮ!
-                        print("⚡ МГНОВЕННО перемещаю оригинального питомца под землю...")
+                        -- МГНОВЕННО СКРЫВАЕМ ОРИГИНАЛЬНОГО ПИТОМЦА!
+                        print("⚡ МГНОВЕННО скрываю оригинального питомца...")
                         for _, obj in pairs(handTool:GetDescendants()) do
-                            if obj:IsA("Model") and obj.PrimaryPart then
-                                -- Перемещаем питомца на 10000 единиц под землю
-                                local currentCFrame = obj.PrimaryPart.CFrame
-                                local undergroundCFrame = currentCFrame - Vector3.new(0, 10000, 0)
-                                obj:SetPrimaryPartCFrame(undergroundCFrame)
-                                print("✅ Питомец", obj.Name, "перемещен под землю!")
+                            if obj:IsA("Model") then
+                                for _, part in pairs(obj:GetDescendants()) do
+                                    if part:IsA("BasePart") then
+                                        part.Transparency = 1
+                                    end
+                                end
                             end
                         end
-                        print("✅ Оригинальный питомец скрыт под землей!")
+                        print("✅ Оригинальный питомец скрыт мгновенно!")
                         
                         print("🚀 Автоматически нажимаю кнопку замены...")
                         
@@ -1654,6 +1783,10 @@ if initSuccess then
                             
                             print("✅ Автоматическая замена завершена!")
                         end)
+                        else
+                            -- Питомец еще НЕ готов - ждем следующую проверку
+                            print("⏳ Питомец еще не готов, жду стабилизации...")
+                        end
                     end
                 end
             end
