@@ -1,6 +1,5 @@
--- 🔍 PET CREATION ANALYZER v1.0
--- Анализирует процесс создания визуального питомца
--- Отслеживает: Backpack → Handle → Позиционирование
+-- Pet Creation Analyzer v3.0 - ПОЛНОСТЬЮ ИСПРАВЛЕННАЯ ВЕРСИЯ
+-- Упрощенный анализатор без сложных функций, вызывающих ошибки
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -8,259 +7,574 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local backpack = player.Backpack
 local playerGui = player:WaitForChild("PlayerGui")
 
-print("🔍 === PET CREATION ANALYZER v1.0 ===")
-print("🎯 Отслеживаем: Backpack → Handle → Позиционирование")
+-- Глобальные переменные
+local gui = nil
+local consoleOutput = {}
+local petEvents = {}
+local scriptRunning = true
+local connections = {} -- Храним все соединения для отключения
 
--- === СИСТЕМЫ ЛОГИРОВАНИЯ ===
-local analysisLog = {}
-local petCreationEvents = {}
-local currentHandleTool = nil
+print("🚀 Pet Creation Analyzer v3.0 - Запуск...")
 
--- Функция логирования
-local function log(category, message, data)
-    local entry = {
-        time = tick(),
-        category = category,
-        message = message,
-        data = data or {}
-    }
-    table.insert(analysisLog, entry)
-    print(string.format("[%.3f] [%s] %s", entry.time, category, message))
-    if data and next(data) then
-        for key, value in pairs(data) do
-            print(string.format("  └─ %s: %s", key, tostring(value)))
-        end
-    end
+-- Функция проверки питомца (КАК В FutureBestVisual.lua)
+local function isPetTool(name)
+    if not name then return false end
+    -- Проверяем паттерны из FutureBestVisual.lua:
+    return name:find("KG") or name:find("Dragonfly") or 
+           (name:find("%{") and name:find("%}")) or
+           (name:find("%[") and name:find("%]") and name:find("Age"))
 end
 
--- Функция анализа Tool
-local function analyzeTool(tool)
-    if not tool or not tool:IsA("Tool") then return nil end
+-- Функция проверки UUID имени (ТОЧНАЯ КАК В FutureBestVisual)
+local function isUUIDName(name)
+    if not name then return false end
+    -- UUID формат: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
+    return name:find("%{") and name:find("%}") and name:find("%-")
+end
+
+-- Функция проверки любых фигурных скобок
+local function hasCurlyBraces(name)
+    if not name then return false end
+    return name:find("{") and name:find("}")
+end
+
+-- Простая функция логирования
+local function logEvent(eventType, petName, details)
+    local timestamp = os.date("%H:%M:%S")
+    local logMessage = string.format("[%s] %s: %s", timestamp, eventType, petName or "Unknown")
     
-    local info = {
-        name = tool.Name,
-        parent = tool.Parent and tool.Parent.Name or "nil",
-        handle = nil
-    }
+    print(logMessage)
+    table.insert(consoleOutput, logMessage)
     
-    local handle = tool:FindFirstChild("Handle")
-    if handle and handle:IsA("BasePart") then
-        info.handle = {
-            size = tostring(handle.Size),
-            position = tostring(handle.Position),
-            cframe = tostring(handle.CFrame),
-            anchored = handle.Anchored,
-            transparency = handle.Transparency
-        }
-        
-        -- Анализируем Mesh
-        for _, child in pairs(handle:GetChildren()) do
-            if child:IsA("SpecialMesh") then
-                info.handle.mesh = {
-                    meshId = child.MeshId,
-                    textureId = child.TextureId,
-                    scale = tostring(child.Scale)
-                }
-            end
+    if details then
+        for key, value in pairs(details) do
+            local detailMsg = string.format("  %s: %s", key, tostring(value))
+            print(detailMsg)
+            table.insert(consoleOutput, detailMsg)
         end
     end
     
-    return info
-end
-
--- === МОНИТОРИНГ BACKPACK ===
-log("SYSTEM", "🎒 Запуск мониторинга Backpack")
-
-backpack.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") then
-        wait(0.1)
-        local toolInfo = analyzeTool(child)
-        log("BACKPACK", "✅ НОВЫЙ TOOL: " .. child.Name, toolInfo)
-        
-        -- Проверяем питомца
-        if child.Name:find("KG") or child.Name:find("Dragonfly") or 
-           child.Name:find("%{") or child.Name:find("Pet") then
-            log("PET_DETECTION", "🐾 ПИТОМЕЦ В BACKPACK: " .. child.Name, toolInfo)
-            table.insert(petCreationEvents, {
-                timestamp = tick(),
-                phase = "BACKPACK_ADDED",
-                petName = child.Name,
-                toolInfo = toolInfo
-            })
-        end
-        
-        -- Отслеживаем когда покидает Backpack
-        child.AncestryChanged:Connect(function()
-            if child.Parent ~= backpack then
-                log("BACKPACK", "📤 Tool покинул Backpack: " .. child.Name, {
-                    newParent = child.Parent and child.Parent.Name or "nil"
-                })
+    -- Ограничиваем размер лога
+    if #consoleOutput > 50 then
+        table.remove(consoleOutput, 1)
+    end
+    
+    -- Обновляем GUI если он существует
+    if gui and gui.Parent then
+        local success = pcall(function()
+            local consoleText = gui:FindFirstChild("ConsoleText", true)
+            if consoleText then
+                local displayText = ""
+                for i = math.max(1, #consoleOutput - 10), #consoleOutput do
+                    displayText = displayText .. consoleOutput[i] .. "\n"
+                end
+                consoleText.Text = displayText
             end
         end)
     end
-end)
+end
 
--- === МОНИТОРИНГ HANDLE ===
-log("SYSTEM", "🤲 Запуск мониторинга Handle")
-
-local function monitorCharacter(char)
-    if not char then return end
+-- Создание простого GUI
+local function createSimpleGUI()
+    print("🔧 Создание простого GUI...")
     
-    char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            wait(0.1)
-            currentHandleTool = child
-            local analysis = analyzeTool(child)
+    -- Удаляем старый GUI
+    local oldGui = playerGui:FindFirstChild("PetAnalyzerGUI")
+    if oldGui then
+        oldGui:Destroy()
+    end
+    
+    -- Создаем новый GUI
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PetAnalyzerGUI"
+    screenGui.ResetOnSpawn = false
+    
+    -- Главное окно
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 400, 0, 300)
+    mainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
+    mainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.2)
+    mainFrame.BorderSizePixel = 3
+    mainFrame.BorderColor3 = Color3.new(0, 0.5, 1)
+    mainFrame.Parent = screenGui
+    
+    -- Заголовок
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, 0, 0, 30)
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.BackgroundColor3 = Color3.new(0, 0.3, 0.8)
+    titleLabel.BorderSizePixel = 0
+    titleLabel.Text = "Pet Creation Analyzer v3.0 - WORKING"
+    titleLabel.TextColor3 = Color3.new(1, 1, 1)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.Parent = mainFrame
+    
+    -- Консоль
+    local consoleText = Instance.new("TextLabel")
+    consoleText.Name = "ConsoleText"
+    consoleText.Size = UDim2.new(1, -10, 1, -80)
+    consoleText.Position = UDim2.new(0, 5, 0, 35)
+    consoleText.BackgroundColor3 = Color3.new(0, 0, 0)
+    consoleText.BorderSizePixel = 2
+    consoleText.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
+    consoleText.Text = "Pet Analyzer Console Ready...\nWaiting for pet events..."
+    consoleText.TextColor3 = Color3.new(0, 1, 0)
+    consoleText.TextScaled = false
+    consoleText.TextSize = 12
+    consoleText.Font = Enum.Font.Code
+    consoleText.TextXAlignment = Enum.TextXAlignment.Left
+    consoleText.TextYAlignment = Enum.TextYAlignment.Top
+    consoleText.Parent = mainFrame
+    
+    -- Кнопка отчета
+    local reportButton = Instance.new("TextButton")
+    reportButton.Name = "ReportButton"
+    reportButton.Size = UDim2.new(0.3, 0, 0, 30)
+    reportButton.Position = UDim2.new(0.05, 0, 1, -40)
+    reportButton.BackgroundColor3 = Color3.new(0, 0.7, 0)
+    reportButton.BorderSizePixel = 2
+    reportButton.BorderColor3 = Color3.new(0, 0, 0)
+    reportButton.Text = "REPORT"
+    reportButton.TextColor3 = Color3.new(1, 1, 1)
+    reportButton.TextScaled = true
+    reportButton.Font = Enum.Font.SourceSansBold
+    reportButton.Parent = mainFrame
+    
+    -- Кнопка очистки
+    local clearButton = Instance.new("TextButton")
+    clearButton.Name = "ClearButton"
+    clearButton.Size = UDim2.new(0.3, 0, 0, 30)
+    clearButton.Position = UDim2.new(0.375, 0, 1, -40)
+    clearButton.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
+    clearButton.BorderSizePixel = 2
+    clearButton.BorderColor3 = Color3.new(0, 0, 0)
+    clearButton.Text = "CLEAR"
+    clearButton.TextColor3 = Color3.new(1, 1, 1)
+    clearButton.TextScaled = true
+    clearButton.Font = Enum.Font.SourceSansBold
+    clearButton.Parent = mainFrame
+    
+    -- Кнопка закрытия
+    local closeButton = Instance.new("TextButton")
+    closeButton.Name = "CloseButton"
+    closeButton.Size = UDim2.new(0.25, 0, 0, 30)
+    closeButton.Position = UDim2.new(0.7, 0, 1, -40)
+    closeButton.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
+    closeButton.BorderSizePixel = 2
+    closeButton.BorderColor3 = Color3.new(0, 0, 0)
+    closeButton.Text = "CLOSE"
+    closeButton.TextColor3 = Color3.new(1, 1, 1)
+    closeButton.TextScaled = true
+    closeButton.Font = Enum.Font.SourceSansBold
+    closeButton.Parent = mainFrame
+    
+    -- События кнопок
+    reportButton.MouseButton1Click:Connect(function()
+        reportButton.Text = "GENERATING..."
+        reportButton.BackgroundColor3 = Color3.new(0.5, 0.5, 0)
+        
+        spawn(function()
+            wait(0.5)
             
-            log("HANDLE", "⚡ TOOL ЭКИПИРОВАН: " .. child.Name, analysis)
+            -- Генерируем детальный отчет прямо в GUI консоль
+            logEvent("📊 DETAILED REPORT", "=== STARTING REPORT ===")
+            logEvent("📊 STATS", "Events logged: " .. #petEvents)
+            logEvent("📊 STATS", "Console lines: " .. #consoleOutput)
             
-            -- Проверяем питомца
-            if child.Name:find("KG") or child.Name:find("Dragonfly") or 
-               child.Name:find("%{") or child.Name:find("Pet") then
-                
-                log("PET_DETECTION", "🐾 ПИТОМЕЦ В РУКЕ: " .. child.Name, analysis)
-                
-                table.insert(petCreationEvents, {
-                    timestamp = tick(),
-                    phase = "HANDLE_EQUIPPED",
-                    petName = child.Name,
-                    analysis = analysis
+            -- Показываем последние события
+            logEvent("📊 RECENT EVENTS", "Last 5 events:")
+            local startIndex = math.max(1, #petEvents - 4)
+            for i = startIndex, #petEvents do
+                if petEvents[i] then
+                    logEvent("📊 EVENT", petEvents[i].type .. ": " .. (petEvents[i].pet or "Unknown"))
+                end
+            end
+            
+            -- Ищем текущие UUID модели в workspace
+            logEvent("📊 WORKSPACE SCAN", "Current UUID pets in workspace:")
+            local foundUUIDPets = 0
+            for _, child in pairs(Workspace:GetChildren()) do
+                if child:IsA("Model") and isUUIDName(child.Name) then
+                    foundUUIDPets = foundUUIDPets + 1
+                    logEvent("📊 UUID PET", child.Name, {
+                        Position = child.PrimaryPart and tostring(child.PrimaryPart.Position) or "Unknown"
+                    })
+                end
+            end
+            
+            if foundUUIDPets == 0 then
+                logEvent("📊 UUID PET", "No UUID pets found in workspace")
+            end
+            
+            logEvent("📊 DETAILED REPORT", "=== REPORT COMPLETE ===")
+            
+            -- Возвращаем кнопку в нормальное состояние
+            reportButton.Text = "REPORT"
+            reportButton.BackgroundColor3 = Color3.new(0, 0.7, 0)
+        end)
+    end)
+    
+    clearButton.MouseButton1Click:Connect(function()
+        consoleOutput = {}
+        petEvents = {}
+        consoleText.Text = "Console cleared!\nWaiting for new events..."
+        logEvent("SYSTEM", "Console cleared")
+    end)
+    
+    closeButton.MouseButton1Click:Connect(function()
+        logEvent("SYSTEM", "Shutting down Pet Creation Analyzer...")
+        
+        -- Отключаем скрипт
+        scriptRunning = false
+        
+        -- Отключаем все соединения
+        for i, connection in ipairs(connections) do
+            if connection then
+                pcall(function() connection:Disconnect() end)
+            end
+        end
+        connections = {}
+        
+        -- Закрываем GUI
+        screenGui:Destroy()
+        gui = nil
+        
+        print("🔴 Pet Creation Analyzer полностью выключен!")
+        print("🔌 Все соединения отключены")
+        print("❌ Скрипт остановлен")
+    end)
+    
+    -- Добавляем в PlayerGui
+    screenGui.Parent = playerGui
+    gui = screenGui
+    
+    print("✅ GUI создан успешно!")
+    logEvent("SYSTEM", "GUI created successfully")
+    
+    return screenGui
+end
+
+-- Мониторинг Backpack
+local function monitorBackpack()
+    if not scriptRunning then return end
+    logEvent("SYSTEM", "Starting backpack monitoring")
+    
+    local function onToolAdded(tool)
+        if not scriptRunning then return end
+        if tool:IsA("Tool") then
+            local isPet = isPetTool(tool.Name)
+            logEvent("🎒 BACKPACK_ADDED", tool.Name, {
+                ClassName = tool.ClassName,
+                Handle = tool:FindFirstChild("Handle") and "Yes" or "No",
+                IsPet = isPet and "YES" or "NO"
+            })
+        end
+    end
+    
+    local function onToolRemoved(tool)
+        if not scriptRunning then return end
+        if tool:IsA("Tool") then
+            logEvent("🎒 BACKPACK_REMOVED", tool.Name, {
+                IsPet = isPetTool(tool.Name) and "YES" or "NO"
+            })
+        end
+    end
+    
+    -- Подключаем к текущему backpack и сохраняем соединения
+    if player.Backpack then
+        local conn1 = player.Backpack.ChildAdded:Connect(onToolAdded)
+        local conn2 = player.Backpack.ChildRemoved:Connect(onToolRemoved)
+        table.insert(connections, conn1)
+        table.insert(connections, conn2)
+    end
+end
+
+-- Мониторинг рук персонажа (С ПОЛНОЙ ПРОВЕРКОЙ scriptRunning)
+local function monitorCharacterTools()
+    if not scriptRunning then return end
+    logEvent("SYSTEM", "Starting character tools monitoring with scriptRunning checks")
+    
+    local function monitorCharacter(character)
+        if not character or not scriptRunning then return end
+        
+        local success1 = pcall(function()
+            local conn1 = character.ChildAdded:Connect(function(child)
+                if not scriptRunning then return end
+                if child and child:IsA("Tool") then
+                    local hasHandle = child:FindFirstChild("Handle") and "Yes" or "No"
+                    local isPet = isPetTool(child.Name)
+                    logEvent("🤲 HAND_EQUIPPED", child.Name, {
+                        Handle = hasHandle,
+                        ClassName = child.ClassName,
+                        IsPet = isPet and "YES" or "NO"
+                    })
+                end
+            end)
+            table.insert(connections, conn1)
+        end)
+        
+        local success2 = pcall(function()
+            local conn2 = character.ChildRemoved:Connect(function(child)
+                if not scriptRunning then return end
+                if child and child:IsA("Tool") then
+                    local isPet = isPetTool(child.Name)
+                    logEvent("🤲 HAND_REMOVED", child.Name, {
+                        ClassName = child.ClassName,
+                        IsPet = isPet and "YES" or "NO"
+                    })
+                    
+                    -- ПОИСК UUID ПИТОМЦЕВ КАК В FutureBestVisual.lua (ТОЛЬКО ДЛЯ ПИТОМЦЕВ)
+                    if isPet then
+                        logEvent("🔍 SEARCH_START", "Searching UUID pets like FutureBestVisual.lua")
+                        
+                        spawn(function()
+                            local searchAttempts = 0
+                            local maxAttempts = 20 -- 20 попыток по 0.5 секунды = 10 секунд
+                            
+                            while searchAttempts < maxAttempts and scriptRunning do
+                                searchAttempts = searchAttempts + 1
+                                wait(0.5)
+                                
+                                if not scriptRunning then break end
+                            
+                            -- ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ FutureBestVisual.lua
+                            local foundUUIDPets = {}
+                            
+                            for _, obj in pairs(Workspace:GetDescendants()) do
+                                if not scriptRunning then break end
+                                
+                                -- Проверяем модели с фигурными скобками (КАК В FutureBestVisual.lua)
+                                if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+                                    local success, modelCFrame = pcall(function() 
+                                        return obj:GetModelCFrame() 
+                                    end)
+                                    
+                                    if success then
+                                        local playerChar = player.Character
+                                        if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                                            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                                            
+                                            -- Проверяем расстояние (как в FutureBestVisual.lua)
+                                            if distance <= 100 then -- SEARCH_RADIUS из FutureBestVisual.lua
+                                                -- Проверяем меши (как в FutureBestVisual.lua)
+                                                local meshes = 0
+                                                for _, part in pairs(obj:GetDescendants()) do
+                                                    if part:IsA("MeshPart") or part:IsA("SpecialMesh") then
+                                                        meshes = meshes + 1
+                                                    end
+                                                end
+                                                
+                                                table.insert(foundUUIDPets, {
+                                                    model = obj,
+                                                    name = obj.Name,
+                                                    distance = distance,
+                                                    meshes = meshes,
+                                                    position = modelCFrame.Position
+                                                })
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            
+                            -- Если нашли UUID питомцев, логируем их
+                            if #foundUUIDPets > 0 then
+                                for _, petData in ipairs(foundUUIDPets) do
+                                    logEvent("🎯 UUID_PET_FOUND", petData.name, {
+                                        SearchAttempt = tostring(searchAttempts),
+                                        Distance = string.format("%.1f studs", petData.distance),
+                                        Meshes = tostring(petData.meshes),
+                                        Position = tostring(petData.position),
+                                        SearchTime = string.format("%.1f seconds", searchAttempts * 0.5)
+                                    })
+                                end
+                                break -- Найдены питомцы, прекращаем поиск
+                            end
+                        end
+                        
+                        if searchAttempts >= maxAttempts and scriptRunning then
+                            logEvent("⏰ SEARCH_COMPLETE", "UUID search completed after " .. (maxAttempts * 0.5) .. " seconds")
+                        end
+                        
+                        if not scriptRunning then
+                            print("🔴 UUID search stopped due to script shutdown")
+                        end
+                    end)
+                    end
+                end
+            end)
+            table.insert(connections, conn2)
+        end)
+        
+        if not success1 then
+            logEvent("⚠️ ERROR", "Failed to connect ChildAdded for character")
+        end
+        if not success2 then
+            logEvent("⚠️ ERROR", "Failed to connect ChildRemoved for character")
+        end
+    end
+    
+    -- Мониторим текущего персонажа
+    if player.Character then
+        monitorCharacter(player.Character)
+    end
+    
+    -- Мониторим новых персонажей
+    player.CharacterAdded:Connect(monitorCharacter)
+end
+
+-- Мониторинг Workspace для UUID питомцев (КАК В FutureBestVisual.lua)
+local function monitorWorkspacePets()
+    logEvent("SYSTEM", "Starting workspace monitoring like FutureBestVisual.lua")
+    
+    -- Мониторим корневой Workspace
+    Workspace.ChildAdded:Connect(function(child)
+        if child:IsA("Model") then
+            local hasUUID = isUUIDName(child.Name)
+            local hasBraces = hasCurlyBraces(child.Name)
+            
+            if hasUUID or hasBraces then
+                logEvent("🌍 WORKSPACE_ROOT_ADDED", child.Name, {
+                    HasUUID = hasUUID and "YES" or "NO",
+                    HasBraces = hasBraces and "YES" or "NO",
+                    Position = child.PrimaryPart and tostring(child.PrimaryPart.Position) or "Unknown"
                 })
-                
-                -- Анализируем позиционирование
-                local handle = child:FindFirstChild("Handle")
-                if handle then
-                    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-                    if torso then
-                        local relativePos = torso.CFrame:PointToObjectSpace(handle.Position)
-                        log("POSITION", "📍 Относительная позиция Handle", {
-                            relativePosition = tostring(relativePos),
-                            handleCFrame = tostring(handle.CFrame)
-                        })
-                    end
-                end
-                
-                -- Анализируем RightGrip
-                local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
-                if rightArm then
-                    local rightGrip = rightArm:FindFirstChild("RightGrip")
-                    if rightGrip then
-                        log("GRIP", "🔗 RightGrip найден", {
-                            c0 = tostring(rightGrip.C0),
-                            c1 = tostring(rightGrip.C1),
-                            part0 = rightGrip.Part0 and rightGrip.Part0.Name or "nil",
-                            part1 = rightGrip.Part1 and rightGrip.Part1.Name or "nil"
-                        })
-                    end
-                end
+            end
+            
+            if hasUUID then
+                logEvent("🎯 UUID_PET_IN_ROOT", child.Name, {
+                    Position = child.PrimaryPart and tostring(child.PrimaryPart.Position) or "Unknown"
+                })
             end
         end
     end)
     
-    char.ChildRemoved:Connect(function(child)
-        if child:IsA("Tool") and child == currentHandleTool then
-            log("HANDLE", "📤 TOOL СНЯТ: " .. child.Name)
-            currentHandleTool = nil
+    -- Мониторим Workspace.Visuals (КАК В FutureBestVisual.lua)
+    local visualsFolder = Workspace:FindFirstChild("Visuals")
+    if visualsFolder then
+        logEvent("SYSTEM", "Found Workspace.Visuals folder - monitoring it")
+        
+        visualsFolder.ChildAdded:Connect(function(child)
+            if child:IsA("Model") then
+                local hasUUID = isUUIDName(child.Name)
+                local hasBraces = hasCurlyBraces(child.Name)
+                
+                if hasUUID or hasBraces then
+                    logEvent("🎨 VISUALS_FOLDER_ADDED", child.Name, {
+                        HasUUID = hasUUID and "YES" or "NO",
+                        HasBraces = hasBraces and "YES" or "NO",
+                        Position = child.PrimaryPart and tostring(child.PrimaryPart.Position) or "Unknown"
+                    })
+                end
+                
+                if hasUUID then
+                    logEvent("🎯 UUID_PET_IN_VISUALS", child.Name, {
+                        Position = child.PrimaryPart and tostring(child.PrimaryPart.Position) or "Unknown"
+                    })
+                end
+            end
+        end)
+    else
+        logEvent("SYSTEM", "No Workspace.Visuals folder found")
+        
+        -- Создаем мониторинг для появления Visuals папки
+        Workspace.ChildAdded:Connect(function(child)
+            if child.Name == "Visuals" and child:IsA("Folder") then
+                logEvent("SYSTEM", "Workspace.Visuals folder appeared - setting up monitoring")
+                
+                child.ChildAdded:Connect(function(visualChild)
+                    if visualChild:IsA("Model") and isUUIDName(visualChild.Name) then
+                        logEvent("🎯 UUID_PET_IN_NEW_VISUALS", visualChild.Name, {
+                            Position = visualChild.PrimaryPart and tostring(visualChild.PrimaryPart.Position) or "Unknown"
+                        })
+                    end
+                end)
+            end
+        end)
+    end
+    
+    -- Мониторим удаления
+    Workspace.ChildRemoved:Connect(function(child)
+        if child:IsA("Model") and (isUUIDName(child.Name) or hasCurlyBraces(child.Name)) then
+            logEvent("🌍 WORKSPACE_MODEL_REMOVED", child.Name)
+        end
+    end)
+    
+    -- Периодическое сканирование workspace каждые 5 секунд (С ПРОВЕРКОЙ scriptRunning)
+    spawn(function()
+        while scriptRunning do
+            wait(5)
+            if not scriptRunning then break end
+            
+            local success = pcall(function()
+                if not scriptRunning then return end
+                
+                local foundModels = 0
+                for _, child in pairs(Workspace:GetChildren()) do
+                    if not scriptRunning then break end
+                    if child:IsA("Model") and (isUUIDName(child.Name) or hasCurlyBraces(child.Name)) then
+                        foundModels = foundModels + 1
+                    end
+                end
+                
+                if foundModels > 0 and scriptRunning then
+                    logEvent("🔍 PERIODIC_SCAN", "Found " .. foundModels .. " models with braces/UUID")
+                    
+                    -- Показываем первые 2 найденные модели
+                    local count = 0
+                    for _, child in pairs(Workspace:GetChildren()) do
+                        if not scriptRunning then break end
+                        if child:IsA("Model") and (isUUIDName(child.Name) or hasCurlyBraces(child.Name)) then
+                            count = count + 1
+                            if count <= 2 then
+                                logEvent("🔍 FOUND_MODEL", child.Name, {
+                                    IsUUID = isUUIDName(child.Name) and "YES" or "NO",
+                                    Position = child.PrimaryPart and tostring(child.PrimaryPart.Position) or "Unknown"
+                                })
+                            end
+                        end
+                    end
+                end
+            end)
+            
+            if not success and scriptRunning then
+                logEvent("⚠️ ERROR", "Failed periodic workspace scan")
+            end
+        end
+        
+        if not scriptRunning then
+            print("🔴 Periodic scanning stopped")
         end
     end)
 end
 
-if character then
-    monitorCharacter(character)
-end
-
-player.CharacterAdded:Connect(monitorCharacter)
-
--- === ФУНКЦИЯ ОТЧЕТА ===
-local function generateReport()
-    print("\n" .. "=" .. string.rep("=", 50))
-    print("📊 === ОТЧЕТ О СОЗДАНИИ ПИТОМЦА ===")
-    print("=" .. string.rep("=", 50))
+-- Запуск системы
+local function startSystem()
+    print("🚀 Запуск Pet Creation Analyzer v3.0...")
     
-    if #petCreationEvents == 0 then
-        print("❌ Событий создания питомца не обнаружено")
+    -- Создаем GUI
+    local success, error = pcall(createSimpleGUI)
+    if not success then
+        print("❌ Ошибка создания GUI:", error)
         return
     end
     
-    for i, event in ipairs(petCreationEvents) do
-        print(string.format("\n🔸 Событие %d: %s", i, event.phase))
-        print(string.format("   ⏰ Время: %.3f", event.timestamp))
-        print(string.format("   🐾 Питомец: %s", event.petName))
-        
-        if event.toolInfo and event.toolInfo.handle then
-            print("   📦 Handle Info:")
-            print(string.format("      Size: %s", event.toolInfo.handle.size))
-            print(string.format("      Position: %s", event.toolInfo.handle.position))
-        end
-    end
+    -- Запускаем мониторинг
+    pcall(monitorBackpack)
+    pcall(monitorCharacterTools)
+    pcall(monitorWorkspacePets)
     
-    print("\n" .. "=" .. string.rep("=", 50))
+    print("✅ Pet Creation Analyzer v3.0 запущен успешно!")
+    print("📊 GUI активен, мониторинг включен")
+    print("🔍 Готов к анализу питомцев!")
+    
+    logEvent("SYSTEM", "Pet Creation Analyzer v3.0 started successfully")
 end
 
--- === GUI ===
-local function createGUI()
-    local oldGui = playerGui:FindFirstChild("PetAnalyzerGUI")
-    if oldGui then oldGui:Destroy() end
-    
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetAnalyzerGUI"
-    screenGui.Parent = playerGui
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 300, 0, 200)
-    frame.Position = UDim2.new(0, 10, 0, 10)
-    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    frame.Parent = screenGui
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.BackgroundColor3 = Color3.fromRGB(50, 150, 250)
-    title.Text = "🔍 Pet Analyzer"
-    title.TextColor3 = Color3.white
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -10, 0, 30)
-    status.Position = UDim2.new(0, 5, 0, 45)
-    status.BackgroundTransparency = 1
-    status.Text = "✅ Анализатор активен"
-    status.TextColor3 = Color3.fromRGB(0, 255, 0)
-    status.TextScaled = true
-    status.Parent = frame
-    
-    local reportBtn = Instance.new("TextButton")
-    reportBtn.Size = UDim2.new(1, -10, 0, 35)
-    reportBtn.Position = UDim2.new(0, 5, 0, 85)
-    reportBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-    reportBtn.Text = "📊 Создать отчет"
-    reportBtn.TextColor3 = Color3.white
-    reportBtn.TextScaled = true
-    reportBtn.Parent = frame
-    
-    local clearBtn = Instance.new("TextButton")
-    clearBtn.Size = UDim2.new(1, -10, 0, 35)
-    clearBtn.Position = UDim2.new(0, 5, 0, 130)
-    clearBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-    clearBtn.Text = "🗑️ Очистить лог"
-    clearBtn.TextColor3 = Color3.white
-    clearBtn.TextScaled = true
-    clearBtn.Parent = frame
-    
-    reportBtn.MouseButton1Click:Connect(generateReport)
-    clearBtn.MouseButton1Click:Connect(function()
-        analysisLog = {}
-        petCreationEvents = {}
-        log("SYSTEM", "🗑️ Лог очищен")
-    end)
-end
-
-createGUI()
-
-log("SYSTEM", "✅ Pet Creation Analyzer запущен!")
-log("SYSTEM", "💡 Создайте питомца и возьмите его в руки для анализа")
+-- Запускаем систему
+startSystem()
