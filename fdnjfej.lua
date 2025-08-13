@@ -31,35 +31,55 @@ function logger.start()
     hookGameServices()
     hookReplication()
     hookCharacterSystems()
+    hookPetCreation()
 end
 
 function hookGameServices()
     logger.log("Установка хуков на игровые сервисы")
     
-    -- Хук на ReplicatedStorage
-    local original_FindFirstChild = Instance.new("Folder").FindFirstChild
+    -- Хук на ReplicatedStorage для отслеживания доступа к моделям питомцев
     local rs = game:GetService("ReplicatedStorage")
+    local old_FindFirstChild = rs.FindFirstChild
     
-    -- Хук на Workspace
-    local ws = game:GetService("Workspace")
+    rs.FindFirstChild = function(self, name, recursive)
+        if name and (string.find(name:lower(), "pet") or string.find(name:lower(), "anim")) then
+            logger.log("Поиск модели питомца в ReplicatedStorage", {name = name, recursive = tostring(recursive)})
+        end
+        return old_FindFirstChild(self, name, recursive)
+    end
     
-    -- Хук на Players
-    local players = game:GetService("Players")
-    
-    logger.log("Хуки установлены на основные сервисы")
+    logger.log("Хуки установлены на ReplicatedStorage")
 end
 
 function hookReplication()
     logger.log("Установка хуков на репликацию")
     
     -- Хук на добавление объектов в Workspace
-    local mt = getrawmetatable(game.Workspace)
-    local oldIndex = mt.__index
+    local ws = game:GetService("Workspace")
+    local old_ws_FindFirstChild = ws.FindFirstChild
     
-    mt.__index = function(self, key)
-        logger.log("Доступ к Workspace", {key = key})
-        return oldIndex(self, key)
+    ws.FindFirstChild = function(self, name, recursive)
+        if name and (string.find(name:lower(), "pet") or string.find(name:lower(), "character")) then
+            logger.log("Поиск в Workspace", {name = name, recursive = tostring(recursive)})
+        end
+        return old_ws_FindFirstChild(self, name, recursive)
     end
+    
+    -- Хук на добавление в Workspace
+    ws.ChildAdded:Connect(function(child)
+        if child.ClassName == "Model" and (string.find(child.Name:lower(), "pet") or 
+           string.find(child.Name:lower(), "creature") or string.find(child.Name:lower(), "npc")) then
+            logger.log("Добавлена модель в Workspace", {
+                name = child.Name,
+                className = child.ClassName,
+                childrenCount = #child:GetChildren(),
+                parent = tostring(child.Parent)
+            })
+            
+            -- Логируем структуру модели
+            logModelStructure(child)
+        end
+    end)
     
     -- Хук на добавление в Backpack
     pcall(function()
@@ -83,18 +103,121 @@ end
 function hookCharacterSystems()
     logger.log("Установка хуков на системы персонажей")
     
-    -- Хук на Humanoid
-    local oldHumanoid_new = Instance.new
+    -- Хук на создание Humanoid
+    local old_Instance_new = Instance.new
     
-    -- Хук на Animator
-    -- Хук на Motor6D
+    Instance.new = function(className, parent)
+        if className == "Humanoid" or className == "Animator" or className == "Motor6D" then
+            logger.log("Создание системы персонажа", {
+                class = className,
+                parent = parent and tostring(parent) or "nil"
+            })
+        end
+        return old_Instance_new(className, parent)
+    end
+    
+    -- Хук на AnimationController
+    local old_LoadAnimation = nil
+    pcall(function()
+        local animator = Instance.new("Animator")
+        old_LoadAnimation = animator.LoadAnimation
+        
+        animator.LoadAnimation = function(self, animation)
+            logger.log("Загрузка анимации", {
+                animationId = animation and animation.AnimationId or "unknown",
+                parent = tostring(self)
+            })
+            return old_LoadAnimation(self, animation)
+        end
+    end)
+    
     logger.log("Хуки на системы персонажей установлены")
+end
+
+function hookPetCreation()
+    logger.log("Установка специализированных хуков для создания питомцев")
+    
+    -- Хук на Clone для отслеживания копирования моделей
+    local old_Clone = nil
+    pcall(function()
+        local model = Instance.new("Model")
+        old_Clone = model.Clone
+        
+        model.Clone = function(self)
+            if string.find(self.Name:lower(), "pet") or string.find(self.Name:lower(), "creature") then
+                logger.log("Клонирование модели питомца", {
+                    originalName = self.Name,
+                    parent = tostring(self.Parent)
+                })
+            end
+            return old_Clone(self)
+        end
+    end)
+    
+    -- Хук на SetProperty для отслеживания изменения свойств
+    local mt = getrawmetatable(game)
+    if mt then
+        local old_NewIndex = mt.__newindex
+        
+        mt.__newindex = function(t, k, v)
+            if typeof(t) == "Instance" and k == "Size" and typeof(v) == "Vector3" then
+                if string.find(t.Name:lower(), "body") or string.find(t.Name:lower(), "torso") then
+                    logger.log("Изменение размера тела питомца", {
+                        object = tostring(t),
+                        newSize = tostring(v),
+                        oldSize = tostring(t.Size)
+                    })
+                end
+            end
+            return old_NewIndex(t, k, v)
+        end
+    end
+end
+
+function logModelStructure(model)
+    logger.log("Анализ структуры модели питомца: " .. model.Name)
+    
+    -- Логируем основные компоненты
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    local animator = humanoid and humanoid:FindFirstChild("Animator")
+    local animationController = model:FindFirstChild("AnimationController")
+    
+    if humanoid then
+        logger.log("Найден Humanoid", {
+            health = humanoid.Health,
+            maxHealth = humanoid.MaxHealth,
+            walkSpeed = humanoid.WalkSpeed
+        })
+    end
+    
+    if animator then
+        logger.log("Найден Animator")
+    end
+    
+    if animationController then
+        logger.log("Найден AnimationController")
+    end
+    
+    -- Логируем части тела
+    local bodyParts = {"Head", "Torso", "HumanoidRootPart", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}
+    for _, partName in ipairs(bodyParts) do
+        local part = model:FindFirstChild(partName)
+        if part then
+            logger.log("Найдена часть тела", {
+                part = partName,
+                size = tostring(part.Size),
+                material = tostring(part.Material)
+            })
+        end
+    end
 end
 
 function logger.exportLogs()
     logger.log("Экспорт логов")
     
-    local logText = ""
+    local logText = "=== Pet Behavior Analyzer Logs ===\n"
+    logText = logText .. "Всего записей: " .. #logger.logs .. "\n\n"
+    
     for _, entry in ipairs(logger.logs) do
         logText = logText .. "[" .. entry.time .. "] " .. entry.message .. "\n"
         if entry.data then
@@ -119,6 +242,11 @@ function logger.exportLogs()
     return logText
 end
 
+function logger.clearLogs()
+    logger.logs = {}
+    logger.log("Логи очищены")
+end
+
 -- Запуск логгера
 logger.start()
 
@@ -127,4 +255,5 @@ getgenv().petLogger = logger
 
 warn("[PET_ANALYZER] Система анализа поведения питомцев запущена!")
 warn("[PET_ANALYZER] Используйте petLogger.exportLogs() для экспорта логов")
+warn("[PET_ANALYZER] Используйте petLogger.clearLogs() для очистки логов")
 warn("[PET_ANALYZER] Используйте petLogger.enabled = false для отключения")
