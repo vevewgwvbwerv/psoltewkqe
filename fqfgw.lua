@@ -1,444 +1,339 @@
--- TW2LOCK Premium GUI Script for Roblox
--- Современный высококачественный интерфейс
+-- Advanced LuaArmor Interceptor
+-- Self-contained script that uses advanced hooking techniques to intercept LuaArmor code
 
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+-- Check if we're in a Roblox environment
+if not game then
+    print("[ERROR] This script must be run in a Roblox environment")
+    return
+end
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+-- Store original functions
+local original_loadstring = loadstring
+local original_pcall = pcall
+local original_xpcall = xpcall
+local original_HttpGet = game.HttpGet
 
--- Создаем ScreenGui
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TW2LOCK_Premium_GUI"
-screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true
-screenGui.Parent = playerGui
+-- Table to store intercepted code
+local interceptedCode = {}
+local interceptedFunctions = {}
 
--- Убираем затемнение экрана
+-- Function to safely add intercepted code
+local function addInterceptedCode(source, chunkname, method)
+    table.insert(interceptedCode, {
+        source = source,
+        chunkname = chunkname,
+        method = method or "unknown",
+        timestamp = tick()
+    })
+    
+    -- Print to console for immediate viewing
+    print("[INTERCEPTED] Code intercepted via " .. method .. ":")
+    print(source)
+    print("----------------------------------------")
+end
 
--- Основной контейнер с современным дизайном (скорректированный размер)
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainContainer"
-mainFrame.Size = UDim2.new(0, 340, 0, 210)
-mainFrame.Position = UDim2.new(0.5, -170, 0.5, -105)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
--- Современные скругленные углы
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 16)
-mainCorner.Parent = mainFrame
-
--- Градиентная рамка
-local borderFrame = Instance.new("Frame")
-borderFrame.Size = UDim2.new(1, 4, 1, 4)
-borderFrame.Position = UDim2.new(0, -2, 0, -2)
-borderFrame.BackgroundTransparency = 1
-borderFrame.BorderSizePixel = 0
-borderFrame.ZIndex = mainFrame.ZIndex - 1
-borderFrame.Parent = mainFrame
-
-local borderStroke = Instance.new("UIStroke")
-borderStroke.Thickness = 2
-borderStroke.Color = Color3.fromRGB(100, 200, 255)
-borderStroke.Transparency = 0.3
-borderStroke.Parent = mainFrame
-
-local borderGradient = Instance.new("UIGradient")
-borderGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 150))
-}
-borderGradient.Rotation = 45
-borderGradient.Parent = borderStroke
-
--- Заголовок с градиентом
-local headerFrame = Instance.new("Frame")
-headerFrame.Name = "Header"
-headerFrame.Size = UDim2.new(1, 0, 0, 50)
-headerFrame.Position = UDim2.new(0, 0, 0, 0)
-headerFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
-headerFrame.BorderSizePixel = 0
-headerFrame.Parent = mainFrame
-
-local headerCorner = Instance.new("UICorner")
-headerCorner.CornerRadius = UDim.new(0, 16)
-headerCorner.Parent = headerFrame
-
-local headerGradient = Instance.new("UIGradient")
-headerGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 60, 80)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 35, 50))
-}
-headerGradient.Rotation = 90
-headerGradient.Parent = headerFrame
-
--- Заголовочный текст с эффектами
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(1, -20, 1, 0)
-titleLabel.Position = UDim2.new(0, 20, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "TW2LOCK"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 24
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = headerFrame
-
--- Светящийся эффект для заголовка
-local titleGlow = titleLabel:Clone()
-titleGlow.Name = "TitleGlow"
-titleGlow.Position = UDim2.new(0, 22, 0, 2)
-titleGlow.TextColor3 = Color3.fromRGB(100, 200, 255)
-titleGlow.TextTransparency = 0.7
-titleGlow.ZIndex = titleLabel.ZIndex - 1
-titleGlow.Parent = headerFrame
-
--- Функция создания идеального премиум тумблера
-local function createPremiumToggle(name, displayText, yPosition, initialState)
-    -- Контейнер строки с современным дизайном
-    local rowFrame = Instance.new("Frame")
-    rowFrame.Name = name .. "Row"
-    rowFrame.Size = UDim2.new(1, -40, 0, 60)
-    rowFrame.Position = UDim2.new(0, 20, 0, yPosition)
-    rowFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    rowFrame.BorderSizePixel = 0
-    rowFrame.Parent = mainFrame
-    
-    -- Скругленные углы для строки
-    local rowCorner = Instance.new("UICorner")
-    rowCorner.CornerRadius = UDim.new(0, 12)
-    rowCorner.Parent = rowFrame
-    
-    -- Тонкая светящаяся рамка
-    local rowStroke = Instance.new("UIStroke")
-    rowStroke.Color = Color3.fromRGB(60, 60, 80)
-    rowStroke.Thickness = 1
-    rowStroke.Transparency = 0.5
-    rowStroke.Parent = rowFrame
-    
-    -- Градиентный фон
-    local rowGradient = Instance.new("UIGradient")
-    rowGradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 55)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 30, 45))
-    }
-    rowGradient.Rotation = 90
-    rowGradient.Parent = rowFrame
-    
-    -- Текст переключателя с современным шрифтом
-    local toggleLabel = Instance.new("TextLabel")
-    toggleLabel.Name = "Label"
-    toggleLabel.Size = UDim2.new(0, 200, 1, 0)
-    toggleLabel.Position = UDim2.new(0, 20, 0, 0)
-    toggleLabel.BackgroundTransparency = 1
-    toggleLabel.Text = displayText
-    toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleLabel.TextSize = 18
-    toggleLabel.Font = Enum.Font.Gotham
-    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    toggleLabel.TextYAlignment = Enum.TextYAlignment.Center
-    toggleLabel.Parent = rowFrame
-    
-    -- Светящийся эффект для текста
-    local labelGlow = toggleLabel:Clone()
-    labelGlow.Name = "LabelGlow"
-    labelGlow.Position = UDim2.new(0, 22, 0, 2)
-    labelGlow.TextColor3 = initialState and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(100, 100, 150)
-    labelGlow.TextTransparency = 0.8
-    labelGlow.ZIndex = toggleLabel.ZIndex - 1
-    labelGlow.Parent = rowFrame
-    
-    -- Идеальный тумблер в стиле iOS с неоновыми цветами
-    local toggleTrack = Instance.new("Frame")
-    toggleTrack.Name = "ToggleTrack"
-    toggleTrack.Size = UDim2.new(0, 70, 0, 35)
-    toggleTrack.Position = UDim2.new(1, -90, 0.5, -17.5)
-    toggleTrack.BackgroundColor3 = initialState and Color3.fromRGB(100, 200, 255) or Color3.fromRGB(80, 80, 100)
-    toggleTrack.BorderSizePixel = 0
-    toggleTrack.Parent = rowFrame
-    
-    -- Скругленные углы для трека
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(0.5, 0)
-    trackCorner.Parent = toggleTrack
-    
-    -- Неоновая рамка трека
-    local trackStroke = Instance.new("UIStroke")
-    trackStroke.Color = initialState and Color3.fromRGB(100, 200, 255) or Color3.fromRGB(60, 60, 80)
-    trackStroke.Thickness = 2
-    trackStroke.Transparency = initialState and 0.3 or 0.8
-    trackStroke.Parent = toggleTrack
-    
-    -- Неоновый градиент для трека (как у рамки GUI)
-    local trackGradient = Instance.new("UIGradient")
-    trackGradient.Color = initialState and ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 150))
-    } or ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 120)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
-    }
-    trackGradient.Rotation = 45
-    trackGradient.Parent = toggleTrack
-    
-    -- Градиент для рамки трека
-    local trackStrokeGradient = Instance.new("UIGradient")
-    trackStrokeGradient.Color = initialState and ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 150))
-    } or ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 60, 80)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
-    }
-    trackStrokeGradient.Rotation = 45
-    trackStrokeGradient.Parent = trackStroke
-    
-    -- Слайдер (кнопка)
-    local slider = Instance.new("Frame")
-    slider.Name = "Slider"
-    slider.Size = UDim2.new(0, 29, 0, 29)
-    slider.Position = initialState and UDim2.new(1, -32, 0.5, -14.5) or UDim2.new(0, 3, 0.5, -14.5)
-    slider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    slider.BorderSizePixel = 0
-    slider.Parent = toggleTrack
-    
-    -- Скругленный слайдер
-    local sliderCorner = Instance.new("UICorner")
-    sliderCorner.CornerRadius = UDim.new(0.5, 0)
-    sliderCorner.Parent = slider
-    
-    -- Тень слайдера
-    local sliderStroke = Instance.new("UIStroke")
-    sliderStroke.Color = Color3.fromRGB(0, 0, 0)
-    sliderStroke.Thickness = 1
-    sliderStroke.Transparency = 0.9
-    sliderStroke.Parent = slider
-    
-    -- Градиент слайдера
-    local sliderGradient = Instance.new("UIGradient")
-    sliderGradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 240, 240))
-    }
-    sliderGradient.Rotation = 90
-    sliderGradient.Parent = slider
-    
-    -- Состояние переключателя
-    local isToggled = initialState
-    
-    -- Функция переключения с потрясающими анимациями
-    local function toggle()
-        isToggled = not isToggled
-        
-        -- Анимация слайдера
-        local sliderTween = TweenService:Create(slider, 
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), 
-            {Position = isToggled and UDim2.new(1, -32, 0.5, -14.5) or UDim2.new(0, 3, 0.5, -14.5)}
-        )
-        
-        -- Анимация трека с неоновыми цветами
-        local trackColorTween = TweenService:Create(toggleTrack,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = isToggled and Color3.fromRGB(100, 200, 255) or Color3.fromRGB(80, 80, 100)}
-        )
-        
-        -- Анимация рамки трека
-        local strokeColorTween = TweenService:Create(trackStroke,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {
-                Color = isToggled and Color3.fromRGB(100, 200, 255) or Color3.fromRGB(60, 60, 80),
-                Transparency = isToggled and 0.3 or 0.8
-            }
-        )
-        
-        -- Мгновенное переключение градиентов (анимация градиентов невозможна)
-        trackGradient.Color = isToggled and ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 150))
-        } or ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 120)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
-        }
-        
-        trackStrokeGradient.Color = isToggled and ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 150))
-        } or ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 60, 80)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
-        }
-        
-        -- Анимация свечения текста
-        local glowTween = TweenService:Create(labelGlow,
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {TextColor3 = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(100, 100, 150)}
-        )
-        
-        -- Анимация рамки строки
-        local strokeTween = TweenService:Create(rowStroke,
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Color = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(60, 60, 80)}
-        )
-        
-        -- Эффект пульсации при переключении
-        local pulseScale = TweenService:Create(slider,
-            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 33, 0, 33)}
-        )
-        
-        local pulseBack = TweenService:Create(slider,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 29, 0, 29)}
-        )
-        
-        -- Запуск всех анимаций
-        sliderTween:Play()
-        trackColorTween:Play()
-        strokeColorTween:Play()
-        glowTween:Play()
-        strokeTween:Play()
-        pulseScale:Play()
-        
-        pulseScale.Completed:Connect(function()
-            pulseBack:Play()
-        end)
-        
-        -- Консольный вывод
-        print(displayText .. ": " .. (isToggled and "ENABLED" or "DISABLED"))
-        
-        return isToggled
+-- Advanced loadstring hook using hookfunction if available
+local function hookLoadstring()
+    -- Try to hook loadstring directly
+    loadstring = function(source, chunkname)
+        addInterceptedCode(source, chunkname, "loadstring")
+        -- Return a dummy function instead of the actual loaded function
+        return function() end
     end
     
-    -- Обработчик клика
-    local clickDetector = Instance.new("TextButton")
-    clickDetector.Size = UDim2.new(1, 0, 1, 0)
-    clickDetector.BackgroundTransparency = 1
-    clickDetector.Text = ""
-    clickDetector.Parent = rowFrame
-    
-    clickDetector.MouseButton1Click:Connect(function()
-        toggle()
-    end)
-    
-    -- Hover эффекты
-    clickDetector.MouseEnter:Connect(function()
-        local hoverTween = TweenService:Create(rowFrame,
-            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(45, 45, 65)}
-        )
-        hoverTween:Play()
-    end)
-    
-    clickDetector.MouseLeave:Connect(function()
-        local hoverTween = TweenService:Create(rowFrame,
-            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(35, 35, 50)}
-        )
-        hoverTween:Play()
-    end)
-    
-    return {
-        frame = rowFrame,
-        toggle = toggle,
-        getState = function() return isToggled end
-    }
+    -- Try to hook with hookfunction if available (in some exploits)
+    if hookfunction then
+        local success, err = pcall(function()
+            hookfunction(original_loadstring, function(source, chunkname)
+                addInterceptedCode(source, chunkname, "hookfunction(loadstring)")
+                return function() end
+            end)
+        end)
+        
+        if success then
+            print("[HOOK] Successfully hooked loadstring with hookfunction")
+        else
+            print("[HOOK] Failed to hook loadstring with hookfunction: " .. tostring(err))
+        end
+    end
 end
 
--- Создание премиум переключателей (изначально выключены)
-local freezeTradeToggle = createPremiumToggle("FreezeTrade", "FREEZE TRADE", 65, false)
-local autoAcceptToggle = createPremiumToggle("AutoAccept", "AUTO ACCEPT", 135, false)
-
--- Сделать интерфейс перетаскиваемым с плавными эффектами
-local dragging = false
-local dragStart = nil
-local startPos = nil
-
-local function updateInput(input)
-    local delta = input.Position - dragStart
-    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+-- Hook HttpGet to intercept network requests
+local function hookHttpGet()
+    if game.HttpGet then
+        local success, err = pcall(function()
+            game.HttpGet = function(self, url, nocache)
+                local result = original_HttpGet(self, url, nocache)
+                print("[INTERCEPTED] HttpGet request to: " .. tostring(url))
+                addInterceptedCode(result, url, "HttpGet")
+                return result
+            end
+        end)
+        
+        if success then
+            print("[HOOK] Successfully hooked HttpGet")
+        else
+            print("[HOOK] Failed to hook HttpGet: " .. tostring(err))
+        end
+    end
 end
 
-headerFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        
-        -- Эффект нажатия
-        local pressEffect = TweenService:Create(headerFrame,
-            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}
-        )
-        pressEffect:Play()
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                -- Возврат к нормальному цвету
-                local releaseEffect = TweenService:Create(headerFrame,
-                    TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {BackgroundColor3 = Color3.fromRGB(45, 45, 60)}
-                )
-                releaseEffect:Play()
+-- Hook pcall and xpcall to catch executed functions
+local function hookCallFunctions()
+    pcall = function(func, ...)
+        if type(func) == "function" then
+            table.insert(interceptedFunctions, {
+                func = func,
+                args = {...},
+                timestamp = tick(),
+                method = "pcall"
+            })
+        end
+        return original_pcall(func, ...)
+    end
+    
+    xpcall = function(func, errHandler, ...)
+        if type(func) == "function" then
+            table.insert(interceptedFunctions, {
+                func = func,
+                args = {...},
+                timestamp = tick(),
+                method = "xpcall"
+            })
+        end
+        return original_xpcall(func, errHandler, ...)
+    end
+end
+
+-- Try to hook metamethods if possible
+local function hookMetamethods()
+    if hookmetamethod then
+        local success, err = pcall(function()
+            -- Hook __call metamethod
+            local original_call = hookmetamethod(game, "__call", function(func, ...)
+                if type(func) == "function" then
+                    table.insert(interceptedFunctions, {
+                        func = func,
+                        args = {...},
+                        timestamp = tick(),
+                        method = "__call"
+                    })
+                end
+                return original_call(func, ...)
+            end)
+            
+            if success then
+                print("[HOOK] Successfully hooked __call metamethod")
+            else
+                print("[HOOK] Failed to hook __call metamethod: " .. tostring(err))
             end
         end)
     end
-end)
-
-headerFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        if dragging then
-            updateInput(input)
-        end
-    end
-end)
-
--- Потрясающая анимация появления GUI
-mainFrame.Size = UDim2.new(0, 0, 0, 0)
-mainFrame.BackgroundTransparency = 1
-
--- Анимация появления основного контейнера
-local sizeAppear = TweenService:Create(mainFrame,
-    TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-    {Size = UDim2.new(0, 340, 0, 210)}
-)
-
-local fadeAppear = TweenService:Create(mainFrame,
-    TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    {BackgroundTransparency = 0}
-)
-
--- Анимация градиентной рамки
-local borderRotation = TweenService:Create(borderGradient,
-    TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
-    {Rotation = 405}
-)
-
--- Запуск анимаций
-sizeAppear:Play()
-fadeAppear:Play()
-wait(0.5)
-borderRotation:Play()
-
--- Анимация пульсации заголовка
-local function pulseTitle()
-    local pulseTween = TweenService:Create(titleGlow,
-        TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-        {TextTransparency = 0.4}
-    )
-    pulseTween:Play()
 end
 
-pulseTitle()
+-- Try to get function source if possible
+local function tryGetFunctionSource(func)
+    -- Some exploits have getinfo or similar functions
+    if getinfo then
+        local info = getinfo(func)
+        if info and info.source then
+            return info.source
+        end
+    end
+    
+    -- Try other methods if available
+    if typeof and typeof(func) == "function" then
+        -- In some environments, we can get function details
+        return "function source not available"
+    end
+    
+    return "function source not available"
+end
 
-print("🚀 TW2LOCK Premium GUI успешно загружен! 🚀")
+-- Enhanced GUI Console for displaying intercepted code
+local function createGUI()
+    -- Prevent multiple GUI instances
+    if game.Players.LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("LuaArmorInterceptor") then
+        return
+    end
+    
+    -- Create ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "LuaArmorInterceptor"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    
+    -- Create Frame
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0.9, 0)
+    frame.Position = UDim2.new(0.05, 0, 0.05, 0)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.new(0, 0.5, 1)
+    frame.Parent = screenGui
+    
+    -- Create Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0.05, 0)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Advanced LuaArmor Interceptor Console"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    -- Create Tabs
+    local tabFrame = Instance.new("Frame")
+    tabFrame.Size = UDim2.new(1, 0, 0.05, 0)
+    tabFrame.Position = UDim2.new(0, 0, 0.05, 0)
+    tabFrame.BackgroundTransparency = 0.8
+    tabFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    tabFrame.Parent = frame
+    
+    local tabLoadstring = Instance.new("TextButton")
+    tabLoadstring.Size = UDim2.new(0.5, 0, 1, 0)
+    tabLoadstring.Position = UDim2.new(0, 0, 0, 0)
+    tabLoadstring.Text = "Loadstring Code"
+    tabLoadstring.TextColor3 = Color3.new(1, 1, 1)
+    tabLoadstring.BackgroundTransparency = 0.5
+    tabLoadstring.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    tabLoadstring.Parent = tabFrame
+    
+    local tabFunctions = Instance.new("TextButton")
+    tabFunctions.Size = UDim2.new(0.5, 0, 1, 0)
+    tabFunctions.Position = UDim2.new(0.5, 0, 0, 0)
+    tabFunctions.Text = "Intercepted Functions"
+    tabFunctions.TextColor3 = Color3.new(1, 1, 1)
+    tabFunctions.BackgroundTransparency = 0.5
+    tabFunctions.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    tabFunctions.Parent = tabFrame
+    
+    -- Create ScrollingFrame for code display
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -20, 0.85, -40)
+    scrollFrame.Position = UDim2.new(0, 10, 0.1, 10)
+    scrollFrame.BackgroundTransparency = 0.5
+    scrollFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 10
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scrollFrame.Parent = frame
+    
+    -- Create TextLabel for code display
+    local codeDisplay = Instance.new("TextLabel")
+    codeDisplay.Name = "CodeDisplay"
+    codeDisplay.Size = UDim2.new(1, -20, 0, 0)
+    codeDisplay.Position = UDim2.new(0, 10, 0, 0)
+    codeDisplay.BackgroundTransparency = 1
+    codeDisplay.Text = "Intercepted code will appear here...\n\nLoad a LuaArmor script to begin interception.\nExample: loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua\"))()\n\nAdvanced hooks status:\n- loadstring: " .. (hookfunction and "Available" or "Not available") .. "\n- hookmetamethod: " .. (hookmetamethod and "Available" or "Not available")
+    codeDisplay.TextColor3 = Color3.new(1, 1, 1)
+    codeDisplay.TextXAlignment = Enum.TextXAlignment.Left
+    codeDisplay.TextYAlignment = Enum.TextYAlignment.Top
+    codeDisplay.TextWrapped = true
+    codeDisplay.RichText = true
+    codeDisplay.Font = Enum.Font.Monospace
+    codeDisplay.TextSize = 14
+    codeDisplay.Parent = scrollFrame
+    
+    -- Update function for displaying code
+    local currentTab = "loadstring"
+    
+    local function updateDisplay()
+        local text = ""
+        
+        if currentTab == "loadstring" then
+            for i, code in ipairs(interceptedCode) do
+                text = text .. "[[ " .. code.method .. " - " .. os.date("%H:%M:%S", math.floor(code.timestamp)) .. " ]]\n" .. code.source .. "\n\n"
+            end
+            
+            if text == "" then
+                text = "Intercepted code will appear here...\n\nLoad a LuaArmor script to begin interception.\nExample: loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua\"))()\n\nAdvanced hooks status:\n- loadstring: " .. (hookfunction and "Available" or "Not available") .. "\n- hookmetamethod: " .. (hookmetamethod and "Available" or "Not available")
+            end
+        else
+            for i, funcData in ipairs(interceptedFunctions) do
+                local source = tryGetFunctionSource(funcData.func)
+                text = text .. "[[ " .. funcData.method .. " - " .. os.date("%H:%M:%S", math.floor(funcData.timestamp)) .. " ]]\nFunction source: " .. source .. "\nArgs: " .. tostring(funcData.args) .. "\n\n"
+            end
+            
+            if text == "" then
+                text = "Intercepted functions will appear here...\n\nThis tab shows functions that were intercepted via pcall/xpcall/__call hooks."
+            end
+        end
+        
+        codeDisplay.Text = text
+        
+        -- Update canvas size
+        codeDisplay.Size = UDim2.new(1, -20, 0, codeDisplay.TextBounds.Y)
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, codeDisplay.TextBounds.Y + 20)
+    end
+    
+    -- Tab switching
+    tabLoadstring.MouseButton1Click:Connect(function()
+        currentTab = "loadstring"
+        tabLoadstring.BackgroundTransparency = 0.2
+        tabLoadstring.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
+        tabFunctions.BackgroundTransparency = 0.5
+        tabFunctions.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+        updateDisplay()
+    end)
+    
+    tabFunctions.MouseButton1Click:Connect(function()
+        currentTab = "functions"
+        tabFunctions.BackgroundTransparency = 0.2
+        tabFunctions.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
+        tabLoadstring.BackgroundTransparency = 0.5
+        tabLoadstring.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+        updateDisplay()
+    end)
+    
+    -- Update display when new code is intercepted
+    local updateConnection
+    updateConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        updateDisplay()
+    end)
+    
+    -- Create Close Button
+    local closeButton = Instance.new("TextButton")
+    closeButton.Size = UDim2.new(0.2, 0, 0.05, 0)
+    closeButton.Position = UDim2.new(0.8, -10, 0.95, -10)
+    closeButton.AnchorPoint = Vector2.new(1, 1)
+    closeButton.Text = "Close"
+    closeButton.TextColor3 = Color3.new(1, 1, 1)
+    closeButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    closeButton.Parent = frame
+    
+    closeButton.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+        if updateConnection then
+            updateConnection:Disconnect()
+        end
+    end)
+    
+    return screenGui
+end
+
+-- Initialize the interceptor
+print("[LuaArmor Interceptor] Initializing advanced hooks...")
+
+-- Apply hooks
+hookLoadstring()
+hookHttpGet()
+hookCallFunctions()
+hookMetamethods()
+
+-- Create GUI
+local success, gui = pcall(createGUI)
+if not success then
+    warn("[LuaArmor Interceptor] Failed to create GUI: " .. tostring(gui))
+else
+    print("[LuaArmor Interceptor] Advanced GUI created successfully!")
+end
+
+print("[LuaArmor Interceptor] Advanced hooks ready! Intercepting loadstring calls and functions...")
+print("[LuaArmor Interceptor] Load LuaArmor scripts normally, code will be displayed in GUI instead of executing.")
+
+-- Example usage (commented out):
+-- loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua"))()
+
+return true
