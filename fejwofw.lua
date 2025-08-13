@@ -1,526 +1,629 @@
--- Создаём GUI
-local ScreenGui = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-local TextBox = Instance.new("TextBox")
-local TextLabel = Instance.new("TextLabel")
-local ScrollFrame = Instance.new("ScrollingFrame")
-local CodeLabel = Instance.new("TextLabel")
-local ExecuteButton = Instance.new("TextButton")
-local CopyButton = Instance.new("TextButton")
-local CacheButton = Instance.new("TextButton")
-local SaveButton = Instance.new("TextButton")
-local HookButton = Instance.new("TextButton")
+-- SIMPLE PET ANALYZER v2.0
+-- Анализатор питомцев с GUI консолью и мониторингом workspace
 
-local TextService = game:GetService("TextService")
-local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
--- Подключаем GUI к CoreGui
-ScreenGui.Parent = game.CoreGui
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local backpack = player.Backpack
+local playerGui = player:WaitForChild("PlayerGui")
 
--- Настройки главного окна
-Frame.Size = UDim2.new(0, 600, 0, 400)
-Frame.Position = UDim2.new(0.5, -300, 0.5, -200)
-Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Frame.BorderSizePixel = 0
-Frame.Parent = ScreenGui
+print("=== SIMPLE PET ANALYZER v2.0 STARTED ===")
+print("Monitoring backpack, hands and workspace for pets...")
 
--- Текстовое описание
-TextLabel.Text = "Вставь команду с loadstring:"
-TextLabel.Size = UDim2.new(1, 0, 0, 30)
-TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextLabel.BackgroundTransparency = 1
-TextLabel.Font = Enum.Font.SourceSansBold
-TextLabel.TextSize = 18
-TextLabel.Parent = Frame
+-- Переменные для хранения данных
+local petEvents = {}
+local currentTool = nil
+local consoleOutput = {}
+local gui = nil
+local recentRemoteCalls = {}
+local remoteConnections = {}
 
--- Поле для ввода команды
-TextBox.Size = UDim2.new(1, -20, 0, 30)
-TextBox.Position = UDim2.new(0, 10, 0, 35)
-TextBox.Text = ""
-TextBox.PlaceholderText = 'Пример: loadstring(game:HttpGet("https://example.com/script.lua"))()'
-TextBox.TextColor3 = Color3.fromRGB(0, 0, 0)
-TextBox.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
-TextBox.ClearTextOnFocus = false
-TextBox.Parent = Frame
-
--- Кнопка запуска
-ExecuteButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-ExecuteButton.Position = UDim2.new(0, 10, 0, 70)
-ExecuteButton.Text = "Перехватить код"
-ExecuteButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-ExecuteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ExecuteButton.Font = Enum.Font.SourceSansBold
-ExecuteButton.TextSize = 16
-ExecuteButton.Parent = Frame
-
--- Кнопка копирования
-CopyButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-CopyButton.Position = UDim2.new(0.25, 2.5, 0, 70)
-CopyButton.Text = "Копировать"
-CopyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-CopyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CopyButton.Font = Enum.Font.SourceSansBold
-CopyButton.TextSize = 16
-CopyButton.Parent = Frame
-
--- Кнопка кеша
-CacheButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-CacheButton.Position = UDim2.new(0.5, 2.5, 0, 70)
-CacheButton.Text = "Из кеша"
-CacheButton.BackgroundColor3 = Color3.fromRGB(80, 40, 80)
-CacheButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CacheButton.Font = Enum.Font.SourceSansBold
-CacheButton.TextSize = 16
-CacheButton.Parent = Frame
-
--- Кнопка сохранения
-SaveButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-SaveButton.Position = UDim2.new(0.75, 2.5, 0, 70)
-SaveButton.Text = "Сохранить"
-SaveButton.BackgroundColor3 = Color3.fromRGB(40, 80, 40)
-SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SaveButton.Font = Enum.Font.SourceSansBold
-SaveButton.TextSize = 16
-SaveButton.Parent = Frame
-
--- Кнопка Memory Hook
-HookButton.Size = UDim2.new(1, -20, 0, 30)
-HookButton.Position = UDim2.new(0, 10, 0, 105)
-HookButton.Text = "🔓 Установить Memory Hook (перехват кода)"
-HookButton.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
-HookButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-HookButton.Font = Enum.Font.SourceSansBold
-HookButton.TextSize = 16
-HookButton.Parent = Frame
-
--- Поле для отображения кода
-ScrollFrame.Size = UDim2.new(1, -20, 1, -145)
-ScrollFrame.Position = UDim2.new(0, 10, 0, 145)
-ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollFrame.ScrollingDirection = Enum.ScrollingDirection.XY
-ScrollFrame.ScrollBarThickness = 8
-ScrollFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.Parent = Frame
-
-CodeLabel.Size = UDim2.new(0, 0, 0, 0)
-CodeLabel.Text = ""
-CodeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-CodeLabel.BackgroundTransparency = 1
-CodeLabel.TextWrapped = false
-CodeLabel.TextSize = 14
-CodeLabel.Font = Enum.Font.Code
-CodeLabel.Parent = ScrollFrame
-
--- Утилиты
-local function UpdateCanvasSize()
-    local text = CodeLabel.Text or ""
-    if #text == 0 then
-        ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-        return
-    end
-    
-    local size = TextService:GetTextSize(text, CodeLabel.TextSize, CodeLabel.Font, Vector2.new(ScrollFrame.AbsoluteSize.X, math.huge))
-    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, size.Y)
-    CodeLabel.Size = UDim2.new(1, 0, 0, size.Y)
-    CodeLabel.Position = UDim2.new(0, 0, 0, 0)
-end
-
-local function truncateText(text, maxLength)
-    if #text <= maxLength then
-        return text
-    end
-    
-    return text:sub(1, maxLength) .. "\n\n[ТЕКСТ ОБРЕЗАН - СЛИШКОМ ДЛИННЫЙ: " .. #text .. " символов]\n[Используйте кнопку 'Сохранить' для полного текста]"
-end
-
-local function notify(message)
-    print("[LUAFINDER] " .. message)
-    
-    -- Анимация уведомления
-    if TextLabel then
-        local originalColor = TextLabel.TextColor3
-        TextLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-        TextLabel.Text = message
-        
-        TweenService:Create(TextLabel, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            TextColor3 = originalColor
-        }):Play()
-        
-        wait(2)
-        TextLabel.Text = "Вставь команду с loadstring:"
-    end
-end
-
-local function tryReadCache()
-    local cachePaths = {
-        "static_content_130525/initv4.lua",
-        "static_content_130525/init.lua", 
-        "static_content_130525/initv2.lua",
-        "static_content_130525/initv3.lua"
+-- Функция логирования с GUI консолью
+local function logEvent(eventType, petName, details)
+    local event = {
+        time = tick(),
+        type = eventType,
+        pet = petName,
+        details = details or {}
     }
+    table.insert(petEvents, event)
     
-    for _, path in ipairs(cachePaths) do
-        local success, content = pcall(function()
-            if readfile and isfile and isfile(path) then
-                return readfile(path)
+    local logMessage = string.format("[%.2f] %s: %s", event.time, eventType, petName)
+    print(logMessage)
+    
+    -- Добавляем в GUI консоль
+    table.insert(consoleOutput, logMessage)
+    if details then
+        for key, value in pairs(details) do
+            local detailMsg = string.format("  %s: %s", key, tostring(value))
+            print(detailMsg)
+            table.insert(consoleOutput, detailMsg)
+        end
+    end
+    
+    -- Ограничиваем размер консоли
+    if #consoleOutput > 100 then
+        table.remove(consoleOutput, 1)
+    end
+    
+    -- Обновляем GUI консоль если существует
+    updateGUIConsole()
+end
+
+-- Функция обновления GUI консоли
+local function updateGUIConsole()
+    if gui and gui:FindFirstChild("ConsoleFrame") then
+        local consoleLabel = gui.ConsoleFrame:FindFirstChild("ConsoleText")
+        if consoleLabel then
+            local displayText = ""
+            local startIndex = math.max(1, #consoleOutput - 20) -- Показываем последние 20 строк
+            for i = startIndex, #consoleOutput do
+                displayText = displayText .. consoleOutput[i] .. "\n"
             end
-            return nil
-        end)
-        if success and content and #content > 100 then
-            return content, path
+            consoleLabel.Text = displayText
         end
     end
-    return nil, nil
 end
 
--- Расширенный Memory Hook для деобфускации
-local hookInstalled = false
-local interceptedCode = ""
-local deobfuscatedCode = ""
-
--- Функция для проверки, является ли строка обфусцированным кодом
-local function isObfuscatedCode(str)
-    if not str or type(str) ~= "string" then return false end
+-- Функция анализа Tool (РАСШИРЕННАЯ)
+local function analyzeTool(tool)
+    if not tool then return {} end
     
-    -- Проверяем на наличие признаков обфускации
-    local obfuscationPatterns = {
-        "getfenv", "setfenv", "loadstring", "string%.char", 
-        "string%.sub", "string%.gsub", "math%.random", 
-        "%[%d+%][%s]*=[%s]*[0-9A-Fa-f]+"
+    local data = {
+        name = tool.Name,
+        className = tool.ClassName,
+        canBeDropped = tool.CanBeDropped,
+        enabled = tool.Enabled,
+        requiresHandle = tool.RequiresHandle,
+        toolTip = tool.ToolTip
     }
     
-    local score = 0
-    for _, pattern in ipairs(obfuscationPatterns) do
-        local count = 0
-        for _ in str:gmatch(pattern) do
-            count = count + 1
-        end
-        if count > 0 then
-            score = score + count
+    -- Анализируем все дочерние объекты
+    data.children = {}
+    for _, child in pairs(tool:GetChildren()) do
+        table.insert(data.children, {
+            name = child.Name,
+            className = child.ClassName
+        })
+    end
+    
+    local handle = tool:FindFirstChild("Handle")
+    if handle then
+        data.handleSize = tostring(handle.Size)
+        data.handlePosition = tostring(handle.Position)
+        data.handleCFrame = tostring(handle.CFrame)
+        data.handleMaterial = handle.Material.Name
+        data.handleAnchored = handle.Anchored
+        data.handleCanCollide = handle.CanCollide
+        data.handleTransparency = handle.Transparency
+        data.handleBrickColor = tostring(handle.BrickColor)
+        data.handleColor = tostring(handle.Color)
+        
+        -- Детальный анализ всех объектов в Handle
+        data.handleChildren = {}
+        for _, child in pairs(handle:GetChildren()) do
+            local childData = {
+                name = child.Name,
+                className = child.ClassName
+            }
+            
+            if child:IsA("SpecialMesh") then
+                childData.meshType = child.MeshType.Name
+                childData.meshId = child.MeshId
+                childData.textureId = child.TextureId
+                childData.meshScale = tostring(child.Scale)
+                childData.meshOffset = tostring(child.Offset)
+            elseif child:IsA("Attachment") then
+                childData.position = tostring(child.Position)
+                childData.orientation = tostring(child.Orientation)
+                childData.cframe = tostring(child.CFrame)
+            elseif child:IsA("Weld") or child:IsA("WeldConstraint") or child:IsA("Motor6D") then
+                childData.part0 = child.Part0 and child.Part0.Name or "nil"
+                childData.part1 = child.Part1 and child.Part1.Name or "nil"
+                if child:IsA("Motor6D") then
+                    childData.c0 = tostring(child.C0)
+                    childData.c1 = tostring(child.C1)
+                    childData.transform = tostring(child.Transform)
+                end
+            elseif child:IsA("Sound") then
+                childData.soundId = child.SoundId
+                childData.volume = child.Volume
+                childData.pitch = child.Pitch
+            end
+            
+            table.insert(data.handleChildren, childData)
         end
     end
     
-    -- Если найдено много признаков обфускации
-    return score > 3
+    return data
 end
 
--- Функция для попытки деобфускации кода
-local function attemptDeobfuscation(code)
-    if not code or #code == 0 then return code end
-    
-    -- Простая замена часто используемых обфускационных паттернов
-    local deobfuscated = code
-    
-    -- Заменяем string.char(...) вызовы с числовыми аргументами
-    deobfuscated = deobfuscated:gsub("string%.char%(([%d%s,]+)%)", function(args)
-        local bytes = {}
-        for num in args:gmatch("%d+") do
-            table.insert(bytes, string.char(tonumber(num)))
-        end
-        return '"' .. table.concat(bytes) .. '"'
-    end)
-    
-    -- Заменяем getfenv()[...] вызовы
-    deobfuscated = deobfuscated:gsub("getfenv%(%)(%b[])", function(index)
-        return "_G" .. index
-    end)
-    
-    return deobfuscated
+-- Проверка является ли Tool питомцем
+local function isPet(tool)
+    if not tool then return false end
+    local name = tool.Name
+    return name:find("KG") or name:find("Dragonfly") or 
+           name:find("{") or name:find("Pet") or name:find("pet")
 end
 
--- Попытка сохранения файла
-local function trySaveFile(content)
-    if not writefile then
-        return false, "writefile не поддерживается"
+-- Функция анализа источника появления питомца
+local function analyzeToolSource(tool)
+    local sourceData = {
+        creationTime = tick(),
+        stackTrace = debug.traceback("Tool creation source:", 2)
+    }
+    
+    -- Получаем недавние RemoteEvent вызовы (последние 10 секунд)
+    local recentCalls = getRecentRemoteCalls(10)
+    sourceData.recentRemoteCalls = {}
+    
+    for _, call in ipairs(recentCalls) do
+        table.insert(sourceData.recentRemoteCalls, {
+            name = call.remoteName,
+            path = call.remotePath,
+            timeDiff = string.format("%.2f", sourceData.creationTime - call.time),
+            argsCount = call.argsCount,
+            firstArg = call.args[1] and tostring(call.args[1]) or "nil"
+        })
     end
     
-    local timestamp = os.date("%Y%m%d_%H%M%S")
-    local filename = "luafinder_deobfuscated_" .. timestamp .. ".lua"
-    
-    local success, err = pcall(function()
-        writefile(filename, content)
+    -- Анализируем доступные RemoteEvent/Function
+    local success, remoteEvents = pcall(function()
+        local events = {}
+        for _, obj in pairs(game.ReplicatedStorage:GetDescendants()) do
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                table.insert(events, {
+                    name = obj.Name,
+                    path = obj:GetFullName()
+                })
+            end
+        end
+        return events
     end)
     
     if success then
-        return true, filename
-    else
-        return false, err
+        sourceData.availableRemotes = remoteEvents
     end
+    
+    -- Проверяем StarterPack
+    local starterPack = game.StarterPack:GetChildren()
+    sourceData.starterPackTools = {}
+    for _, obj in pairs(starterPack) do
+        if obj:IsA("Tool") then
+            table.insert(sourceData.starterPackTools, obj.Name)
+        end
+    end
+    
+    -- Анализ вероятного источника
+    sourceData.likelySource = "Unknown"
+    if #sourceData.recentRemoteCalls > 0 then
+        local mostRecent = sourceData.recentRemoteCalls[#sourceData.recentRemoteCalls]
+        if tonumber(mostRecent.timeDiff) < 2 then -- Если RemoteEvent был менее 2 секунд назад
+            sourceData.likelySource = "RemoteEvent: " .. mostRecent.name
+        end
+    end
+    
+    return sourceData
 end
 
-local function tryCopy(text)
-    local attempts = {
-        function(t)
-            if setclipboard then setclipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if toclipboard then toclipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if syn and syn.write_clipboard then syn.write_clipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if setrbxclipboard then setrbxclipboard(t) return true end
-            return false
-        end,
-    }
-    for _, fn in ipairs(attempts) do
-        local ok = false
-        local success, err = pcall(function()
-            ok = fn(text)
-        end)
-        if success and ok then return true end
-    end
-    return false
-end
-
--- Улучшенная функция установки Memory Hook
-local function installMemoryHook()
-    if hookInstalled then
-        notify("Hook уже установлен!")
-        return
-    end
-    
-    notify("Установка расширенных Memory Hook для LuArmor V4...")
-    
-    -- Перехватываем loadstring
-    local original_loadstring = loadstring
-    local hookCount = 0
-    
-    getgenv().loadstring = function(code, chunkName)
-        hookCount = hookCount + 1
-        
-        if code and type(code) == "string" then
-            print("\n[LUAFINDER] === ПЕРЕХВАТЧИК LOADSTRING #" .. hookCount .. " ===")
-            print("[LUAFINDER] Размер кода: " .. #code .. " символов")
+-- Мониторинг Backpack с анализом источника
+backpack.ChildAdded:Connect(function(child)
+    if child:IsA("Tool") then
+        wait(0.1)
+        if isPet(child) then
+            local data = analyzeTool(child)
+            local sourceData = analyzeToolSource(child)
             
-            -- Если код большой, это может быть обфусцированный скрипт
-            if #code > 1000 then
-                print("[LUAFINDER] Обнаружен большой кодовой блок (возможно обфусцированный)")
+            -- Объединяем данные
+            for key, value in pairs(sourceData) do
+                data["source_" .. key] = value
+            end
+            
+            logEvent("BACKPACK_ADDED", child.Name, data)
+            
+            -- Дополнительный анализ: откуда мог появиться Tool
+            logEvent("SOURCE_ANALYSIS", child.Name, {
+                possibleSources = {
+                    "RemoteEvent from server",
+                    "StarterPack clone", 
+                    "Script creation",
+                    "Game service call"
+                },
+                toolParent = child.Parent and child.Parent.Name or "nil",
+                toolArchivable = child.Archivable,
+                toolClassName = child.ClassName
+            })
+        end
+    end
+end)
+
+-- Мониторинг появления питомца в Workspace
+local function monitorWorkspacePets()
+    logEvent("SYSTEM", "Запуск мониторинга Workspace для UUID питомцев")
+    
+    Workspace.ChildAdded:Connect(function(child)
+        if child:IsA("Model") then
+            wait(0.1) -- Даем время на загрузку
+            
+            -- Проверяем UUID имя в фигурных скобках
+            if child.Name:find("{") and child.Name:find("}") then
+                local playerPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                if playerPos then
+                    local distance = (child:GetModelCFrame().Position - playerPos.Position).Magnitude
+                    if distance < 50 then -- В радиусе 50 studs от игрока
+                        logEvent("WORKSPACE_PET_SPAWNED", child.Name, {
+                            distance = string.format("%.2f", distance),
+                            position = tostring(child:GetModelCFrame().Position),
+                            primaryPart = child.PrimaryPart and child.PrimaryPart.Name or "nil"
+                        })
+                        
+                        -- Анализируем структуру питомца в workspace
+                        local petData = {
+                            name = child.Name,
+                            className = child.ClassName,
+                            children = {}
+                        }
+                        
+                        for _, obj in pairs(child:GetChildren()) do
+                            table.insert(petData.children, {
+                                name = obj.Name,
+                                className = obj.ClassName,
+                                size = obj:IsA("BasePart") and tostring(obj.Size) or "N/A"
+                            })
+                        end
+                        
+                        logEvent("WORKSPACE_PET_ANALYSIS", child.Name, petData)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Мониторинг Character
+local function monitorCharacter(char)
+    if not char then return end
+    
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            wait(0.1)
+            currentTool = child
+            
+            if isPet(child) then
+                local data = analyzeTool(child)
                 
-                -- Сохраняем оригинальный код
-                interceptedCode = code
-                
-                -- Пытаемся выполнить базовую деобфускацию
-                local deobfCode = attemptDeobfuscation(code)
-                
-                if deobfCode ~= code then
-                    print("[LUAFINDER] Применена базовая деобфускация")
-                    deobfuscatedCode = deobfCode
-                else
-                    deobfuscatedCode = code
+                -- Дополнительный анализ позиции в руке
+                local handle = child:FindFirstChild("Handle")
+                if handle then
+                    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+                    if torso then
+                        local relativePos = torso.CFrame:PointToObjectSpace(handle.Position)
+                        data.relativeToTorso = tostring(relativePos)
+                    end
+                    
+                    -- Анализ RightGrip
+                    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+                    if rightArm then
+                        local rightGrip = rightArm:FindFirstChild("RightGrip")
+                        if rightGrip then
+                            data.rightGripC0 = tostring(rightGrip.C0)
+                            data.rightGripC1 = tostring(rightGrip.C1)
+                        end
+                    end
                 end
                 
-                -- Выводим полный код в консоль
-                print("[LUAFINDER] === НАЧАЛО ПЕРЕХВАЧЕННОГО КОДА ===")
-                print(deobfuscatedCode)
-                print("[LUAFINDER] === КОНЕЦ ПЕРЕХВАЧЕННОГО КОДА ===\n")
-                
-                -- Отображаем в GUI
-                CodeLabel.Text = truncateText(deobfuscatedCode, 50000)
-                UpdateCanvasSize()
-                
-                -- Автоматически сохраняем код в файл
-                local success, result = trySaveFile(deobfuscatedCode)
-                if success then
-                    print("[LUAFINDER] Код автоматически сохранен в: " .. result)
-                    notify("Код перехвачен и сохранен в " .. result)
-                else
-                    print("[LUAFINDER] Ошибка автосохранения: " .. tostring(result))
-                    notify("Код перехвачен, но ошибка сохранения: " .. tostring(result))
-                end
-                
-                return original_loadstring(deobfCode, chunkName)
-            else
-                print("[LUAFINDER] Маленький кодовой блок: " .. code)
+                logEvent("HAND_EQUIPPED", child.Name, data)
             end
         end
-        
-        -- Вызываем оригинальную функцию
-        return original_loadstring(code, chunkName)
-    end
+    end)
     
-    -- Перехватываем pcall для отслеживания выполнения функций
-    local original_pcall = pcall
-    getgenv().pcall = function(func, ...)
-        if type(func) == "function" then
-            -- Пытаемся получить информацию о функции
-            local info = debug.getinfo(func)
-            if info and info.source and info.source:find("loadstring") then
-                print("[LUAFINDER] PCALL: Вызов функции из loadstring")
+    char.ChildRemoved:Connect(function(child)
+        if child:IsA("Tool") and child == currentTool then
+            if isPet(child) then
+                logEvent("HAND_REMOVED", child.Name)
+                -- После снятия питомца с руки запускаем мониторинг workspace на 10 секунд
+                spawn(function()
+                    logEvent("SYSTEM", "Мониторинг workspace после снятия питомца (10 сек)")
+                    wait(10)
+                    logEvent("SYSTEM", "Мониторинг workspace завершен")
+                end)
             end
+            currentTool = nil
         end
-        return original_pcall(func, ...)
-    end
-    
-    -- Перехватываем string.char для обнаружения расшифровки
-    local original_string_char = string.char
-    string.char = function(...)
-        local result = original_string_char(...)
-        
-        -- Если результат похож на код
-        if result and #result > 50 and isObfuscatedCode(result) then
-            print("\n[LUAFINDER] === STRING.CHAR РАСШИФРОВКА ОБНАРУЖЕНА ===")
-            print("[LUAFINDER] Расшифрованный код (" .. #result .. " символов):")
-            print(result)
-            print("[LUAFINDER] === КОНЕЦ РАСШИФРОВАННОГО КОДА ===\n")
-            
-            -- Сохраняем расшифрованный код
-            interceptedCode = result
-            deobfuscatedCode = result
-            
-            -- Отображаем в GUI
-            CodeLabel.Text = truncateText(result, 50000)
-            UpdateCanvasSize()
-            
-            -- Автоматически сохраняем код в файл
-            local success, filename = trySaveFile(result)
-            if success then
-                print("[LUAFINDER] Расшифрованный код сохранен в: " .. filename)
-                notify("Расшифрованный код сохранен в " .. filename)
-            end
-        end
-        
-        return result
-    end
-    
-    -- Перехватываем string.dump для получения байткода
-    if string.dump then
-        local original_string_dump = string.dump
-        string.dump = function(func, strip)
-            print("[LUAFINDER] STRING.DUMP вызван для функции")
-            
-            -- Получаем информацию о функции
-            local info = debug.getinfo(func)
-            if info then
-                print("[LUAFINDER] Информация о функции:")
-                print("  Имя: " .. (info.name or "анонимная"))
-                print("  Источник: " .. (info.source or "неизвестен"))
-                print("  Линия определения: " .. (info.linedefined or 0))
-            end
-            
-            -- Получаем байткод
-            local bytecode = original_string_dump(func, strip)
-            print("[LUAFINDER] Размер байткода: " .. #bytecode .. " байт")
-            
-            return bytecode
-        end
-    end
-    
-    hookInstalled = true
-    notify("✅ Расширенные Memory Hook успешно установлены!")
-    notify("Теперь запустите защищенный скрипт для перехвата и деобфускации кода.")
+    end)
 end
 
--- Логика кнопки
-ExecuteButton.MouseButton1Click:Connect(function()
-    local input = TextBox.Text
-    -- Извлекаем http/https URL до пробела, кавычки или закрывающей скобки
-    local url = input:match("https?://[^%)%s'\"]+")
-    if url then
-        local success, data = pcall(function()
-            return game:HttpGet(url)
+-- Запуск мониторинга
+if character then
+    monitorCharacter(character)
+end
+
+player.CharacterAdded:Connect(monitorCharacter)
+
+-- Функция создания детального отчета
+local function generateDetailedReport()
+    local reportText = string.rep("=", 60) .. "\n"
+    reportText = reportText .. "=== DETAILED PET ANALYSIS REPORT ===\n"
+    reportText = reportText .. "Total events: " .. #petEvents .. "\n"
+    reportText = reportText .. string.rep("=", 60) .. "\n\n"
+    
+    for i, event in ipairs(petEvents) do
+        reportText = reportText .. string.format("[%d] %s - %s (%.2f)\n", i, event.type, event.pet, event.time)
+        reportText = reportText .. string.rep("-", 40) .. "\n"
+        
+        local details = event.details
+        
+        -- Основные свойства Tool
+        if details.className then
+            reportText = reportText .. "  Tool Class: " .. details.className .. "\n"
+        end
+        if details.canBeDropped ~= nil then
+            reportText = reportText .. "  Can Be Dropped: " .. tostring(details.canBeDropped) .. "\n"
+        end
+        
+        -- Handle данные
+        if details.handleSize then
+            reportText = reportText .. "  Handle Properties:\n"
+            reportText = reportText .. "    Size: " .. details.handleSize .. "\n"
+            reportText = reportText .. "    Position: " .. details.handlePosition .. "\n"
+            reportText = reportText .. "    Material: " .. (details.handleMaterial or "N/A") .. "\n"
+        end
+        
+        -- Handle дочерние объекты
+        if details.handleChildren and #details.handleChildren > 0 then
+            reportText = reportText .. "  Handle Children:\n"
+            for _, child in ipairs(details.handleChildren) do
+                reportText = reportText .. string.format("    - %s (%s)\n", child.name, child.className)
+                if child.meshId then
+                    reportText = reportText .. "      Mesh ID: " .. child.meshId .. "\n"
+                    reportText = reportText .. "      Mesh Scale: " .. (child.meshScale or "N/A") .. "\n"
+                end
+            end
+        end
+        
+        -- Позиционирование в руке
+        if details.relativeToTorso then
+            reportText = reportText .. "  Hand Positioning:\n"
+            reportText = reportText .. "    Relative to Torso: " .. details.relativeToTorso .. "\n"
+        end
+        
+        if details.rightGripC0 then
+            reportText = reportText .. "  RightGrip Connection:\n"
+            reportText = reportText .. "    C0: " .. details.rightGripC0 .. "\n"
+            reportText = reportText .. "    C1: " .. details.rightGripC1 .. "\n"
+        end
+        
+        reportText = reportText .. "\n"
+    end
+    
+    reportText = reportText .. string.rep("=", 60) .. "\n"
+    reportText = reportText .. "=== END DETAILED REPORT ===\n"
+    reportText = reportText .. string.rep("=", 60) .. "\n"
+    
+    return reportText
+end
+
+-- Создание GUI
+local function createGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PetAnalyzerGUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = playerGui
+    
+    -- Главное окно
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 600, 0, 400)
+    mainFrame.Position = UDim2.new(0, 10, 0, 10)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    mainFrame.BorderSizePixel = 2
+    mainFrame.BorderColor3 = Color3.fromRGB(0, 150, 255)
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = screenGui
+    
+    -- Заголовок
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 30)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    titleLabel.Text = "Pet Creation Analyzer v2.0"
+    titleLabel.TextColor3 = Color3.white
+    titleLabel.TextSize = 16
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.Parent = mainFrame
+    
+    -- Консоль
+    local consoleFrame = Instance.new("Frame")
+    consoleFrame.Name = "ConsoleFrame"
+    consoleFrame.Size = UDim2.new(1, -20, 1, -100)
+    consoleFrame.Position = UDim2.new(0, 10, 0, 40)
+    consoleFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    consoleFrame.BorderSizePixel = 1
+    consoleFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+    consoleFrame.Parent = mainFrame
+    
+    local consoleText = Instance.new("TextLabel")
+    consoleText.Name = "ConsoleText"
+    consoleText.Size = UDim2.new(1, -10, 1, -10)
+    consoleText.Position = UDim2.new(0, 5, 0, 5)
+    consoleText.BackgroundTransparency = 1
+    consoleText.Text = "Pet Analyzer Console Ready...\n"
+    consoleText.TextColor3 = Color3.fromRGB(0, 255, 0)
+    consoleText.TextSize = 12
+    consoleText.Font = Enum.Font.Code
+    consoleText.TextXAlignment = Enum.TextXAlignment.Left
+    consoleText.TextYAlignment = Enum.TextYAlignment.Top
+    consoleText.TextWrapped = true
+    consoleText.Parent = consoleFrame
+    
+    -- Кнопки
+    local reportButton = Instance.new("TextButton")
+    reportButton.Size = UDim2.new(0, 120, 0, 30)
+    reportButton.Position = UDim2.new(0, 10, 1, -40)
+    reportButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    reportButton.Text = "Generate Report"
+    reportButton.TextColor3 = Color3.white
+    reportButton.TextSize = 14
+    reportButton.Font = Enum.Font.SourceSansBold
+    reportButton.Parent = mainFrame
+    
+    local clearButton = Instance.new("TextButton")
+    clearButton.Size = UDim2.new(0, 100, 0, 30)
+    clearButton.Position = UDim2.new(0, 140, 1, -40)
+    clearButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+    clearButton.Text = "Clear Log"
+    clearButton.TextColor3 = Color3.white
+    clearButton.TextSize = 14
+    clearButton.Font = Enum.Font.SourceSansBold
+    clearButton.Parent = mainFrame
+    
+    local closeButton = Instance.new("TextButton")
+    closeButton.Size = UDim2.new(0, 80, 0, 30)
+    closeButton.Position = UDim2.new(1, -90, 1, -40)
+    closeButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    closeButton.Text = "Close"
+    closeButton.TextColor3 = Color3.white
+    closeButton.TextSize = 14
+    closeButton.Font = Enum.Font.SourceSansBold
+    closeButton.Parent = mainFrame
+    
+    -- События кнопок
+    reportButton.MouseButton1Click:Connect(function()
+        local report = generateDetailedReport()
+        print(report)
+        logEvent("SYSTEM", "Detailed report generated")
+    end)
+    
+    clearButton.MouseButton1Click:Connect(function()
+        petEvents = {}
+        consoleOutput = {}
+        updateGUIConsole()
+        logEvent("SYSTEM", "Analysis log cleared")
+    end)
+    
+    closeButton.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+    
+    gui = screenGui
+    return screenGui
+end
+
+-- Функция мониторинга RemoteEvent вызовов
+local function monitorRemoteEvents()
+    logEvent("SYSTEM", "Запуск мониторинга RemoteEvent вызовов")
+    
+    local function hookRemoteEvent(remote)
+        if remoteConnections[remote] then return end
+        
+        local connection = remote.OnClientEvent:Connect(function(...)
+            local args = {...}
+            local remoteCall = {
+                time = tick(),
+                remoteName = remote.Name,
+                remotePath = remote:GetFullName(),
+                args = args,
+                argsCount = #args
+            }
+            
+            table.insert(recentRemoteCalls, remoteCall)
+            
+            -- Ограничиваем размер лога
+            if #recentRemoteCalls > 50 then
+                table.remove(recentRemoteCalls, 1)
+            end
+            
+            logEvent("REMOTE_EVENT", remote.Name, {
+                path = remote:GetFullName(),
+                argsCount = #args,
+                firstArg = args[1] and tostring(args[1]) or "nil"
+            })
         end)
-        if success then
-            local displayText = truncateText(data, 50000) -- Лимит 50k символов для отображения
-            CodeLabel.Text = displayText
-            UpdateCanvasSize()
-            if #data > 50000 then
-                notify("Текст обрезан (" .. #data .. " симв.). Используйте 'Сохранить'.")
-            end
-        else
-            CodeLabel.Text = "Ошибка запроса: " .. tostring(data)
-        end
-    else
-        CodeLabel.Text = "Не удалось найти ссылку в команде!"
-    end
-end)
-
-CopyButton.MouseButton1Click:Connect(function()
-    if CodeLabel.Text and #CodeLabel.Text > 0 then
-        local ok = tryCopy(CodeLabel.Text)
-        if ok then
-            notify("Скопировано в буфер обмена.")
-        else
-            notify("Не удалось скопировать: среда не поддерживает.")
-        end
-    else
-        notify("Нечего копировать: поле пустое.")
-    end
-end)
-
-CacheButton.MouseButton1Click:Connect(function()
-    local content, path = tryReadCache()
-    if content then
-        local displayText = truncateText(content, 50000)
-        CodeLabel.Text = displayText
-        UpdateCanvasSize()
-        if #content > 50000 then
-            notify("Кеш загружен (" .. #content .. " симв.) из " .. path)
-        else
-            notify("Кеш загружен из " .. path)
-        end
         
-        -- Пытаемся выполнить деобфускацию
-        local deobfCode = attemptDeobfuscation(content)
-        if deobfCode ~= content then
-            print("[LUAFINDER] === ДЕОБФУСЦИРОВАННЫЙ КОД ИЗ КЕША ===")
-            print(deobfCode)
-            print("[LUAFINDER] === КОНЕЦ ДЕОБФУСЦИРОВАННОГО КОДА ===\n")
+        remoteConnections[remote] = connection
+    end
+    
+    local function hookRemoteFunction(remote)
+        if remoteConnections[remote] then return end
+        
+        -- Хукаем InvokeServer если возможно
+        local originalInvoke = remote.InvokeServer
+        remote.InvokeServer = function(self, ...)
+            local args = {...}
+            local remoteCall = {
+                time = tick(),
+                remoteName = remote.Name,
+                remotePath = remote:GetFullName(),
+                args = args,
+                argsCount = #args,
+                type = "InvokeServer"
+            }
             
-            -- Обновляем отображение в GUI
-            CodeLabel.Text = truncateText(deobfCode, 50000)
-            UpdateCanvasSize()
+            table.insert(recentRemoteCalls, remoteCall)
             
-            -- Сохраняем в файл
-            local success, filename = trySaveFile(deobfCode)
-            if success then
-                print("[LUAFINDER] Деобфусцированный код из кеша сохранен в: " .. filename)
-                notify("Деобфусцированный код из кеша сохранен в " .. filename)
+            if #recentRemoteCalls > 50 then
+                table.remove(recentRemoteCalls, 1)
             end
-        end
-    else
-        CodeLabel.Text = "Кеш не найден. Попробуйте сначала запустить загрузчик."
-        notify("Файлы кеша не найдены.")
-    end
-end)
-
-SaveButton.MouseButton1Click:Connect(function()
-    if CodeLabel.Text and #CodeLabel.Text > 0 then
-        -- Пытаемся получить полный текст (не обрезанный)
-        local fullText = CodeLabel.Text
-        
-        -- Если текст был обрезан, пытаемся получить полный из кеша или последнего запроса
-        if fullText:find("ТЕКСТ ОБРЕЗАН") then
-            local content, _ = tryReadCache()
-            if content then
-                fullText = content
-            end
+            
+            logEvent("REMOTE_FUNCTION", remote.Name, {
+                path = remote:GetFullName(),
+                argsCount = #args,
+                firstArg = args[1] and tostring(args[1]) or "nil"
+            })
+            
+            return originalInvoke(self, ...)
         end
         
-        local success, result = trySaveFile(fullText)
-        if success then
-            notify("Сохранено в " .. result)
-        else
-            notify("Ошибка сохранения: " .. result)
-        end
-    else
-        notify("Нечего сохранять: поле пустое.")
+        remoteConnections[remote] = true
     end
-end)
+    
+    -- Сканируем существующие RemoteEvent/Function
+    for _, obj in pairs(game.ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("RemoteEvent") then
+            hookRemoteEvent(obj)
+        elseif obj:IsA("RemoteFunction") then
+            hookRemoteFunction(obj)
+        end
+    end
+    
+    -- Отслеживаем новые RemoteEvent/Function
+    game.ReplicatedStorage.DescendantAdded:Connect(function(obj)
+        if obj:IsA("RemoteEvent") then
+            hookRemoteEvent(obj)
+        elseif obj:IsA("RemoteFunction") then
+            hookRemoteFunction(obj)
+        end
+    end)
+end
 
-HookButton.MouseButton1Click:Connect(function()
-    installMemoryHook()
-end)
+-- Функция получения недавних RemoteEvent вызовов
+local function getRecentRemoteCalls(timeWindow)
+    timeWindow = timeWindow or 5 -- последние 5 секунд
+    local currentTime = tick()
+    local recentCalls = {}
+    
+    for _, call in ipairs(recentRemoteCalls) do
+        if currentTime - call.time <= timeWindow then
+            table.insert(recentCalls, call)
+        end
+    end
+    
+    return recentCalls
+end
 
--- Пересчитываем размеры при изменении текста (на всякий случай)
-CodeLabel:GetPropertyChangedSignal("Text"):Connect(UpdateCanvasSize)
+-- Запуск системы
+createGUI()
+monitorWorkspacePets()
+monitorRemoteEvents()
 
--- Автоматическая установка Memory Hook при запуске
-notify("LUAFINDER запущен. Установка Memory Hook для перехвата LuArmor V4...")
-wait(1) -- Небольшая задержка перед установкой хуков
-installMemoryHook()
+if character then
+    monitorCharacter(character)
+end
+
+player.CharacterAdded:Connect(monitorCharacter)
+
+logEvent("SYSTEM", "Pet Analyzer v2.0 started successfully")
+logEvent("SYSTEM", "Monitoring: Backpack, Hands, Workspace UUID pets, RemoteEvents")
+logEvent("SYSTEM", "Create a pet and take it in your hands to start analysis")
