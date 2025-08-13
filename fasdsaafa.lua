@@ -9,6 +9,7 @@ local ExecuteButton = Instance.new("TextButton")
 local CopyButton = Instance.new("TextButton")
 local CacheButton = Instance.new("TextButton")
 local SaveButton = Instance.new("TextButton")
+local HookButton = Instance.new("TextButton")
 
 local TextService = game:GetService("TextService")
 local TweenService = game:GetService("TweenService")
@@ -82,9 +83,19 @@ SaveButton.Font = Enum.Font.SourceSansBold
 SaveButton.TextSize = 16
 SaveButton.Parent = Frame
 
+-- Кнопка Memory Hook
+HookButton.Size = UDim2.new(1, -20, 0, 30)
+HookButton.Position = UDim2.new(0, 10, 0, 105)
+HookButton.Text = "🔓 Установить Memory Hook (перехват кода)"
+HookButton.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+HookButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+HookButton.Font = Enum.Font.SourceSansBold
+HookButton.TextSize = 16
+HookButton.Parent = Frame
+
 -- Поле для отображения кода
-ScrollFrame.Size = UDim2.new(1, -20, 1, -110)
-ScrollFrame.Position = UDim2.new(0, 10, 0, 110)
+ScrollFrame.Size = UDim2.new(1, -20, 1, -145)
+ScrollFrame.Position = UDim2.new(0, 10, 0, 145)
 ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 ScrollFrame.ScrollingDirection = Enum.ScrollingDirection.XY
 ScrollFrame.ScrollBarThickness = 8
@@ -94,8 +105,6 @@ ScrollFrame.Parent = Frame
 
 CodeLabel.Size = UDim2.new(0, 0, 0, 0)
 CodeLabel.Text = ""
-CodeLabel.TextXAlignment = Enum.TextXAlignment.Left
-CodeLabel.TextYAlignment = Enum.TextYAlignment.Top
 CodeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
 CodeLabel.BackgroundTransparency = 1
 CodeLabel.TextWrapped = false
@@ -106,28 +115,41 @@ CodeLabel.Parent = ScrollFrame
 -- Утилиты
 local function UpdateCanvasSize()
     local text = CodeLabel.Text or ""
-    local bounds = TextService:GetTextSize(text, CodeLabel.TextSize, CodeLabel.Font, Vector2.new(100000, 100000))
-    local padX, padY = 10, 10
-    local width = math.max(bounds.X + padX, ScrollFrame.AbsoluteSize.X)
-    local height = math.max(bounds.Y + padY, ScrollFrame.AbsoluteSize.Y)
-    CodeLabel.Size = UDim2.new(0, width, 0, height)
-    ScrollFrame.CanvasSize = UDim2.new(0, width, 0, height)
-end
-
-local function notify(msg)
-    local prev = TextLabel.Text
-    TextLabel.Text = msg
-    task.delay(1.5, function()
-        -- Возвращаем исходный текст, если пользователь не изменил его вручную
-        if TextLabel and TextLabel.Parent then
-            TextLabel.Text = prev
-        end
-    end)
+    if #text == 0 then
+        ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        return
+    end
+    
+    local size = TextService:GetTextSize(text, CodeLabel.TextSize, CodeLabel.Font, Vector2.new(ScrollFrame.AbsoluteSize.X, math.huge))
+    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, size.Y)
+    CodeLabel.Size = UDim2.new(1, 0, 0, size.Y)
+    CodeLabel.Position = UDim2.new(0, 0, 0, 0)
 end
 
 local function truncateText(text, maxLength)
-    if #text <= maxLength then return text end
+    if #text <= maxLength then
+        return text
+    end
+    
     return text:sub(1, maxLength) .. "\n\n[ТЕКСТ ОБРЕЗАН - СЛИШКОМ ДЛИННЫЙ: " .. #text .. " символов]\n[Используйте кнопку 'Сохранить' для полного текста]"
+end
+
+local function notify(message)
+    print("[LUAFINDER] " .. message)
+    
+    -- Анимация уведомления
+    if TextLabel then
+        local originalColor = TextLabel.TextColor3
+        TextLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+        TextLabel.Text = message
+        
+        TweenService:Create(TextLabel, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            TextColor3 = originalColor
+        }):Play()
+        
+        wait(2)
+        TextLabel.Text = "Вставь команду с loadstring:"
+    end
 end
 
 local function tryReadCache()
@@ -140,7 +162,7 @@ local function tryReadCache()
     
     for _, path in ipairs(cachePaths) do
         local success, content = pcall(function()
-            if readfile then
+            if readfile and isfile and isfile(path) then
                 return readfile(path)
             end
             return nil
@@ -152,13 +174,69 @@ local function tryReadCache()
     return nil, nil
 end
 
+-- Расширенный Memory Hook для деобфускации
+local hookInstalled = false
+local interceptedCode = ""
+local deobfuscatedCode = ""
+
+-- Функция для проверки, является ли строка обфусцированным кодом
+local function isObfuscatedCode(str)
+    if not str or type(str) ~= "string" then return false end
+    
+    -- Проверяем на наличие признаков обфускации
+    local obfuscationPatterns = {
+        "getfenv", "setfenv", "loadstring", "string%.char", 
+        "string%.sub", "string%.gsub", "math%.random", 
+        "%[%d+%][%s]*=[%s]*[0-9A-Fa-f]+"
+    }
+    
+    local score = 0
+    for _, pattern in ipairs(obfuscationPatterns) do
+        local count = 0
+        for _ in str:gmatch(pattern) do
+            count = count + 1
+        end
+        if count > 0 then
+            score = score + count
+        end
+    end
+    
+    -- Если найдено много признаков обфускации
+    return score > 3
+end
+
+-- Функция для попытки деобфускации кода
+local function attemptDeobfuscation(code)
+    if not code or #code == 0 then return code end
+    
+    -- Простая замена часто используемых обфускационных паттернов
+    local deobfuscated = code
+    
+    -- Заменяем string.char(...) вызовы с числовыми аргументами
+    deobfuscated = deobfuscated:gsub("string%.char%(([%d%s,]+)%)", function(args)
+        local bytes = {}
+        for num in args:gmatch("%d+") do
+            table.insert(bytes, string.char(tonumber(num)))
+        end
+        return '"' .. table.concat(bytes) .. '"'
+    end)
+    
+    -- Заменяем getfenv()[...] вызовы
+    deobfuscated = deobfuscated:gsub("getfenv%(%)(%b[])", function(index)
+        return "_G" .. index
+    end)
+    
+    return deobfuscated
+end
+
+-- Попытка сохранения файла
 local function trySaveFile(content)
     if not writefile then
         return false, "writefile не поддерживается"
     end
     
     local timestamp = os.date("%Y%m%d_%H%M%S")
-    local filename = "luafinder_" .. timestamp .. ".lua"
+    local filename = "luafinder_deobfuscated_" .. timestamp .. ".lua"
     
     local success, err = pcall(function()
         writefile(filename, content)
@@ -167,7 +245,7 @@ local function trySaveFile(content)
     if success then
         return true, filename
     else
-        return false, tostring(err)
+        return false, err
     end
 end
 
@@ -199,6 +277,182 @@ local function tryCopy(text)
     end
     return false
 end
+
+-- Улучшенная функция установки Memory Hook
+local function installMemoryHook()
+    if hookInstalled then
+        notify("Hook уже установлен!")
+        return
+    end
+    
+    notify("Установка расширенных Memory Hook для LuArmor V4...")
+    
+    -- Перехватываем loadstring
+    local original_loadstring = loadstring
+    local hookCount = 0
+    
+    getgenv().loadstring = function(code, chunkName)
+        hookCount = hookCount + 1
+        
+        if code and type(code) == "string" then
+            print("\n[LUAFINDER] === ПЕРЕХВАТЧИК LOADSTRING #" .. hookCount .. " ===")
+            print("[LUAFINDER] Размер кода: " .. #code .. " символов")
+            
+            -- Если код большой, это может быть обфусцированный скрипт
+            if #code > 1000 then
+                print("[LUAFINDER] Обнаружен большой кодовой блок (возможно обфусцированный)")
+                
+                -- Сохраняем оригинальный код
+                interceptedCode = code
+                
+                -- Пытаемся выполнить базовую деобфускацию
+                local deobfCode = attemptDeobfuscation(code)
+                
+                if deobfCode ~= code then
+                    print("[LUAFINDER] Применена базовая деобфускация")
+                    deobfuscatedCode = deobfCode
+                else
+                    deobfuscatedCode = code
+                end
+                
+                -- Выводим полный код в консоль
+                print("[LUAFINDER] === НАЧАЛО ПЕРЕХВАЧЕННОГО КОДА ===")
+                print(deobfuscatedCode)
+                print("[LUAFINDER] === КОНЕЦ ПЕРЕХВАЧЕННОГО КОДА ===\n")
+                
+                -- Отображаем в GUI
+                CodeLabel.Text = truncateText(deobfuscatedCode, 50000)
+                UpdateCanvasSize()
+                
+                -- Автоматически сохраняем код в файл
+                local success, result = trySaveFile(deobfuscatedCode)
+                if success then
+                    print("[LUAFINDER] Код автоматически сохранен в: " .. result)
+                    notify("Код перехвачен и сохранен в " .. result)
+                else
+                    print("[LUAFINDER] Ошибка автосохранения: " .. tostring(result))
+                    notify("Код перехвачен, но ошибка сохранения: " .. tostring(result))
+                end
+                
+                return original_loadstring(deobfCode, chunkName)
+            else
+                print("[LUAFINDER] Маленький кодовой блок: " .. code)
+            end
+        end
+        
+        -- Вызываем оригинальную функцию
+        return original_loadstring(code, chunkName)
+    end
+    
+    -- Перехватываем pcall для отслеживания выполнения функций
+    local original_pcall = pcall
+    getgenv().pcall = function(func, ...)
+        if type(func) == "function" then
+            -- Пытаемся получить информацию о функции
+            local info = debug.getinfo(func)
+            if info and info.source and info.source:find("loadstring") then
+                print("[LUAFINDER] PCALL: Вызов функции из loadstring")
+            end
+        end
+        return original_pcall(func, ...)
+    end
+    
+    -- Перехватываем string.char для обнаружения расшифровки
+    -- Проверяем, можно ли модифицировать таблицу string
+    local string_char_hook_success = false
+    local original_string_char = string.char
+    
+    if type(original_string_char) == "function" then
+        -- Попытка безопасного перехвата string.char
+        local function safe_string_char(...)
+            local success, result = pcall(original_string_char, ...)
+            if success and result then
+                -- Если результат похож на код
+                if type(result) == "string" and #result > 50 and isObfuscatedCode(result) then
+                    print("\n[LUAFINDER] === STRING.CHAR РАСШИФРОВКА ОБНАРУЖЕНА ===")
+                    print("[LUAFINDER] Расшифрованный код (" .. #result .. " символов):")
+                    print(result)
+                    print("[LUAFINDER] === КОНЕЦ РАСШИФРОВАННОГО КОДА ===\n")
+                    
+                    -- Сохраняем расшифрованный код
+                    interceptedCode = result
+                    deobfuscatedCode = result
+                    
+                    -- Отображаем в GUI
+                    CodeLabel.Text = truncateText(result, 50000)
+                    UpdateCanvasSize()
+                    
+                    -- Автоматически сохраняем код в файл
+                    local saveSuccess, filename = trySaveFile(result)
+                    if saveSuccess then
+                        print("[LUAFINDER] Расшифрованный код сохранен в: " .. filename)
+                        notify("Расшифрованный код сохранен в " .. filename)
+                    end
+                end
+                return result
+            else
+                -- В случае ошибки возвращаем пустую строку
+                return ""
+            end
+        end
+        
+        -- Попытка установить хук с обработкой ошибок
+        -- Используем rawset для обхода метатаблиц, если они есть
+        local hook_success, hook_error = pcall(function()
+            string.char = safe_string_char
+            string_char_hook_success = true
+        end)
+        
+        if not hook_success then
+            -- Попытка альтернативного метода через rawset
+            local alt_success, alt_error = pcall(function()
+                rawset(string, "char", safe_string_char)
+                string_char_hook_success = true
+            end)
+            
+            if not alt_success then
+                print("[LUAFINDER] Не удалось установить хук на string.char: " .. tostring(hook_error))
+                print("[LUAFINDER] Альтернативный метод также не сработал: " .. tostring(alt_error))
+                notify("Предупреждение: Не удалось установить хук на string.char")
+            else
+                print("[LUAFINDER] Хук на string.char установлен через rawset")
+                notify("Хук на string.char установлен через альтернативный метод")
+            end
+        else
+            print("[LUAFINDER] Хук на string.char установлен успешно")
+        end
+    end
+    
+    -- Перехватываем string.dump для получения байткода
+    if string.dump then
+        local original_string_dump = string.dump
+        string.dump = function(func, strip)
+            print("[LUAFINDER] STRING.DUMP вызван для функции")
+            
+            -- Получаем информацию о функции
+            local info = debug.getinfo(func)
+            if info then
+                print("[LUAFINDER] Информация о функции:")
+                print("  Имя: " .. (info.name or "анонимная"))
+                print("  Источник: " .. (info.source or "неизвестен"))
+                print("  Линия определения: " .. (info.linedefined or 0))
+            end
+            
+            -- Получаем байткод
+            local bytecode = original_string_dump(func, strip)
+            print("[LUAFINDER] Размер байткода: " .. #bytecode .. " байт")
+            
+            return bytecode
+        end
+    end
+    
+    hookInstalled = true
+    notify("✅ Расширенные Memory Hook успешно установлены!")
+    notify("Теперь запустите защищенный скрипт для перехвата и деобфускации кода.")
+end
+
+-- Делаем функцию доступной глобально для кнопок
+getgenv().installMemoryHook = installMemoryHook
 
 -- Логика кнопки
 ExecuteButton.MouseButton1Click:Connect(function()
@@ -248,6 +502,25 @@ CacheButton.MouseButton1Click:Connect(function()
         else
             notify("Кеш загружен из " .. path)
         end
+        
+        -- Пытаемся выполнить деобфускацию
+        local deobfCode = attemptDeobfuscation(content)
+        if deobfCode ~= content then
+            print("[LUAFINDER] === ДЕОБФУСЦИРОВАННЫЙ КОД ИЗ КЕША ===")
+            print(deobfCode)
+            print("[LUAFINDER] === КОНЕЦ ДЕОБФУСЦИРОВАННОГО КОДА ===\n")
+            
+            -- Обновляем отображение в GUI
+            CodeLabel.Text = truncateText(deobfCode, 50000)
+            UpdateCanvasSize()
+            
+            -- Сохраняем в файл
+            local success, filename = trySaveFile(deobfCode)
+            if success then
+                print("[LUAFINDER] Деобфусцированный код из кеша сохранен в: " .. filename)
+                notify("Деобфусцированный код из кеша сохранен в " .. filename)
+            end
+        end
     else
         CodeLabel.Text = "Кеш не найден. Попробуйте сначала запустить загрузчик."
         notify("Файлы кеша не найдены.")
@@ -278,5 +551,35 @@ SaveButton.MouseButton1Click:Connect(function()
     end
 end)
 
+-- Проверяем, что функция installMemoryHook существует перед вызовом
+local function safeCallInstallMemoryHook(source)
+    -- Проверяем, что функция installMemoryHook существует и является функцией
+    if type(installMemoryHook) == "function" then
+        local success, err = pcall(installMemoryHook)
+        if not success then
+            notify("Ошибка при выполнении installMemoryHook: " .. tostring(err))
+            print("[LUAFINDER] Ошибка при выполнении installMemoryHook: " .. tostring(err))
+        end
+    else
+        notify("Ошибка: installMemoryHook не определена! (" .. source .. ")")
+        print("[LUAFINDER] Ошибка: installMemoryHook не найдена. Тип: " .. type(installMemoryHook))
+        -- Проверяем, существует ли функция вообще
+        if installMemoryHook == nil then
+            print("[LUAFINDER] installMemoryHook равна nil")
+        else
+            print("[LUAFINDER] installMemoryHook имеет тип: " .. type(installMemoryHook))
+        end
+    end
+end
+
+HookButton.MouseButton1Click:Connect(function()
+    safeCallInstallMemoryHook("кнопка")
+end)
+
 -- Пересчитываем размеры при изменении текста (на всякий случай)
 CodeLabel:GetPropertyChangedSignal("Text"):Connect(UpdateCanvasSize)
+
+-- Автоматическая установка Memory Hook при запуске
+notify("LUAFINDER запущен. Установка Memory Hook для перехвата LuArmor V4...")
+wait(1) -- Небольшая задержка перед установкой хуков
+safeCallInstallMemoryHook("автозапуск")
