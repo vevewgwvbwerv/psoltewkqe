@@ -1,585 +1,1086 @@
--- Создаём GUI
-local ScreenGui = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-local TextBox = Instance.new("TextBox")
-local TextLabel = Instance.new("TextLabel")
-local ScrollFrame = Instance.new("ScrollingFrame")
-local CodeLabel = Instance.new("TextLabel")
-local ExecuteButton = Instance.new("TextButton")
-local CopyButton = Instance.new("TextButton")
-local CacheButton = Instance.new("TextButton")
-local SaveButton = Instance.new("TextButton")
-local HookButton = Instance.new("TextButton")
+-- Pet Structure Analyzer v4.0 - СОВРЕМЕННЫЙ АНАЛИЗАТОР СТРУКТУРЫ ПИТОМЦЕВ
+-- Сканирует UUID питомцев рядом с игроком и сохраняет их полную структуру
+-- Motor6D, Meshes, Attachments, Animations, Parts - все данные для воссоздания
 
-local TextService = game:GetService("TextService")
-local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
--- Подключаем GUI к CoreGui
-ScreenGui.Parent = game.CoreGui
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
--- Настройки главного окна
-Frame.Size = UDim2.new(0, 600, 0, 400)
-Frame.Position = UDim2.new(0.5, -300, 0.5, -200)
-Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Frame.BorderSizePixel = 0
-Frame.Parent = ScreenGui
+-- Глобальные переменные
+local gui = nil
+local consoleOutput = {}
+local petDatabase = {} -- База данных отсканированных питомцев
+local scriptRunning = true
+local connections = {}
 
--- Текстовое описание
-TextLabel.Text = "Вставь команду с loadstring:"
-TextLabel.Size = UDim2.new(1, 0, 0, 30)
-TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextLabel.BackgroundTransparency = 1
-TextLabel.Font = Enum.Font.SourceSansBold
-TextLabel.TextSize = 18
-TextLabel.Parent = Frame
+print("🚀 Pet Structure Analyzer v4.0 - Запуск современного анализатора...")
 
--- Поле для ввода команды
-TextBox.Size = UDim2.new(1, -20, 0, 30)
-TextBox.Position = UDim2.new(0, 10, 0, 35)
-TextBox.Text = ""
-TextBox.PlaceholderText = 'Пример: loadstring(game:HttpGet("https://example.com/script.lua"))()'
-TextBox.TextColor3 = Color3.fromRGB(0, 0, 0)
-TextBox.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
-TextBox.ClearTextOnFocus = false
-TextBox.Parent = Frame
+-- Функция проверки UUID имени
+local function isUUIDName(name)
+    if not name then return false end
+    return name:find("%{") and name:find("%}") and name:find("%-")
+end
 
--- Кнопка запуска
-ExecuteButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-ExecuteButton.Position = UDim2.new(0, 10, 0, 70)
-ExecuteButton.Text = "Перехватить код"
-ExecuteButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-ExecuteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ExecuteButton.Font = Enum.Font.SourceSansBold
-ExecuteButton.TextSize = 16
-ExecuteButton.Parent = Frame
+-- Функция логирования с современным форматированием
+local function logEvent(eventType, message, data)
+    local timestamp = os.date("%H:%M:%S")
+    local logMessage = string.format("[%s] %s: %s", timestamp, eventType, message or "")
+    
+    print(logMessage)
+    table.insert(consoleOutput, logMessage)
+    
+    if data then
+        for key, value in pairs(data) do
+            local detailMsg = string.format("  • %s: %s", key, tostring(value))
+            print(detailMsg)
+            table.insert(consoleOutput, detailMsg)
+        end
+    end
+    
+    -- Ограничиваем размер лога (последние 200 строк)
+    if #consoleOutput > 200 then
+        table.remove(consoleOutput, 1)
+    end
+    
+    -- Обновляем GUI если он существует
+    if gui and gui.Parent then
+        local success = pcall(function()
+            local consoleFrame = gui:FindFirstChild("ConsoleFrame", true)
+            local consoleText = gui:FindFirstChild("ConsoleText", true)
+            if consoleText and consoleFrame then
+                -- Показываем все сообщения
+                local displayText = table.concat(consoleOutput, "\n")
+                consoleText.Text = displayText
+                
+                -- Обновляем размер canvas для прокрутки
+                local textHeight = consoleText.TextBounds.Y
+                consoleFrame.CanvasSize = UDim2.new(0, 0, 0, math.max(textHeight + 100, 1000))
+                
+                -- Автоскролл вниз к последним сообщениям
+                consoleFrame.CanvasPosition = Vector2.new(0, math.max(0, textHeight - consoleFrame.AbsoluteSize.Y + 100))
+            end
+        end)
+    end
+end
 
--- Кнопка копирования
-CopyButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-CopyButton.Position = UDim2.new(0.25, 2.5, 0, 70)
-CopyButton.Text = "Копировать"
-CopyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-CopyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CopyButton.Font = Enum.Font.SourceSansBold
-CopyButton.TextSize = 16
-CopyButton.Parent = Frame
+-- Создание современного GUI
+local function createModernGUI()
+    print("🎨 Создание современного GUI...")
+    
+    -- Удаляем старый GUI
+    local oldGui = playerGui:FindFirstChild("PetStructureAnalyzerGUI")
+    if oldGui then
+        oldGui:Destroy()
+    end
+    
+    -- Создаем новый GUI
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PetStructureAnalyzerGUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Главное окно (МОБИЛЬНО-АДАПТИВНОЕ)
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0.9, 0, 0.8, 0) -- 90% ширины, 80% высоты экрана
+    mainFrame.Position = UDim2.new(0.05, 0, 0.1, 0) -- Центрируем с отступами
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35) -- Темно-серый фон
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
+    
+    -- Современная рамка с градиентом
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, 12)
+    uiCorner.Parent = mainFrame
+    
+    local uiStroke = Instance.new("UIStroke")
+    uiStroke.Color = Color3.fromRGB(0, 150, 255)
+    uiStroke.Thickness = 2
+    uiStroke.Parent = mainFrame
+    
+    -- Заголовок с современным дизайном (КОМПАКТНЫЙ)
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, 0, 0, 35) -- Уменьшен с 50 до 35
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+    titleLabel.BorderSizePixel = 0
+    titleLabel.Text = "🔬 Pet Analyzer v4.0" -- Короче для мобильного
+    titleLabel.TextColor3 = Color3.new(1, 1, 1)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.Parent = mainFrame
+    
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.Parent = titleLabel
+    
+    -- Консоль с современным дизайном (МОБИЛЬНО-АДАПТИВНАЯ)
+    local consoleFrame = Instance.new("ScrollingFrame")
+    consoleFrame.Name = "ConsoleFrame"
+    consoleFrame.Size = UDim2.new(1, -10, 1, -80) -- Компактнее для мобильного
+    consoleFrame.Position = UDim2.new(0, 5, 0, 40) -- Ближе к заголовку
+    consoleFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20) -- Очень темный фон
+    consoleFrame.BorderSizePixel = 0
+    consoleFrame.ScrollBarThickness = 8 -- Тоньше для мобильного
+    consoleFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
+    consoleFrame.CanvasSize = UDim2.new(0, 0, 0, 2000)
+    consoleFrame.Parent = mainFrame
+    
+    local consoleCorner = Instance.new("UICorner")
+    consoleCorner.CornerRadius = UDim.new(0, 8)
+    consoleCorner.Parent = consoleFrame
+    
+    local consoleStroke = Instance.new("UIStroke")
+    consoleStroke.Color = Color3.fromRGB(50, 50, 60)
+    consoleStroke.Thickness = 1
+    consoleStroke.Parent = consoleFrame
+    
+    local consoleText = Instance.new("TextLabel")
+    consoleText.Name = "ConsoleText"
+    consoleText.Size = UDim2.new(1, -15, 0, 2000)
+    consoleText.Position = UDim2.new(0, 8, 0, 5)
+    consoleText.BackgroundTransparency = 1
+    consoleText.Text = "🔬 Pet Analyzer Console Ready...\n⚡ Waiting for UUID pets to analyze..."
+    consoleText.TextColor3 = Color3.fromRGB(0, 255, 150) -- Яркий зеленый
+    consoleText.TextScaled = false
+    consoleText.TextSize = 12 -- Меньше для мобильного
+    consoleText.Font = Enum.Font.RobotoMono -- Моноширинный шрифт для кода
+    consoleText.TextXAlignment = Enum.TextXAlignment.Left
+    consoleText.TextYAlignment = Enum.TextYAlignment.Top
+    consoleText.TextWrapped = true
+    consoleText.Parent = consoleFrame
+    
+    -- Панель кнопок (МОБИЛЬНО-АДАПТИВНАЯ)
+    local buttonPanel = Instance.new("Frame")
+    buttonPanel.Name = "ButtonPanel"
+    buttonPanel.Size = UDim2.new(1, -10, 0, 35) -- Компактнее: высота 35 вместо 50
+    buttonPanel.Position = UDim2.new(0, 5, 1, -40) -- Ближе к краю
+    buttonPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    buttonPanel.BorderSizePixel = 0
+    buttonPanel.Parent = mainFrame
+    
+    local panelCorner = Instance.new("UICorner")
+    panelCorner.CornerRadius = UDim.new(0, 8)
+    panelCorner.Parent = buttonPanel
+    
+    -- Создание современной кнопки
+    local function createModernButton(name, text, color, position, size)
+        local button = Instance.new("TextButton")
+        button.Name = name
+        button.Size = size
+        button.Position = position
+        button.BackgroundColor3 = color
+        button.BorderSizePixel = 0
+        button.Text = text
+        button.TextColor3 = Color3.new(1, 1, 1)
+        button.TextScaled = true
+        button.Font = Enum.Font.GothamBold
+        button.Parent = buttonPanel
+        
+        local buttonCorner = Instance.new("UICorner")
+        buttonCorner.CornerRadius = UDim.new(0, 6)
+        buttonCorner.Parent = button
+        
+        local buttonStroke = Instance.new("UIStroke")
+        buttonStroke.Color = Color3.fromRGB(255, 255, 255)
+        buttonStroke.Thickness = 1
+        buttonStroke.Transparency = 0.8
+        buttonStroke.Parent = button
+        
+        -- Эффект наведения
+        button.MouseEnter:Connect(function()
+            button.BackgroundColor3 = Color3.new(
+                math.min(color.R + 0.1, 1),
+                math.min(color.G + 0.1, 1),
+                math.min(color.B + 0.1, 1)
+            )
+            buttonStroke.Transparency = 0.5
+        end)
+        
+        button.MouseLeave:Connect(function()
+            button.BackgroundColor3 = color
+            buttonStroke.Transparency = 0.8
+        end)
+        
+        return button
+    end
+    
+    -- Кнопки с современным дизайном (6 кнопок)
+    local scanButton = createModernButton("ScanButton", "🔍 SCAN PETS", 
+        Color3.fromRGB(0, 150, 255), UDim2.new(0, 2, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local createButton = createModernButton("CreateButton", "🚀 CREATE PET", 
+        Color3.fromRGB(255, 0, 150), UDim2.new(0.16, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local copyButton = createModernButton("CopyButton", "📋 COPY CONSOLE", 
+        Color3.fromRGB(255, 150, 0), UDim2.new(0.32, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local clearButton = createModernButton("ClearButton", "🗑️ CLEAR LOG", 
+        Color3.fromRGB(255, 100, 100), UDim2.new(0.48, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local exportButton = createModernButton("ExportButton", "💾 EXPORT DATA", 
+        Color3.fromRGB(100, 255, 100), UDim2.new(0.64, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local closeButton = createModernButton("CloseButton", "❌ CLOSE", 
+        Color3.fromRGB(200, 50, 50), UDim2.new(0.8, 0, 0, 5), UDim2.new(0.18, 0, 1, -10))
+    
+    -- События кнопок (ПОДКЛЮЧЕНЫ К РЕАЛЬНЫМ ФУНКЦИЯМ)
+    scanButton.MouseButton1Click:Connect(function()
+        logEvent("🔍 SCAN", "Starting pet structure scan...")
+        scanButton.Text = "⏳ SCANNING..."
+        
+        spawn(function()
+            findAndScanNearbyUUIDPets()
+            scanButton.Text = "🔍 SCAN PETS"
+        end)
+    end)
+    
+    createButton.MouseButton1Click:Connect(function()
+        logEvent("🚀 CREATE", "Attempting to create pet from database...")
+        createButton.Text = "⏳ CREATING..."
+        
+        spawn(function()
+            local createdPet = recreateNearestPet()
+            if createdPet then
+                createButton.Text = "✅ CREATED!"
+                spawn(function()
+                    wait(2)
+                    createButton.Text = "🚀 CREATE PET"
+                end)
+            else
+                createButton.Text = "❌ FAILED!"
+                spawn(function()
+                    wait(2)
+                    createButton.Text = "🚀 CREATE PET"
+                end)
+            end
+        end)
+    end)
+    
+    copyButton.MouseButton1Click:Connect(function()
+        logEvent("📋 COPY", "Copying console to clipboard...")
+        copyButton.Text = "⏳ COPYING..."
+        
+        spawn(function()
+            local consoleData = table.concat(consoleOutput, "\n")
+            -- В Roblox нет прямого доступа к clipboard, но можем показать данные
+            logEvent("📋 COPY", "Console data ready for manual copy:")
+            logEvent("📋 DATA", "=== CONSOLE EXPORT START ===")
+            for _, line in ipairs(consoleOutput) do
+                print(line) -- Выводим в консоль для копирования
+            end
+            logEvent("📋 DATA", "=== CONSOLE EXPORT END ===")
+            
+            wait(2)
+            copyButton.Text = "📋 COPY CONSOLE"
+        end)
+    end)
+    
+    clearButton.MouseButton1Click:Connect(function()
+        logEvent("🗑️ CLEAR", "Clearing console log...")
+        consoleOutput = {}
+        consoleText.Text = "🔬 Console cleared!\n⚡ Ready for new analysis..."
+        clearButton.Text = "✅ CLEARED"
+        
+        spawn(function()
+            wait(1)
+            clearButton.Text = "🗑️ CLEAR LOG"
+        end)
+    end)
+    
+    exportButton.MouseButton1Click:Connect(function()
+        logEvent("💾 EXPORT", "Exporting pet database...")
+        exportButton.Text = "⏳ EXPORTING..."
+        
+        spawn(function()
+            exportPetDatabase()
+            exportButton.Text = "💾 EXPORT DATA"
+        end)
+    end)
+    
+    closeButton.MouseButton1Click:Connect(function()
+        logEvent("❌ SYSTEM", "COMPLETE SHUTDOWN - Pet Structure Analyzer terminating...")
+        
+        -- Отключаем скрипт
+        scriptRunning = false
+        
+        -- Отключаем все соединения
+        for i, connection in ipairs(connections) do
+            if connection then
+                pcall(function() connection:Disconnect() end)
+            end
+        end
+        connections = {}
+        
+        -- Закрываем GUI
+        pcall(function() screenGui:Destroy() end)
+        gui = nil
+        
+        print("🔴 Pet Structure Analyzer ПОЛНОСТЬЮ ВЫКЛЮЧЕН!")
+        print("🔌 Все соединения отключены")
+        print("💀 Скрипт УБИТ навсегда")
+        
+        -- ПРИНУДИТЕЛЬНАЯ ОСТАНОВКА СКРИПТА
+        spawn(function()
+            wait(0.1)
+            error("🔴 PET STRUCTURE ANALYZER TERMINATED BY USER - COMPLETE SHUTDOWN 💀")
+        end)
+    end)
+    
+    -- Добавляем в PlayerGui
+    screenGui.Parent = playerGui
+    gui = screenGui
+    
+    print("✅ Современный GUI создан успешно!")
+    logEvent("🎨 SYSTEM", "Modern GUI created with enhanced console and buttons")
+    
+    return screenGui
+end
 
--- Кнопка кеша
-CacheButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-CacheButton.Position = UDim2.new(0.5, 2.5, 0, 70)
-CacheButton.Text = "Из кеша"
-CacheButton.BackgroundColor3 = Color3.fromRGB(80, 40, 80)
-CacheButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CacheButton.Font = Enum.Font.SourceSansBold
-CacheButton.TextSize = 16
-CacheButton.Parent = Frame
+-- === СИСТЕМА СКАНИРОВАНИЯ СТРУКТУРЫ ПИТОМЦЕВ ===
 
--- Кнопка сохранения
-SaveButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-SaveButton.Position = UDim2.new(0.75, 2.5, 0, 70)
-SaveButton.Text = "Сохранить"
-SaveButton.BackgroundColor3 = Color3.fromRGB(40, 80, 40)
-SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SaveButton.Font = Enum.Font.SourceSansBold
-SaveButton.TextSize = 16
-SaveButton.Parent = Frame
+-- Функция глубокого сканирования Motor6D
+local function scanMotor6D(model)
+    local motors = {}
+    local motorCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            motorCount = motorCount + 1
+            local motorData = {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "nil",
+                part1 = obj.Part1 and obj.Part1.Name or "nil",
+                c0 = obj.C0,
+                c1 = obj.C1,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(motors, motorData)
+        end
+    end
+    
+    return motors, motorCount
+end
 
--- Кнопка Memory Hook
-HookButton.Size = UDim2.new(1, -20, 0, 30)
-HookButton.Position = UDim2.new(0, 10, 0, 105)
-HookButton.Text = "🔓 Установить Memory Hook (перехват кода)"
-HookButton.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
-HookButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-HookButton.Font = Enum.Font.SourceSansBold
-HookButton.TextSize = 16
-HookButton.Parent = Frame
+-- Функция сканирования Mesh данных
+local function scanMeshData(model)
+    local meshes = {}
+    local meshCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") then
+            meshCount = meshCount + 1
+            local meshData = {
+                type = "MeshPart",
+                name = obj.Name,
+                meshId = obj.MeshId,
+                textureId = obj.TextureID,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(meshes, meshData)
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            local meshData = {
+                type = "SpecialMesh",
+                name = obj.Name,
+                meshId = obj.MeshId,
+                textureId = obj.TextureId,
+                meshType = obj.MeshType.Name,
+                scale = obj.Scale,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(meshes, meshData)
+        end
+    end
+    
+    return meshes, meshCount
+end
 
--- Поле для отображения кода
-ScrollFrame.Size = UDim2.new(1, -20, 1, -145)
-ScrollFrame.Position = UDim2.new(0, 10, 0, 145)
-ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollFrame.ScrollingDirection = Enum.ScrollingDirection.XY
-ScrollFrame.ScrollBarThickness = 8
-ScrollFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.Parent = Frame
+-- Функция сканирования Attachments
+local function scanAttachments(model)
+    local attachments = {}
+    local attachmentCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Attachment") then
+            attachmentCount = attachmentCount + 1
+            local attachmentData = {
+                name = obj.Name,
+                cframe = obj.CFrame,
+                worldCFrame = obj.WorldCFrame,
+                parent = obj.Parent and obj.Parent.Name or "nil",
+                visible = obj.Visible
+            }
+            table.insert(attachments, attachmentData)
+        end
+    end
+    
+    return attachments, attachmentCount
+end
 
-CodeLabel.Size = UDim2.new(0, 0, 0, 0)
-CodeLabel.Text = ""
-CodeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-CodeLabel.BackgroundTransparency = 1
-CodeLabel.TextWrapped = false
-CodeLabel.TextSize = 14
-CodeLabel.Font = Enum.Font.Code
-CodeLabel.Parent = ScrollFrame
+-- Функция поиска Animation ID в скриптах
+local function scanAnimations(model)
+    local animations = {}
+    local animationCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Animation") then
+            animationCount = animationCount + 1
+            local animData = {
+                name = obj.Name,
+                animationId = obj.AnimationId,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(animations, animData)
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            -- Ищем Animation ID в коде скриптов
+            local success, source = pcall(function() return obj.Source end)
+            if success and source then
+                for animId in source:gmatch("rbxassetid://(%d+)") do
+                    animationCount = animationCount + 1
+                    local animData = {
+                        name = "Found in " .. obj.Name,
+                        animationId = "rbxassetid://" .. animId,
+                        parent = obj.Name,
+                        source = "script"
+                    }
+                    table.insert(animations, animData)
+                end
+            end
+        end
+    end
+    
+    return animations, animationCount
+end
 
--- Утилиты
-local function UpdateCanvasSize()
-    local text = CodeLabel.Text or ""
-    if #text == 0 then
-        ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+-- Функция сканирования базовых частей модели
+local function scanBaseParts(model)
+    local parts = {}
+    local partCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            partCount = partCount + 1
+            local partData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                transparency = obj.Transparency,
+                canCollide = obj.CanCollide,
+                anchored = obj.Anchored,
+                cframe = obj.CFrame,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(parts, partData)
+        end
+    end
+    
+    return parts, partCount
+end
+
+-- Главная функция сканирования UUID питомца
+local function scanUUIDPet(petModel)
+    logEvent("🔬 DEEP_SCAN", "Starting deep structure analysis", {
+        PetName = petModel.Name,
+        PetClass = petModel.ClassName
+    })
+    
+    local petData = {
+        name = petModel.Name,
+        className = petModel.ClassName,
+        primaryPart = petModel.PrimaryPart and petModel.PrimaryPart.Name or "nil",
+        scanTime = os.date("%Y-%m-%d %H:%M:%S"),
+        position = petModel:GetModelCFrame().Position
+    }
+    
+    -- Сканируем Motor6D
+    logEvent("🔧 MOTOR6D_SCAN", "Scanning Motor6D joints...")
+    petData.motors, petData.motorCount = scanMotor6D(petModel)
+    logEvent("🔧 MOTOR6D_RESULT", "Found " .. petData.motorCount .. " Motor6D joints")
+    
+    -- Сканируем Meshes
+    logEvent("🎨 MESH_SCAN", "Scanning mesh data...")
+    petData.meshes, petData.meshCount = scanMeshData(petModel)
+    logEvent("🎨 MESH_RESULT", "Found " .. petData.meshCount .. " mesh components")
+    
+    -- Сканируем Attachments
+    logEvent("📎 ATTACHMENT_SCAN", "Scanning attachments...")
+    petData.attachments, petData.attachmentCount = scanAttachments(petModel)
+    logEvent("📎 ATTACHMENT_RESULT", "Found " .. petData.attachmentCount .. " attachments")
+    
+    -- Сканируем Animations
+    logEvent("🎭 ANIMATION_SCAN", "Scanning animations...")
+    petData.animations, petData.animationCount = scanAnimations(petModel)
+    logEvent("🎭 ANIMATION_RESULT", "Found " .. petData.animationCount .. " animation references")
+    
+    -- Сканируем BaseParts
+    logEvent("🧱 PARTS_SCAN", "Scanning base parts...")
+    petData.parts, petData.partCount = scanBaseParts(petModel)
+    logEvent("🧱 PARTS_RESULT", "Found " .. petData.partCount .. " base parts")
+    
+    -- Сохраняем в базу данных
+    petDatabase[petModel.Name] = petData
+    
+    logEvent("💾 SAVE_COMPLETE", "Pet structure saved to database", {
+        TotalMotors = petData.motorCount,
+        TotalMeshes = petData.meshCount,
+        TotalAttachments = petData.attachmentCount,
+        TotalAnimations = petData.animationCount,
+        TotalParts = petData.partCount
+    })
+    
+    return petData
+end
+
+-- Функция поиска и сканирования UUID питомцев рядом с игроком
+local function findAndScanNearbyUUIDPets()
+    if not scriptRunning then return end
+    
+    logEvent("🔍 SEARCH", "Searching for UUID pets near player...")
+    
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ ERROR", "Player character or HumanoidRootPart not found")
         return
     end
     
-    local size = TextService:GetTextSize(text, CodeLabel.TextSize, CodeLabel.Font, Vector2.new(ScrollFrame.AbsoluteSize.X, math.huge))
-    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, size.Y)
-    CodeLabel.Size = UDim2.new(1, 0, 0, size.Y)
-    CodeLabel.Position = UDim2.new(0, 0, 0, 0)
-end
-
-local function truncateText(text, maxLength)
-    if #text <= maxLength then
-        return text
-    end
+    local playerPosition = playerChar.HumanoidRootPart.Position
+    local foundPets = {}
+    local searchRadius = 100 -- 100 стадов радиус поиска
     
-    return text:sub(1, maxLength) .. "\n\n[ТЕКСТ ОБРЕЗАН - СЛИШКОМ ДЛИННЫЙ: " .. #text .. " символов]\n[Используйте кнопку 'Сохранить' для полного текста]"
-end
-
-local function notify(message)
-    print("[LUAFINDER] " .. message)
-    
-    -- Анимация уведомления
-    if TextLabel then
-        local originalColor = TextLabel.TextColor3
-        TextLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-        TextLabel.Text = message
+    -- Ищем UUID модели в Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if not scriptRunning then break end
         
-        TweenService:Create(TextLabel, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            TextColor3 = originalColor
-        }):Play()
-        
-        wait(2)
-        TextLabel.Text = "Вставь команду с loadstring:"
-    end
-end
-
-local function tryReadCache()
-    local cachePaths = {
-        "static_content_130525/initv4.lua",
-        "static_content_130525/init.lua", 
-        "static_content_130525/initv2.lua",
-        "static_content_130525/initv3.lua"
-    }
-    
-    for _, path in ipairs(cachePaths) do
-        local success, content = pcall(function()
-            if readfile and isfile and isfile(path) then
-                return readfile(path)
-            end
-            return nil
-        end)
-        if success and content and #content > 100 then
-            return content, path
-        end
-    end
-    return nil, nil
-end
-
--- Расширенный Memory Hook для деобфускации
-local hookInstalled = false
-local interceptedCode = ""
-local deobfuscatedCode = ""
-
--- Функция для проверки, является ли строка обфусцированным кодом
-local function isObfuscatedCode(str)
-    if not str or type(str) ~= "string" then return false end
-    
-    -- Проверяем на наличие признаков обфускации
-    local obfuscationPatterns = {
-        "getfenv", "setfenv", "loadstring", "string%.char", 
-        "string%.sub", "string%.gsub", "math%.random", 
-        "%[%d+%][%s]*=[%s]*[0-9A-Fa-f]+"
-    }
-    
-    local score = 0
-    for _, pattern in ipairs(obfuscationPatterns) do
-        local count = 0
-        for _ in str:gmatch(pattern) do
-            count = count + 1
-        end
-        if count > 0 then
-            score = score + count
-        end
-    end
-    
-    -- Если найдено много признаков обфускации
-    return score > 3
-end
-
--- Функция для попытки деобфускации кода
-local function attemptDeobfuscation(code)
-    if not code or #code == 0 then return code end
-    
-    -- Простая замена часто используемых обфускационных паттернов
-    local deobfuscated = code
-    
-    -- Заменяем string.char(...) вызовы с числовыми аргументами
-    deobfuscated = deobfuscated:gsub("string%.char%(([%d%s,]+)%)", function(args)
-        local bytes = {}
-        for num in args:gmatch("%d+") do
-            table.insert(bytes, string.char(tonumber(num)))
-        end
-        return '"' .. table.concat(bytes) .. '"'
-    end)
-    
-    -- Заменяем getfenv()[...] вызовы
-    deobfuscated = deobfuscated:gsub("getfenv%(%)(%b[])", function(index)
-        return "_G" .. index
-    end)
-    
-    return deobfuscated
-end
-
--- Попытка сохранения файла
-local function trySaveFile(content)
-    if not writefile then
-        return false, "writefile не поддерживается"
-    end
-    
-    local timestamp = os.date("%Y%m%d_%H%M%S")
-    local filename = "luafinder_deobfuscated_" .. timestamp .. ".lua"
-    
-    local success, err = pcall(function()
-        writefile(filename, content)
-    end)
-    
-    if success then
-        return true, filename
-    else
-        return false, err
-    end
-end
-
-local function tryCopy(text)
-    local attempts = {
-        function(t)
-            if setclipboard then setclipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if toclipboard then toclipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if syn and syn.write_clipboard then syn.write_clipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if setrbxclipboard then setrbxclipboard(t) return true end
-            return false
-        end,
-    }
-    for _, fn in ipairs(attempts) do
-        local ok = false
-        local success, err = pcall(function()
-            ok = fn(text)
-        end)
-        if success and ok then return true end
-    end
-    return false
-end
-
--- Улучшенная функция установки Memory Hook
-local function installMemoryHook()
-    if hookInstalled then
-        notify("Hook уже установлен!")
-        return
-    end
-    
-    notify("Установка расширенных Memory Hook для LuArmor V4...")
-    
-    -- Перехватываем loadstring
-    local original_loadstring = loadstring
-    local hookCount = 0
-    
-    getgenv().loadstring = function(code, chunkName)
-        hookCount = hookCount + 1
-        
-        if code and type(code) == "string" then
-            print("\n[LUAFINDER] === ПЕРЕХВАТЧИК LOADSTRING #" .. hookCount .. " ===")
-            print("[LUAFINDER] Размер кода: " .. #code .. " символов")
-            
-            -- Если код большой, это может быть обфусцированный скрипт
-            if #code > 1000 then
-                print("[LUAFINDER] Обнаружен большой кодовой блок (возможно обфусцированный)")
-                
-                -- Сохраняем оригинальный код
-                interceptedCode = code
-                
-                -- Пытаемся выполнить базовую деобфускацию
-                local deobfCode = attemptDeobfuscation(code)
-                
-                if deobfCode ~= code then
-                    print("[LUAFINDER] Применена базовая деобфускация")
-                    deobfuscatedCode = deobfCode
-                else
-                    deobfuscatedCode = code
-                end
-                
-                -- Выводим полный код в консоль
-                print("[LUAFINDER] === НАЧАЛО ПЕРЕХВАЧЕННОГО КОДА ===")
-                print(deobfuscatedCode)
-                print("[LUAFINDER] === КОНЕЦ ПЕРЕХВАЧЕННОГО КОДА ===\n")
-                
-                -- Отображаем в GUI
-                CodeLabel.Text = truncateText(deobfuscatedCode, 50000)
-                UpdateCanvasSize()
-                
-                -- Автоматически сохраняем код в файл
-                local success, result = trySaveFile(deobfuscatedCode)
-                if success then
-                    print("[LUAFINDER] Код автоматически сохранен в: " .. result)
-                    notify("Код перехвачен и сохранен в " .. result)
-                else
-                    print("[LUAFINDER] Ошибка автосохранения: " .. tostring(result))
-                    notify("Код перехвачен, но ошибка сохранения: " .. tostring(result))
-                end
-                
-                return original_loadstring(deobfCode, chunkName)
-            else
-                print("[LUAFINDER] Маленький кодовой блок: " .. code)
-            end
-        end
-        
-        -- Вызываем оригинальную функцию
-        return original_loadstring(code, chunkName)
-    end
-    
-    -- Перехватываем pcall для отслеживания выполнения функций
-    local original_pcall = pcall
-    getgenv().pcall = function(func, ...)
-        if type(func) == "function" then
-            -- Пытаемся получить информацию о функции
-            local info = debug.getinfo(func)
-            if info and info.source and info.source:find("loadstring") then
-                print("[LUAFINDER] PCALL: Вызов функции из loadstring")
-            end
-        end
-        return original_pcall(func, ...)
-    end
-    
-    -- Перехватываем string.char для обнаружения расшифровки
-    -- Проверяем, можно ли модифицировать таблицу string
-    local string_char_hook_success = false
-    local original_string_char = string.char
-    
-    if type(original_string_char) == "function" then
-        -- Попытка безопасного перехвата string.char
-        local function safe_string_char(...)
-            local success, result = pcall(original_string_char, ...)
-            if success and result then
-                -- Если результат похож на код
-                if type(result) == "string" and #result > 50 and isObfuscatedCode(result) then
-                    print("\n[LUAFINDER] === STRING.CHAR РАСШИФРОВКА ОБНАРУЖЕНА ===")
-                    print("[LUAFINDER] Расшифрованный код (" .. #result .. " символов):")
-                    print(result)
-                    print("[LUAFINDER] === КОНЕЦ РАСШИФРОВАННОГО КОДА ===\n")
-                    
-                    -- Сохраняем расшифрованный код
-                    interceptedCode = result
-                    deobfuscatedCode = result
-                    
-                    -- Отображаем в GUI
-                    CodeLabel.Text = truncateText(result, 50000)
-                    UpdateCanvasSize()
-                    
-                    -- Автоматически сохраняем код в файл
-                    local saveSuccess, filename = trySaveFile(result)
-                    if saveSuccess then
-                        print("[LUAFINDER] Расшифрованный код сохранен в: " .. filename)
-                        notify("Расшифрованный код сохранен в " .. filename)
-                    end
-                end
-                return result
-            else
-                -- В случае ошибки возвращаем пустую строку
-                return ""
-            end
-        end
-        
-        -- Проверяем, можно ли модифицировать таблицу string без ошибок
-        local function can_modify_string_table()
-            -- Создаем тестовую функцию для проверки
-            local test_func = function() return "test" end
-            
-            -- Попытка временной модификации
-            local original_char = string.char
-            local success, error_msg = pcall(function()
-                string.char = test_func
-                -- Восстановление оригинальной функции
-                string.char = original_char
+        if obj:IsA("Model") and isUUIDName(obj.Name) then
+            local success, modelCFrame = pcall(function() 
+                return obj:GetModelCFrame() 
             end)
             
-            return success
-        end
-        
-        -- Только если можно безопасно модифицировать таблицу string
-        if can_modify_string_table() then
-            string.char = safe_string_char
-            string_char_hook_success = true
-            print("[LUAFINDER] Хук на string.char установлен успешно")
-        else
-            print("[LUAFINDER] Пропуск хука string.char - таблица защищена от модификации")
-            notify("Предупреждение: Хук string.char пропущен (таблица защищена)")
-        end
-    end
-    
-    -- Перехватываем string.dump для получения байткода
-    if string.dump then
-        local original_string_dump = string.dump
-        string.dump = function(func, strip)
-            print("[LUAFINDER] STRING.DUMP вызван для функции")
-            
-            -- Получаем информацию о функции
-            local info = debug.getinfo(func)
-            if info then
-                print("[LUAFINDER] Информация о функции:")
-                print("  Имя: " .. (info.name or "анонимная"))
-                print("  Источник: " .. (info.source or "неизвестен"))
-                print("  Линия определения: " .. (info.linedefined or 0))
-            end
-            
-            -- Получаем байткод
-            local bytecode = original_string_dump(func, strip)
-            print("[LUAFINDER] Размер байткода: " .. #bytecode .. " байт")
-            
-            return bytecode
-        end
-    end
-    
-    hookInstalled = true
-    notify("✅ Расширенные Memory Hook успешно установлены!")
-    notify("Теперь запустите защищенный скрипт для перехвата и деобфускации кода.")
-end
-
--- Делаем функцию доступной глобально для кнопок
-getgenv().installMemoryHook = installMemoryHook
-
--- Логика кнопки
-ExecuteButton.MouseButton1Click:Connect(function()
-    local input = TextBox.Text
-    -- Извлекаем http/https URL до пробела, кавычки или закрывающей скобки
-    local url = input:match("https?://[^%)%s'\"]+")
-    if url then
-        local success, data = pcall(function()
-            return game:HttpGet(url)
-        end)
-        if success then
-            local displayText = truncateText(data, 50000) -- Лимит 50k символов для отображения
-            CodeLabel.Text = displayText
-            UpdateCanvasSize()
-            if #data > 50000 then
-                notify("Текст обрезан (" .. #data .. " симв.). Используйте 'Сохранить'.")
-            end
-        else
-            CodeLabel.Text = "Ошибка запроса: " .. tostring(data)
-        end
-    else
-        CodeLabel.Text = "Не удалось найти ссылку в команде!"
-    end
-end)
-
-CopyButton.MouseButton1Click:Connect(function()
-    if CodeLabel.Text and #CodeLabel.Text > 0 then
-        local ok = tryCopy(CodeLabel.Text)
-        if ok then
-            notify("Скопировано в буфер обмена.")
-        else
-            notify("Не удалось скопировать: среда не поддерживает.")
-        end
-    else
-        notify("Нечего копировать: поле пустое.")
-    end
-end)
-
-CacheButton.MouseButton1Click:Connect(function()
-    local content, path = tryReadCache()
-    if content then
-        local displayText = truncateText(content, 50000)
-        CodeLabel.Text = displayText
-        UpdateCanvasSize()
-        if #content > 50000 then
-            notify("Кеш загружен (" .. #content .. " симв.) из " .. path)
-        else
-            notify("Кеш загружен из " .. path)
-        end
-        
-        -- Пытаемся выполнить деобфускацию
-        local deobfCode = attemptDeobfuscation(content)
-        if deobfCode ~= content then
-            print("[LUAFINDER] === ДЕОБФУСЦИРОВАННЫЙ КОД ИЗ КЕША ===")
-            print(deobfCode)
-            print("[LUAFINDER] === КОНЕЦ ДЕОБФУСЦИРОВАННОГО КОДА ===\n")
-            
-            -- Обновляем отображение в GUI
-            CodeLabel.Text = truncateText(deobfCode, 50000)
-            UpdateCanvasSize()
-            
-            -- Сохраняем в файл
-            local success, filename = trySaveFile(deobfCode)
             if success then
-                print("[LUAFINDER] Деобфусцированный код из кеша сохранен в: " .. filename)
-                notify("Деобфусцированный код из кеша сохранен в " .. filename)
+                local distance = (modelCFrame.Position - playerPosition).Magnitude
+                
+                if distance <= searchRadius then
+                    table.insert(foundPets, {
+                        model = obj,
+                        distance = distance,
+                        name = obj.Name
+                    })
+                end
             end
         end
-    else
-        CodeLabel.Text = "Кеш не найден. Попробуйте сначала запустить загрузчик."
-        notify("Файлы кеша не найдены.")
     end
-end)
-
-SaveButton.MouseButton1Click:Connect(function()
-    if CodeLabel.Text and #CodeLabel.Text > 0 then
-        -- Пытаемся получить полный текст (не обрезанный)
-        local fullText = CodeLabel.Text
+    
+    -- Сортируем по расстоянию
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    
+    logEvent("🎯 SEARCH_RESULT", "Found " .. #foundPets .. " UUID pets within " .. searchRadius .. " studs")
+    
+    -- Сканируем найденных питомцев
+    for i, petInfo in ipairs(foundPets) do
+        if not scriptRunning then break end
         
-        -- Если текст был обрезан, пытаемся получить полный из кеша или последнего запроса
-        if fullText:find("ТЕКСТ ОБРЕЗАН") then
-            local content, _ = tryReadCache()
-            if content then
-                fullText = content
+        logEvent("🔬 SCANNING", "Pet " .. i .. "/" .. #foundPets, {
+            Name = petInfo.name,
+            Distance = string.format("%.1f studs", petInfo.distance)
+        })
+        
+        local petData = scanUUIDPet(petInfo.model)
+        
+        -- Небольшая пауза между сканированиями
+        wait(0.1)
+    end
+    
+    logEvent("✅ SCAN_COMPLETE", "All nearby UUID pets scanned successfully", {
+        TotalScanned = #foundPets,
+        DatabaseSize = #petDatabase
+    })
+end
+
+-- Функция экспорта базы данных питомцев
+local function exportPetDatabase()
+    if not scriptRunning then return end
+    
+    logEvent("💾 EXPORT_START", "Starting pet database export...")
+    
+    if next(petDatabase) == nil then
+        logEvent("⚠️ EXPORT_WARNING", "Pet database is empty! Scan some pets first.")
+        return
+    end
+    
+    local exportData = {
+        exportTime = os.date("%Y-%m-%d %H:%M:%S"),
+        totalPets = 0,
+        pets = {}
+    }
+    
+    -- Подсчитываем и экспортируем каждого питомца
+    for petName, petData in pairs(petDatabase) do
+        exportData.totalPets = exportData.totalPets + 1
+        exportData.pets[petName] = petData
+        
+        logEvent("📦 EXPORTING", "Pet: " .. petName, {
+            Motors = petData.motorCount or 0,
+            Meshes = petData.meshCount or 0,
+            Parts = petData.partCount or 0,
+            Attachments = petData.attachmentCount or 0,
+            Animations = petData.animationCount or 0
+        })
+    end
+    
+    -- Выводим полный экспорт в консоль
+    logEvent("💾 EXPORT_DATA", "=== PET DATABASE EXPORT START ===")
+    logEvent("📊 EXPORT_SUMMARY", "Total pets in database: " .. exportData.totalPets)
+    logEvent("📅 EXPORT_TIME", "Export time: " .. exportData.exportTime)
+    
+    -- Детальный экспорт каждого питомца
+    for petName, petData in pairs(exportData.pets) do
+        logEvent("🐾 PET_EXPORT", "=== " .. petName .. " ===")
+        logEvent("📋 PET_INFO", "Class: " .. (petData.className or "Unknown"))
+        logEvent("📍 PET_POSITION", "Position: " .. tostring(petData.position or "Unknown"))
+        logEvent("🕒 PET_SCAN_TIME", "Scanned: " .. (petData.scanTime or "Unknown"))
+        
+        -- Motor6D данные
+        if petData.motors and #petData.motors > 0 then
+            logEvent("🔧 MOTORS", "Motor6D joints (" .. #petData.motors .. "):")
+            for i, motor in ipairs(petData.motors) do
+                logEvent("🔧 MOTOR_" .. i, motor.name .. " [" .. motor.part0 .. " -> " .. motor.part1 .. "]")
             end
         end
         
-        local success, result = trySaveFile(fullText)
-        if success then
-            notify("Сохранено в " .. result)
-        else
-            notify("Ошибка сохранения: " .. result)
+        -- Mesh данные
+        if petData.meshes and #petData.meshes > 0 then
+            logEvent("🎨 MESHES", "Mesh components (" .. #petData.meshes .. "):")
+            for i, mesh in ipairs(petData.meshes) do
+                logEvent("🎨 MESH_" .. i, mesh.name .. " [" .. mesh.type .. "] ID: " .. (mesh.meshId or "none"))
+            end
         end
-    else
-        notify("Нечего сохранять: поле пустое.")
+        
+        -- Attachment данные
+        if petData.attachments and #petData.attachments > 0 then
+            logEvent("📎 ATTACHMENTS", "Attachments (" .. #petData.attachments .. "):")
+            for i, att in ipairs(petData.attachments) do
+                logEvent("📎 ATT_" .. i, att.name .. " [" .. att.parent .. "]")
+            end
+        end
+        
+        -- Animation данные
+        if petData.animations and #petData.animations > 0 then
+            logEvent("🎭 ANIMATIONS", "Animations (" .. #petData.animations .. "):")
+            for i, anim in ipairs(petData.animations) do
+                logEvent("🎭 ANIM_" .. i, anim.name .. " ID: " .. (anim.animationId or "none"))
+            end
+        end
+        
+        logEvent("🐾 PET_END", "=== END " .. petName .. " ===")
     end
-end)
+    
+    logEvent("💾 EXPORT_DATA", "=== PET DATABASE EXPORT END ===")
+    logEvent("✅ EXPORT_COMPLETE", "Database export completed successfully!", {
+        TotalPetsExported = exportData.totalPets,
+        ExportTime = exportData.exportTime
+    })
+    
+    -- Также выводим в print для удобного копирования
+    print("=== PET STRUCTURE DATABASE EXPORT ===")
+    print("Export Time: " .. exportData.exportTime)
+    print("Total Pets: " .. exportData.totalPets)
+    print("")
+    
+    for petName, petData in pairs(exportData.pets) do
+        print("PET: " .. petName)
+        print("  Class: " .. (petData.className or "Unknown"))
+        print("  Motors: " .. (petData.motorCount or 0))
+        print("  Meshes: " .. (petData.meshCount or 0))
+        print("  Parts: " .. (petData.partCount or 0))
+        print("  Attachments: " .. (petData.attachmentCount or 0))
+        print("  Animations: " .. (petData.animationCount or 0))
+        print("")
+    end
+    
+    print("=== END EXPORT ===")
+end
 
--- Проверяем, что функция installMemoryHook существует перед вызовом
-local function safeCallInstallMemoryHook(source)
-    -- Проверяем, что функция installMemoryHook существует и является функцией
-    if type(installMemoryHook) == "function" then
-        local success, err = pcall(installMemoryHook)
+-- === СИСТЕМА ВОССОЗДАНИЯ ПИТОМЦЕВ ИЗ БАЗЫ ДАННЫХ ===
+
+-- Функция создания BasePart из данных
+local function createPartFromData(partData)
+    local part = Instance.new(partData.className or "Part")
+    part.Name = partData.name
+    part.Size = partData.size
+    part.CFrame = partData.cframe
+    part.Color = partData.color
+    part.Transparency = partData.transparency or 0
+    part.CanCollide = partData.canCollide
+    part.Anchored = partData.anchored
+    
+    -- Устанавливаем материал
+    local success = pcall(function()
+        part.Material = Enum.Material[partData.material]
+    end)
+    if not success then
+        part.Material = Enum.Material.Plastic
+    end
+    
+    return part
+end
+
+-- Функция создания Mesh из данных
+local function createMeshFromData(meshData, parent)
+    if meshData.type == "MeshPart" then
+        -- Для MeshPart устанавливаем MeshId и TextureId
+        if parent:IsA("MeshPart") then
+            parent.MeshId = meshData.meshId or ""
+            parent.TextureID = meshData.textureId or ""
+        end
+    elseif meshData.type == "SpecialMesh" then
+        local mesh = Instance.new("SpecialMesh")
+        mesh.Name = meshData.name
+        mesh.MeshId = meshData.meshId or ""
+        mesh.TextureId = meshData.textureId or ""
+        mesh.Scale = meshData.scale or Vector3.new(1, 1, 1)
+        
+        -- Устанавливаем тип меша
+        local success = pcall(function()
+            mesh.MeshType = Enum.MeshType[meshData.meshType]
+        end)
         if not success then
-            notify("Ошибка при выполнении installMemoryHook: " .. tostring(err))
-            print("[LUAFINDER] Ошибка при выполнении installMemoryHook: " .. tostring(err))
+            mesh.MeshType = Enum.MeshType.FileMesh
         end
-    else
-        notify("Ошибка: installMemoryHook не определена! (" .. source .. ")")
-        print("[LUAFINDER] Ошибка: installMemoryHook не найдена. Тип: " .. type(installMemoryHook))
-        -- Проверяем, существует ли функция вообще
-        if installMemoryHook == nil then
-            print("[LUAFINDER] installMemoryHook равна nil")
-        else
-            print("[LUAFINDER] installMemoryHook имеет тип: " .. type(installMemoryHook))
-        end
+        
+        mesh.Parent = parent
+        return mesh
     end
 end
 
-HookButton.MouseButton1Click:Connect(function()
-    safeCallInstallMemoryHook("кнопка")
-end)
+-- Функция создания Motor6D из данных
+local function createMotorFromData(motorData, model)
+    local motor = Instance.new("Motor6D")
+    motor.Name = motorData.name
+    motor.C0 = motorData.c0
+    motor.C1 = motorData.c1
+    
+    -- Находим части для соединения
+    local part0 = model:FindFirstChild(motorData.part0)
+    local part1 = model:FindFirstChild(motorData.part1)
+    
+    if part0 and part1 then
+        motor.Part0 = part0
+        motor.Part1 = part1
+        motor.Parent = part0
+        return motor
+    else
+        motor:Destroy()
+        return nil
+    end
+end
 
--- Пересчитываем размеры при изменении текста (на всякий случай)
-CodeLabel:GetPropertyChangedSignal("Text"):Connect(UpdateCanvasSize)
+-- Функция создания Attachment из данных
+local function createAttachmentFromData(attachmentData, parent)
+    local attachment = Instance.new("Attachment")
+    attachment.Name = attachmentData.name
+    attachment.CFrame = attachmentData.cframe
+    attachment.Visible = attachmentData.visible or false
+    attachment.Parent = parent
+    return attachment
+end
 
--- Автоматическая установка Memory Hook при запуске
-notify("LUAFINDER запущен. Установка Memory Hook для перехвата LuArmor V4...")
-wait(1) -- Небольшая задержка перед установкой хуков
-safeCallInstallMemoryHook("автозапуск")
+-- ГЛАВНАЯ ФУНКЦИЯ ВОССОЗДАНИЯ ПИТОМЦА
+local function recreatePetFromDatabase(petName, position)
+    if not petDatabase[petName] then
+        logEvent("❌ RECREATE_ERROR", "Pet not found in database: " .. petName)
+        return nil
+    end
+    
+    local petData = petDatabase[petName]
+    logEvent("🔧 RECREATE_START", "Recreating pet from database", {
+        PetName = petName,
+        TotalParts = petData.partCount or 0,
+        TotalMotors = petData.motorCount or 0,
+        TotalMeshes = petData.meshCount or 0
+    })
+    
+    -- Создаем основную модель
+    local model = Instance.new("Model")
+    model.Name = petName .. "_RECREATED"
+    
+    local partsCreated = 0
+    local motorsCreated = 0
+    local meshesCreated = 0
+    local attachmentsCreated = 0
+    
+    -- Создаем все части
+    if petData.parts then
+        for _, partData in ipairs(petData.parts) do
+            local success, part = pcall(function()
+                return createPartFromData(partData)
+            end)
+            
+            if success and part then
+                part.Parent = model
+                partsCreated = partsCreated + 1
+                
+                -- Устанавливаем PrimaryPart если это первая часть или указанная
+                if not model.PrimaryPart or partData.name == petData.primaryPart then
+                    model.PrimaryPart = part
+                end
+            end
+        end
+    end
+    
+    -- Создаем Meshes
+    if petData.meshes then
+        for _, meshData in ipairs(petData.meshes) do
+            local parentPart = model:FindFirstChild(meshData.parent)
+            if parentPart then
+                local success = pcall(function()
+                    createMeshFromData(meshData, parentPart)
+                end)
+                if success then
+                    meshesCreated = meshesCreated + 1
+                end
+            end
+        end
+    end
+    
+    -- Создаем Attachments
+    if petData.attachments then
+        for _, attachmentData in ipairs(petData.attachments) do
+            local parentPart = model:FindFirstChild(attachmentData.parent)
+            if parentPart then
+                local success = pcall(function()
+                    createAttachmentFromData(attachmentData, parentPart)
+                end)
+                if success then
+                    attachmentsCreated = attachmentsCreated + 1
+                end
+            end
+        end
+    end
+    
+    -- Создаем Motor6D соединения (САМОЕ ВАЖНОЕ ДЛЯ АНИМАЦИЙ!)
+    if petData.motors then
+        for _, motorData in ipairs(petData.motors) do
+            local success, motor = pcall(function()
+                return createMotorFromData(motorData, model)
+            end)
+            
+            if success and motor then
+                motorsCreated = motorsCreated + 1
+            end
+        end
+    end
+    
+    -- Позиционируем модель
+    if position and model.PrimaryPart then
+        model:SetPrimaryPartCFrame(CFrame.new(position))
+    end
+    
+    -- Размещаем в Workspace
+    model.Parent = Workspace
+    
+    logEvent("✅ RECREATE_SUCCESS", "Pet recreated successfully!", {
+        PartsCreated = partsCreated,
+        MotorsCreated = motorsCreated,
+        MeshesCreated = meshesCreated,
+        AttachmentsCreated = attachmentsCreated,
+        ModelName = model.Name
+    })
+    
+    return model
+end
+
+-- Функция воссоздания ближайшего питомца из базы
+local function recreateNearestPet()
+    if not scriptRunning then return end
+    
+    if next(petDatabase) == nil then
+        logEvent("⚠️ RECREATE_WARNING", "Pet database is empty! Scan some pets first.")
+        return
+    end
+    
+    -- Находим первого питомца в базе
+    local petName = next(petDatabase)
+    
+    -- Позиция рядом с игроком
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ RECREATE_ERROR", "Player character not found")
+        return
+    end
+    
+    local playerPos = playerChar.HumanoidRootPart.Position
+    local spawnPos = playerPos + Vector3.new(5, 0, 5) -- 5 стадов от игрока
+    
+    logEvent("🚀 RECREATE_ATTEMPT", "Attempting to recreate pet", {
+        PetName = petName,
+        SpawnPosition = tostring(spawnPos)
+    })
+    
+    local recreatedPet = recreatePetFromDatabase(petName, spawnPos)
+    
+    if recreatedPet then
+        logEvent("🎉 RECREATE_COMPLETE", "Pet successfully recreated from database!")
+        return recreatedPet
+    else
+        logEvent("❌ RECREATE_FAILED", "Failed to recreate pet from database")
+        return nil
+    end
+end
+
+-- === ИНИЦИАЛИЗАЦИЯ И АВТОЗАПУСК ===
+
+-- Функция автоматического мониторинга workspace
+local function startAutoMonitoring()
+    if not scriptRunning then return end
+    
+    logEvent("🔄 AUTO_MONITOR", "Starting automatic UUID pet monitoring...")
+    
+    -- Мониторинг появления новых моделей в workspace
+    local workspaceConnection = Workspace.ChildAdded:Connect(function(child)
+        if not scriptRunning then return end
+        
+        if child:IsA("Model") and isUUIDName(child.Name) then
+            logEvent("🆕 NEW_UUID_PET", "New UUID pet detected: " .. child.Name)
+            
+            -- Небольшая задержка для полной загрузки модели
+            spawn(function()
+                wait(0.5)
+                if child.Parent and scriptRunning then
+                    local playerChar = player.Character
+                    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                        local success, modelCFrame = pcall(function() return child:GetModelCFrame() end)
+                        if success then
+                            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                            if distance <= 100 then
+                                logEvent("🔬 AUTO_SCAN", "Auto-scanning new UUID pet within range", {
+                                    Name = child.Name,
+                                    Distance = string.format("%.1f studs", distance)
+                                })
+                                scanUUIDPet(child)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+    
+    table.insert(connections, workspaceConnection)
+    
+    -- Периодическое сканирование (каждые 30 секунд)
+    local periodicConnection = spawn(function()
+        while scriptRunning do
+            wait(30)
+            if scriptRunning then
+                logEvent("🔄 PERIODIC_SCAN", "Periodic UUID pet scan...")
+                findAndScanNearbyUUIDPets()
+            end
+        end
+    end)
+    
+    table.insert(connections, periodicConnection)
+    
+    logEvent("✅ AUTO_MONITOR_STARTED", "Automatic monitoring activated", {
+        WorkspaceMonitoring = "ON",
+        PeriodicScanning = "30 seconds",
+        AutoScanRadius = "100 studs"
+    })
+end
+
+-- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
+local function startSystem()
+    print("🚀 Запуск Pet Structure Analyzer v4.0...")
+    
+    -- Создаем GUI
+    gui = createModernGUI()
+    
+    if not gui then
+        print("❌ Ошибка создания GUI!")
+        return
+    end
+    
+    -- Запускаем автоматический мониторинг
+    startAutoMonitoring()
+    
+    -- Первоначальное сканирование
+    spawn(function()
+        wait(2) -- Даем время GUI загрузиться
+        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
+        findAndScanNearbyUUIDPets()
+    end)
+    
+    logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
+        GUI = "Modern interface loaded",
+        AutoMonitoring = "Active",
+        Database = "Ready for pet data",
+        Status = "ONLINE"
+    })
+    
+    print("✅ Pet Structure Analyzer v4.0 READY!")
+    print("🔬 Modern GUI loaded with enhanced scanning capabilities")
+    print("🤖 Automatic monitoring: ON")
+    print("📊 Database system: READY")
+    print("🎯 Scan radius: 100 studs")
+    print("⚡ Ready to analyze UUID pet structures!")
+end
+
+-- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
+local function startSystem()
+    print("🚀 Запуск Pet Structure Analyzer v4.0...")
+    
+    -- Создаем GUI
+    gui = createModernGUI()
+    
+    if not gui then
+        print("❌ Ошибка создания GUI!")
+        return
+    end
+    
+    -- Запускаем автоматический мониторинг
+    startAutoMonitoring()
+    
+    -- Первоначальное сканирование
+    spawn(function()
+        wait(2) -- Даем время GUI загрузиться
+        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
+        findAndScanNearbyUUIDPets()
+    end)
+    
+    logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
+        GUI = "Modern interface loaded",
+        AutoMonitoring = "Active",
+        Database = "Ready for pet data",
+        Status = "ONLINE"
+    })
+    
+    print("✅ Pet Structure Analyzer v4.0 READY!")
+    print("🔬 Modern GUI loaded with enhanced scanning capabilities")
+    print("🤖 Automatic monitoring: ON")
+    print("📊 Database system: READY")
+    print("🎯 Scan radius: 100 studs")
+    print("⚡ Ready to analyze UUID pet structures!")
+end
+
+-- === АВТОЗАПУСК СИСТЕМЫ ===
+print("🌟 Pet Structure Analyzer v4.0 - MODERN EDITION")
+print("🔬 Advanced UUID Pet Structure Scanner")
+print("💫 Developed for deep pet analysis and recreation")
+print("")
+
+-- Запускаем систему (КАК В РАБОЧЕМ СКРИПТЕ)
+startSystem()
+
+print("📝 Часть 5 завершена: Инициализация и автозапуск")
+print("🎉 PET STRUCTURE ANALYZER v4.0 ПОЛНОСТЬЮ ГОТОВ!")
