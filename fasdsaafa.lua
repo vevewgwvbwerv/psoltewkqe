@@ -1,435 +1,272 @@
--- LuaArmor Code Interceptor with GUI Console
--- Перехватывает loadstring и показывает код в GUI консоли
+-- ИСПРАВЛЕННЫЙ LuaArmor перехватчик (БЕЗ ОШИБОК)
+-- Работает только с loadstring перехватом
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- Сохраняем оригинальную функцию loadstring
 local originalLoadstring = loadstring
 
--- Переменные для GUI
+-- Переменные
 local interceptorGui = nil
-local codeDisplay = nil
 local interceptedCode = ""
-local pendingExecution = nil
+local pendingFunction = nil
 
--- Создание GUI консоли
-local function createInterceptorGUI()
-    -- Основной ScreenGui
+-- Создание GUI
+local function createGUI()
+    if interceptorGui then 
+        interceptorGui:Destroy() 
+    end
+    
     interceptorGui = Instance.new("ScreenGui")
     interceptorGui.Name = "LuaArmorInterceptor"
     interceptorGui.ResetOnSpawn = false
-    interceptorGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     interceptorGui.Parent = playerGui
 
     -- Главное окно
     local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0.8, 0, 0.8, 0)
-    mainFrame.Position = UDim2.new(0.1, 0, 0.1, 0)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    mainFrame.BorderSizePixel = 0
+    mainFrame.Size = UDim2.new(0.9, 0, 0.9, 0)
+    mainFrame.Position = UDim2.new(0.05, 0, 0.05, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    mainFrame.BorderSizePixel = 3
+    mainFrame.BorderColor3 = Color3.fromRGB(255, 0, 0)
     mainFrame.Parent = interceptorGui
 
-    -- Закругленные углы
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = mainFrame
-
     -- Заголовок
-    local titleBar = Instance.new("Frame")
-    titleBar.Name = "TitleBar"
-    titleBar.Size = UDim2.new(1, 0, 0, 50)
-    titleBar.Position = UDim2.new(0, 0, 0, 0)
-    titleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    titleBar.BorderSizePixel = 0
-    titleBar.Parent = mainFrame
-
-    local titleCorner = Instance.new("UICorner")
-    titleCorner.CornerRadius = UDim.new(0, 12)
-    titleCorner.Parent = titleBar
-
     local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, -100, 1, 0)
-    titleLabel.Position = UDim2.new(0, 10, 0, 0)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Text = "🔍 LuaArmor Code Interceptor"
+    titleLabel.Size = UDim2.new(1, 0, 0, 50)
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    titleLabel.BorderSizePixel = 0
+    titleLabel.Text = "🔍 LUARMOR КОД ПЕРЕХВАЧЕН! 🔍"
     titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleLabel.TextScaled = true
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.Parent = titleBar
+    titleLabel.TextSize = 24
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.Parent = mainFrame
 
-    -- Кнопка закрытия
-    local closeButton = Instance.new("TextButton")
-    closeButton.Name = "CloseButton"
-    closeButton.Size = UDim2.new(0, 40, 0, 40)
-    closeButton.Position = UDim2.new(1, -45, 0, 5)
-    closeButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-    closeButton.BorderSizePixel = 0
-    closeButton.Text = "✕"
-    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextScaled = true
-    closeButton.Font = Enum.Font.GothamBold
-    closeButton.Parent = titleBar
-
-    local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(0, 8)
-    closeCorner.Parent = closeButton
-
-    -- Информационная панель
-    local infoFrame = Instance.new("Frame")
-    infoFrame.Name = "InfoFrame"
-    infoFrame.Size = UDim2.new(1, -20, 0, 60)
-    infoFrame.Position = UDim2.new(0, 10, 0, 60)
-    infoFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    infoFrame.BorderSizePixel = 0
-    infoFrame.Parent = mainFrame
-
-    local infoCorner = Instance.new("UICorner")
-    infoCorner.CornerRadius = UDim.new(0, 8)
-    infoCorner.Parent = infoFrame
-
+    -- Информация
     local infoLabel = Instance.new("TextLabel")
-    infoLabel.Name = "InfoLabel"
-    infoLabel.Size = UDim2.new(1, -20, 1, 0)
-    infoLabel.Position = UDim2.new(0, 10, 0, 0)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = "⚠️ Перехвачен код LuaArmor! Проверьте содержимое перед выполнением."
+    infoLabel.Size = UDim2.new(1, -10, 0, 30)
+    infoLabel.Position = UDim2.new(0, 5, 0, 55)
+    infoLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    infoLabel.BorderSizePixel = 0
+    infoLabel.Text = "📊 Размер кода: " .. #interceptedCode .. " символов | ⚠️ ПРОВЕРЬТЕ ПЕРЕД ВЫПОЛНЕНИЕМ!"
     infoLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    infoLabel.TextScaled = true
-    infoLabel.TextWrapped = true
-    infoLabel.Font = Enum.Font.Gotham
-    infoLabel.Parent = infoFrame
+    infoLabel.TextSize = 16
+    infoLabel.Font = Enum.Font.SourceSans
+    infoLabel.Parent = mainFrame
 
-    -- Область для кода
-    local codeFrame = Instance.new("ScrollingFrame")
-    codeFrame.Name = "CodeFrame"
-    codeFrame.Size = UDim2.new(1, -20, 1, -200)
-    codeFrame.Position = UDim2.new(0, 10, 0, 130)
-    codeFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-    codeFrame.BorderSizePixel = 0
-    codeFrame.ScrollBarThickness = 8
-    codeFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-    codeFrame.Parent = mainFrame
+    -- Область прокрутки для кода
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -140)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 90)
+    scrollFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    scrollFrame.BorderSizePixel = 2
+    scrollFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+    scrollFrame.ScrollBarThickness = 15
+    scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(150, 150, 150)
+    scrollFrame.Parent = mainFrame
 
-    local codeCorner = Instance.new("UICorner")
-    codeCorner.CornerRadius = UDim.new(0, 8)
-    codeCorner.Parent = codeFrame
+    -- Текст с кодом
+    local codeLabel = Instance.new("TextLabel")
+    codeLabel.Size = UDim2.new(1, -30, 1, 0)
+    codeLabel.Position = UDim2.new(0, 15, 0, 0)
+    codeLabel.BackgroundTransparency = 1
+    codeLabel.Text = interceptedCode
+    codeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    codeLabel.TextSize = 12
+    codeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    codeLabel.TextYAlignment = Enum.TextYAlignment.Top
+    codeLabel.TextWrapped = true
+    codeLabel.Font = Enum.Font.Code
+    codeLabel.Parent = scrollFrame
 
-    -- Текстовое поле для кода
-    codeDisplay = Instance.new("TextLabel")
-    codeDisplay.Name = "CodeDisplay"
-    codeDisplay.Size = UDim2.new(1, -20, 1, 0)
-    codeDisplay.Position = UDim2.new(0, 10, 0, 0)
-    codeDisplay.BackgroundTransparency = 1
-    codeDisplay.Text = "Ожидание перехвата кода..."
-    codeDisplay.TextColor3 = Color3.fromRGB(0, 255, 100)
-    codeDisplay.TextSize = 12
-    codeDisplay.TextXAlignment = Enum.TextXAlignment.Left
-    codeDisplay.TextYAlignment = Enum.TextYAlignment.Top
-    codeDisplay.TextWrapped = true
-    codeDisplay.Font = Enum.Font.Code
-    codeDisplay.Parent = codeFrame
+    -- Вычисляем размер текста для прокрутки
+    local textService = game:GetService("TextService")
+    local textBounds = textService:GetTextSize(
+        interceptedCode,
+        12,
+        Enum.Font.Code,
+        Vector2.new(scrollFrame.AbsoluteSize.X - 30, math.huge)
+    )
+    
+    codeLabel.Size = UDim2.new(1, -30, 0, math.max(textBounds.Y + 50, scrollFrame.AbsoluteSize.Y))
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textBounds.Y + 100)
 
     -- Панель кнопок
-    local buttonFrame = Instance.new("Frame")
-    buttonFrame.Name = "ButtonFrame"
-    buttonFrame.Size = UDim2.new(1, -20, 0, 50)
-    buttonFrame.Position = UDim2.new(0, 10, 1, -60)
-    buttonFrame.BackgroundTransparency = 1
-    buttonFrame.Parent = mainFrame
+    local buttonPanel = Instance.new("Frame")
+    buttonPanel.Size = UDim2.new(1, 0, 0, 45)
+    buttonPanel.Position = UDim2.new(0, 0, 1, -45)
+    buttonPanel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    buttonPanel.BorderSizePixel = 0
+    buttonPanel.Parent = mainFrame
 
-    -- Кнопка выполнения
-    local executeButton = Instance.new("TextButton")
-    executeButton.Name = "ExecuteButton"
-    executeButton.Size = UDim2.new(0.3, -5, 1, 0)
-    executeButton.Position = UDim2.new(0, 0, 0, 0)
-    executeButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    executeButton.BorderSizePixel = 0
-    executeButton.Text = "▶️ Выполнить"
-    executeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    executeButton.TextScaled = true
-    executeButton.Font = Enum.Font.GothamBold
-    executeButton.Parent = buttonFrame
+    -- Кнопка ВЫПОЛНИТЬ
+    local executeBtn = Instance.new("TextButton")
+    executeBtn.Size = UDim2.new(0.2, -5, 0.8, 0)
+    executeBtn.Position = UDim2.new(0.05, 0, 0.1, 0)
+    executeBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    executeBtn.BorderSizePixel = 2
+    executeBtn.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    executeBtn.Text = "▶️ ВЫПОЛНИТЬ"
+    executeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    executeBtn.TextSize = 14
+    executeBtn.Font = Enum.Font.SourceSansBold
+    executeBtn.Parent = buttonPanel
 
-    local executeCorner = Instance.new("UICorner")
-    executeCorner.CornerRadius = UDim.new(0, 8)
-    executeCorner.Parent = executeButton
+    -- Кнопка ОТМЕНИТЬ
+    local cancelBtn = Instance.new("TextButton")
+    cancelBtn.Size = UDim2.new(0.2, -5, 0.8, 0)
+    cancelBtn.Position = UDim2.new(0.275, 0, 0.1, 0)
+    cancelBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    cancelBtn.BorderSizePixel = 2
+    cancelBtn.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    cancelBtn.Text = "❌ ОТМЕНИТЬ"
+    cancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    cancelBtn.TextSize = 14
+    cancelBtn.Font = Enum.Font.SourceSansBold
+    cancelBtn.Parent = buttonPanel
 
-    -- Кнопка отмены
-    local cancelButton = Instance.new("TextButton")
-    cancelButton.Name = "CancelButton"
-    cancelButton.Size = UDim2.new(0.3, -5, 1, 0)
-    cancelButton.Position = UDim2.new(0.35, 0, 0, 0)
-    cancelButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    cancelButton.BorderSizePixel = 0
-    cancelButton.Text = "❌ Отменить"
-    cancelButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    cancelButton.TextScaled = true
-    cancelButton.Font = Enum.Font.GothamBold
-    cancelButton.Parent = buttonFrame
+    -- Кнопка СОХРАНИТЬ
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(0.2, -5, 0.8, 0)
+    saveBtn.Position = UDim2.new(0.5, 0, 0.1, 0)
+    saveBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+    saveBtn.BorderSizePixel = 2
+    saveBtn.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    saveBtn.Text = "💾 СОХРАНИТЬ"
+    saveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    saveBtn.TextSize = 14
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.Parent = buttonPanel
 
-    local cancelCorner = Instance.new("UICorner")
-    cancelCorner.CornerRadius = UDim.new(0, 8)
-    cancelCorner.Parent = cancelButton
+    -- Кнопка ЗАКРЫТЬ
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0.15, -5, 0.8, 0)
+    closeBtn.Position = UDim2.new(0.8, 0, 0.1, 0)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    closeBtn.BorderSizePixel = 2
+    closeBtn.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Text = "✕ ЗАКРЫТЬ"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextSize = 14
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = buttonPanel
 
-    -- Кнопка сохранения
-    local saveButton = Instance.new("TextButton")
-    saveButton.Name = "SaveButton"
-    saveButton.Size = UDim2.new(0.3, -5, 1, 0)
-    saveButton.Position = UDim2.new(0.7, 0, 0, 0)
-    saveButton.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
-    saveButton.BorderSizePixel = 0
-    saveButton.Text = "💾 Сохранить"
-    saveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    saveButton.TextScaled = true
-    saveButton.Font = Enum.Font.GothamBold
-    saveButton.Parent = buttonFrame
-
-    local saveCorner = Instance.new("UICorner")
-    saveCorner.CornerRadius = UDim.new(0, 8)
-    saveCorner.Parent = saveButton
-
-    -- Обработчики событий
-    closeButton.MouseButton1Click:Connect(function()
+    -- События кнопок
+    executeBtn.MouseButton1Click:Connect(function()
+        if pendingFunction then
+            print("🚀 Выполняю перехваченный код...")
+            local success, result = pcall(pendingFunction)
+            if success then
+                print("✅ Код выполнен успешно!")
+            else
+                print("❌ Ошибка при выполнении:", result)
+            end
+        end
         interceptorGui:Destroy()
-        interceptorGui = nil
     end)
 
-    executeButton.MouseButton1Click:Connect(function()
-        if pendingExecution then
-            pcall(pendingExecution)
-            pendingExecution = nil
-            interceptorGui:Destroy()
-            interceptorGui = nil
-        end
-    end)
-
-    cancelButton.MouseButton1Click:Connect(function()
-        pendingExecution = nil
+    cancelBtn.MouseButton1Click:Connect(function()
+        print("❌ Выполнение LuaArmor кода отменено")
         interceptorGui:Destroy()
-        interceptorGui = nil
     end)
 
-    saveButton.MouseButton1Click:Connect(function()
-        if interceptedCode ~= "" then
-            -- Создаем файл для сохранения
-            local timestamp = os.date("%Y%m%d_%H%M%S")
-            local filename = "intercepted_code_" .. timestamp .. ".lua"
-            
-            -- Показываем уведомление
-            local notification = Instance.new("Frame")
-            notification.Size = UDim2.new(0, 300, 0, 60)
-            notification.Position = UDim2.new(0.5, -150, 0, 20)
-            notification.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-            notification.BorderSizePixel = 0
-            notification.Parent = playerGui
-            
-            local notifCorner = Instance.new("UICorner")
-            notifCorner.CornerRadius = UDim.new(0, 8)
-            notifCorner.Parent = notification
-            
-            local notifText = Instance.new("TextLabel")
-            notifText.Size = UDim2.new(1, -20, 1, 0)
-            notifText.Position = UDim2.new(0, 10, 0, 0)
-            notifText.BackgroundTransparency = 1
-            notifText.Text = "💾 Код сохранен как " .. filename
-            notifText.TextColor3 = Color3.fromRGB(255, 255, 255)
-            notifText.TextScaled = true
-            notifText.Font = Enum.Font.Gotham
-            notifText.Parent = notification
-            
-            -- Анимация исчезновения
-            wait(3)
-            local fadeOut = TweenService:Create(notification, TweenInfo.new(0.5), {BackgroundTransparency = 1})
-            local textFadeOut = TweenService:Create(notifText, TweenInfo.new(0.5), {TextTransparency = 1})
-            fadeOut:Play()
-            textFadeOut:Play()
-            fadeOut.Completed:Connect(function()
-                notification:Destroy()
-            end)
+    saveBtn.MouseButton1Click:Connect(function()
+        print("💾 Код сохранен в консоль (скопируйте из вывода)")
+        print("--- НАЧАЛО LUARMOR КОДА ---")
+        print(interceptedCode)
+        print("--- КОНЕЦ LUARMOR КОДА ---")
+        
+        -- Попытка скопировать в буфер обмена (если доступно)
+        if setclipboard then
+            setclipboard(interceptedCode)
+            print("📋 Код также скопирован в буфер обмена")
         end
     end)
 
-    -- Делаем окно перетаскиваемым
-    local dragging = false
-    local dragStart = nil
-    local startPos = nil
-
-    titleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = mainFrame.Position
-        end
+    closeBtn.MouseButton1Click:Connect(function()
+        interceptorGui:Destroy()
     end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    return interceptorGui
 end
 
--- Функция для отображения перехваченного кода
-local function displayInterceptedCode(code, url)
-    if not interceptorGui then
-        createInterceptorGUI()
+-- ГЛАВНАЯ ФУНКЦИЯ: Перехватчик loadstring
+loadstring = function(source, chunkname)
+    -- Проверяем признаки LuaArmor/обфускации
+    if type(source) == "string" then
+        local isLuaArmor = false
+        local codeSize = #source
+        
+        -- Детекция LuaArmor по различным признакам
+        if codeSize > 1500 then isLuaArmor = true end
+        if source:find("luarmor") then isLuaArmor = true end
+        if source:find("LuaArmor") then isLuaArmor = true end
+        if source:find("obfuscated") then isLuaArmor = true end
+        if source:find("protected") then isLuaArmor = true end
+        if source:find("getfenv") and source:find("setfenv") then isLuaArmor = true end
+        if source:find("string%.char") and source:find("string%.byte") then isLuaArmor = true end
+        
+        -- Если обнаружен LuaArmor код
+        if isLuaArmor then
+            print("🎯 ОБНАРУЖЕН LUARMOR КОД!")
+            print("📊 Размер:", codeSize, "символов")
+            print("📝 Chunk name:", chunkname or "неизвестно")
+            
+            -- Сохраняем код и создаем функцию
+            interceptedCode = source
+            pendingFunction = originalLoadstring(source, chunkname)
+            
+            -- Показываем GUI
+            createGUI()
+            
+            -- Возвращаем пустую функцию (код не выполнится автоматически)
+            return function() 
+                print("⚠️ LuaArmor код заблокирован. Используйте GUI для выполнения.")
+            end
+        end
     end
     
-    interceptedCode = code
-    
-    -- Обновляем информацию
-    local infoLabel = interceptorGui.MainFrame.InfoFrame.InfoLabel
-    infoLabel.Text = "🔍 Перехвачен код с URL: " .. (url or "неизвестно") .. "\n📊 Размер: " .. #code .. " символов"
-    
-    -- Отображаем код
-    codeDisplay.Text = code
-    
-    -- Обновляем размер текста для прокрутки
-    local textBounds = game:GetService("TextService"):GetTextSize(
-        code, 
-        codeDisplay.TextSize, 
-        codeDisplay.Font, 
-        Vector2.new(codeDisplay.AbsoluteSize.X, math.huge)
-    )
-    codeDisplay.Size = UDim2.new(1, -20, 0, math.max(textBounds.Y, codeDisplay.Parent.AbsoluteSize.Y))
-    
-    -- Показываем GUI
-    interceptorGui.Enabled = true
+    -- Обычный код - выполняем как обычно
+    return originalLoadstring(source, chunkname)
 end
 
--- Перехватчик loadstring
-local function interceptLoadstring(code, chunkname)
-    -- Проверяем, является ли это LuaArmor кодом
-    if type(code) == "string" and (
-        code:find("luarmor") or 
-        code:find("LuaArmor") or 
-        code:find("obfuscated") or
-        code:find("protected") or
-        #code > 1000  -- Длинный код может быть обфусцированным
-    ) then
-        -- Показываем перехваченный код
-        displayInterceptedCode(code, chunkname)
-        
-        -- Создаем функцию для отложенного выполнения
-        local compiledFunction = originalLoadstring(code, chunkname)
-        pendingExecution = compiledFunction
-        
-        -- Возвращаем пустую функцию, чтобы предотвратить немедленное выполнение
-        return function() end
-    else
-        -- Обычный код - выполняем как обычно
-        return originalLoadstring(code, chunkname)
-    end
-end
-
--- Подменяем loadstring
-loadstring = interceptLoadstring
-
--- Также перехватываем HttpGet для отслеживания загрузок
-local originalHttpGet = game.HttpGet
-game.HttpGet = function(self, url, ...)
-    local result = originalHttpGet(self, url, ...)
-    
-    -- Проверяем, является ли это LuaArmor URL
-    if url:find("luarmor.net") or url:find("api.luarmor") then
-        print("🔍 Обнаружена загрузка LuaArmor с URL:", url)
-        
-        -- Если результат будет передан в loadstring, наш перехватчик его поймает
-    end
-    
-    return result
-end
-
--- Уведомление о запуске
-print("🔍 LuaArmor Interceptor активирован!")
+-- Уведомления
+print("🔍 === LUARMOR INTERCEPTOR АКТИВИРОВАН ===")
 print("📋 Все вызовы loadstring теперь перехватываются")
-print("🎯 Обфусцированный код будет показан в GUI консоли")
+print("🎯 Обфусцированный код будет показан в GUI")
+print("⚠️ Код НЕ будет выполнен автоматически!")
+print("✅ Готов к работе!")
 
--- Создаем уведомление в игре
+-- Визуальное уведомление в игре
 spawn(function()
-    wait(1)
-    local notification = Instance.new("Frame")
-    notification.Size = UDim2.new(0, 400, 0, 80)
-    notification.Position = UDim2.new(0.5, -200, 0, 20)
-    notification.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
-    notification.BorderSizePixel = 0
-    notification.Parent = playerGui
+    wait(0.5)
     
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = notification
+    local notificationGui = Instance.new("ScreenGui")
+    notificationGui.Name = "InterceptorNotification"
+    notificationGui.Parent = playerGui
     
-    local text = Instance.new("TextLabel")
-    text.Size = UDim2.new(1, -20, 1, 0)
-    text.Position = UDim2.new(0, 10, 0, 0)
-    text.BackgroundTransparency = 1
-    text.Text = "🔍 LuaArmor Interceptor активирован!\nВсе обфусцированные скрипты будут перехвачены"
-    text.TextColor3 = Color3.fromRGB(255, 255, 255)
-    text.TextScaled = true
-    text.TextWrapped = true
-    text.Font = Enum.Font.GothamBold
-    text.Parent = notification
+    local notifFrame = Instance.new("Frame")
+    notifFrame.Size = UDim2.new(0, 500, 0, 100)
+    notifFrame.Position = UDim2.new(0.5, -250, 0, 50)
+    notifFrame.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    notifFrame.BorderSizePixel = 3
+    notifFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    notifFrame.Parent = notificationGui
     
-    -- Анимация появления
-    notification.BackgroundTransparency = 1
-    text.TextTransparency = 1
+    local notifText = Instance.new("TextLabel")
+    notifText.Size = UDim2.new(1, -20, 1, 0)
+    notifText.Position = UDim2.new(0, 10, 0, 0)
+    notifText.BackgroundTransparency = 1
+    notifText.Text = "🔍 LUARMOR INTERCEPTOR АКТИВИРОВАН!\n✅ Готов перехватывать обфусцированные скрипты"
+    notifText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    notifText.TextSize = 18
+    notifText.TextWrapped = true
+    notifText.Font = Enum.Font.SourceSansBold
+    notifText.Parent = notifFrame
     
-    local fadeIn = TweenService:Create(notification, TweenInfo.new(0.5), {BackgroundTransparency = 0})
-    local textFadeIn = TweenService:Create(text, TweenInfo.new(0.5), {TextTransparency = 0})
-    fadeIn:Play()
-    textFadeIn:Play()
-    
-    -- Исчезновение через 5 секунд
-    wait(5)
-    local fadeOut = TweenService:Create(notification, TweenInfo.new(0.5), {BackgroundTransparency = 1})
-    local textFadeOut = TweenService:Create(text, TweenInfo.new(0.5), {TextTransparency = 1})
-    fadeOut:Play()
-    textFadeOut:Play()
-    fadeOut.Completed:Connect(function()
-        notification:Destroy()
-    end)
+    -- Удаляем через 4 секунды
+    game:GetService("Debris"):AddItem(notificationGui, 4)
 end)
 
--- Тестовая функция для проверки работы
-local function testInterceptor()
-    print("🧪 Тестирование перехватчика...")
-    
-    -- Симулируем LuaArmor код
-    local testCode = [[
-        -- Это тестовый обфусцированный код LuaArmor
-        local function obfuscatedFunction()
-            print("Это был бы реальный LuaArmor код")
-            print("Но сейчас это просто тест")
-        end
-        obfuscatedFunction()
-    ]]
-    
-    -- Вызываем loadstring с тестовым кодом
-    loadstring(testCode, "test_luarmor_code")()
-end
-
--- Экспортируем функции для внешнего использования
-return {
-    testInterceptor = testInterceptor,
-    createGUI = createInterceptorGUI,
-    displayCode = displayInterceptedCode
-}
+print("🚀 Теперь запустите ваш LuaArmor скрипт!")
