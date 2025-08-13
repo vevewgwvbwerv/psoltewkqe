@@ -1,443 +1,237 @@
--- TW2LOCK Premium GUI Script for Roblox
--- Современный высококачественный интерфейс
+-- Простой LuaArmor перехватчик для Roblox
+-- Скопируйте этот код и вставьте в Roblox Studio или эксплойт
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Создаем ScreenGui
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TW2LOCK_Premium_GUI"
-screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true
-screenGui.Parent = playerGui
+-- Сохраняем оригинальные функции
+local originalLoadstring = loadstring
+local originalHttpGet = game.HttpGet
 
--- Фон с размытием
-local blurFrame = Instance.new("Frame")
-blurFrame.Size = UDim2.new(1, 0, 1, 0)
-blurFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-blurFrame.BackgroundTransparency = 0.3
-blurFrame.BorderSizePixel = 0
-blurFrame.Parent = screenGui
+-- Переменные
+local interceptorGui = nil
+local interceptedCode = ""
+local pendingFunction = nil
 
--- Основной контейнер с современным дизайном
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainContainer"
-mainFrame.Size = UDim2.new(0, 380, 0, 220)
-mainFrame.Position = UDim2.new(0.5, -190, 0.5, -110)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
--- Современные скругленные углы
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 16)
-mainCorner.Parent = mainFrame
-
--- Элегантная тень
-local shadowFrame = Instance.new("Frame")
-shadowFrame.Name = "Shadow"
-shadowFrame.Size = UDim2.new(1, 20, 1, 20)
-shadowFrame.Position = UDim2.new(0, -10, 0, 10)
-shadowFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-shadowFrame.BackgroundTransparency = 0.6
-shadowFrame.BorderSizePixel = 0
-shadowFrame.ZIndex = mainFrame.ZIndex - 1
-shadowFrame.Parent = mainFrame
-
-local shadowCorner = Instance.new("UICorner")
-shadowCorner.CornerRadius = UDim.new(0, 20)
-shadowCorner.Parent = shadowFrame
-
--- Градиентная рамка
-local borderFrame = Instance.new("Frame")
-borderFrame.Size = UDim2.new(1, 4, 1, 4)
-borderFrame.Position = UDim2.new(0, -2, 0, -2)
-borderFrame.BackgroundTransparency = 1
-borderFrame.BorderSizePixel = 0
-borderFrame.ZIndex = mainFrame.ZIndex - 1
-borderFrame.Parent = mainFrame
-
-local borderStroke = Instance.new("UIStroke")
-borderStroke.Thickness = 2
-borderStroke.Color = Color3.fromRGB(100, 200, 255)
-borderStroke.Transparency = 0.3
-borderStroke.Parent = mainFrame
-
-local borderGradient = Instance.new("UIGradient")
-borderGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 150))
-}
-borderGradient.Rotation = 45
-borderGradient.Parent = borderStroke
-
--- Заголовок с градиентом
-local headerFrame = Instance.new("Frame")
-headerFrame.Name = "Header"
-headerFrame.Size = UDim2.new(1, 0, 0, 50)
-headerFrame.Position = UDim2.new(0, 0, 0, 0)
-headerFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
-headerFrame.BorderSizePixel = 0
-headerFrame.Parent = mainFrame
-
-local headerCorner = Instance.new("UICorner")
-headerCorner.CornerRadius = UDim.new(0, 16)
-headerCorner.Parent = headerFrame
-
-local headerGradient = Instance.new("UIGradient")
-headerGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 60, 80)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 35, 50))
-}
-headerGradient.Rotation = 90
-headerGradient.Parent = headerFrame
-
--- Заголовочный текст с эффектами
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(1, -20, 1, 0)
-titleLabel.Position = UDim2.new(0, 20, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "TW2LOCK"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 24
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = headerFrame
-
--- Светящийся эффект для заголовка
-local titleGlow = titleLabel:Clone()
-titleGlow.Name = "TitleGlow"
-titleGlow.Position = UDim2.new(0, 22, 0, 2)
-titleGlow.TextColor3 = Color3.fromRGB(100, 200, 255)
-titleGlow.TextTransparency = 0.7
-titleGlow.ZIndex = titleLabel.ZIndex - 1
-titleGlow.Parent = headerFrame
-
--- Функция создания идеального премиум тумблера
-local function createPremiumToggle(name, displayText, yPosition, initialState)
-    -- Контейнер строки с современным дизайном
-    local rowFrame = Instance.new("Frame")
-    rowFrame.Name = name .. "Row"
-    rowFrame.Size = UDim2.new(1, -40, 0, 60)
-    rowFrame.Position = UDim2.new(0, 20, 0, yPosition)
-    rowFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    rowFrame.BorderSizePixel = 0
-    rowFrame.Parent = mainFrame
+-- Создание простого GUI
+local function createGUI()
+    if interceptorGui then interceptorGui:Destroy() end
     
-    -- Скругленные углы для строки
-    local rowCorner = Instance.new("UICorner")
-    rowCorner.CornerRadius = UDim.new(0, 12)
-    rowCorner.Parent = rowFrame
-    
-    -- Тонкая светящаяся рамка
-    local rowStroke = Instance.new("UIStroke")
-    rowStroke.Color = Color3.fromRGB(60, 60, 80)
-    rowStroke.Thickness = 1
-    rowStroke.Transparency = 0.5
-    rowStroke.Parent = rowFrame
-    
-    -- Градиентный фон
-    local rowGradient = Instance.new("UIGradient")
-    rowGradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 55)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 30, 45))
-    }
-    rowGradient.Rotation = 90
-    rowGradient.Parent = rowFrame
-    
-    -- Текст переключателя с современным шрифтом
-    local toggleLabel = Instance.new("TextLabel")
-    toggleLabel.Name = "Label"
-    toggleLabel.Size = UDim2.new(0, 200, 1, 0)
-    toggleLabel.Position = UDim2.new(0, 20, 0, 0)
-    toggleLabel.BackgroundTransparency = 1
-    toggleLabel.Text = displayText
-    toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleLabel.TextSize = 18
-    toggleLabel.Font = Enum.Font.Gotham
-    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    toggleLabel.TextYAlignment = Enum.TextYAlignment.Center
-    toggleLabel.Parent = rowFrame
-    
-    -- Светящийся эффект для текста
-    local labelGlow = toggleLabel:Clone()
-    labelGlow.Name = "LabelGlow"
-    labelGlow.Position = UDim2.new(0, 22, 0, 2)
-    labelGlow.TextColor3 = initialState and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(100, 100, 150)
-    labelGlow.TextTransparency = 0.8
-    labelGlow.ZIndex = toggleLabel.ZIndex - 1
-    labelGlow.Parent = rowFrame
-    
-    -- Идеальный тумблер в стиле iOS
-    local toggleTrack = Instance.new("Frame")
-    toggleTrack.Name = "ToggleTrack"
-    toggleTrack.Size = UDim2.new(0, 70, 0, 35)
-    toggleTrack.Position = UDim2.new(1, -90, 0.5, -17.5)
-    toggleTrack.BackgroundColor3 = initialState and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(80, 80, 100)
-    toggleTrack.BorderSizePixel = 0
-    toggleTrack.Parent = rowFrame
-    
-    -- Скругленные углы для трека
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(0.5, 0)
-    trackCorner.Parent = toggleTrack
-    
-    -- Внутренняя тень трека
-    local trackStroke = Instance.new("UIStroke")
-    trackStroke.Color = Color3.fromRGB(0, 0, 0)
-    trackStroke.Thickness = 2
-    trackStroke.Transparency = 0.8
-    trackStroke.Parent = toggleTrack
-    
-    -- Градиент для трека
-    local trackGradient = Instance.new("UIGradient")
-    trackGradient.Color = initialState and ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 255, 170)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 200, 130))
-    } or ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 120)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
-    }
-    trackGradient.Rotation = 90
-    trackGradient.Parent = toggleTrack
-    
-    -- Слайдер (кнопка)
-    local slider = Instance.new("Frame")
-    slider.Name = "Slider"
-    slider.Size = UDim2.new(0, 29, 0, 29)
-    slider.Position = initialState and UDim2.new(1, -32, 0.5, -14.5) or UDim2.new(0, 3, 0.5, -14.5)
-    slider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    slider.BorderSizePixel = 0
-    slider.Parent = toggleTrack
-    
-    -- Скругленный слайдер
-    local sliderCorner = Instance.new("UICorner")
-    sliderCorner.CornerRadius = UDim.new(0.5, 0)
-    sliderCorner.Parent = slider
-    
-    -- Тень слайдера
-    local sliderStroke = Instance.new("UIStroke")
-    sliderStroke.Color = Color3.fromRGB(0, 0, 0)
-    sliderStroke.Thickness = 1
-    sliderStroke.Transparency = 0.9
-    sliderStroke.Parent = slider
-    
-    -- Градиент слайдера
-    local sliderGradient = Instance.new("UIGradient")
-    sliderGradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 240, 240))
-    }
-    sliderGradient.Rotation = 90
-    sliderGradient.Parent = slider
-    
-    -- Состояние переключателя
-    local isToggled = initialState
-    
-    -- Функция переключения с потрясающими анимациями
-    local function toggle()
-        isToggled = not isToggled
-        
-        -- Анимация слайдера
-        local sliderTween = TweenService:Create(slider, 
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), 
-            {Position = isToggled and UDim2.new(1, -32, 0.5, -14.5) or UDim2.new(0, 3, 0.5, -14.5)}
-        )
-        
-        -- Анимация цвета трека
-        local trackTween = TweenService:Create(toggleTrack,
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {BackgroundColor3 = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(80, 80, 100)}
-        )
-        
-        -- Анимация градиента трека
-        local newGradient = isToggled and ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 255, 170)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 200, 130))
-        } or ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 120)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
-        }
-        
-        -- Анимация свечения текста
-        local glowTween = TweenService:Create(labelGlow,
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {TextColor3 = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(100, 100, 150)}
-        )
-        
-        -- Анимация рамки строки
-        local strokeTween = TweenService:Create(rowStroke,
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Color = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(60, 60, 80)}
-        )
-        
-        -- Эффект пульсации при переключении
-        local pulseScale = TweenService:Create(slider,
-            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 33, 0, 33)}
-        )
-        
-        local pulseBack = TweenService:Create(slider,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 29, 0, 29)}
-        )
-        
-        -- Запуск всех анимаций
-        sliderTween:Play()
-        trackTween:Play()
-        glowTween:Play()
-        strokeTween:Play()
-        pulseScale:Play()
-        
-        pulseScale.Completed:Connect(function()
-            pulseBack:Play()
-        end)
-        
-        -- Обновляем градиент
-        trackGradient.Color = newGradient
-        
-        -- Консольный вывод
-        print(displayText .. ": " .. (isToggled and "ENABLED" or "DISABLED"))
-        
-        return isToggled
-    end
-    
-    -- Обработчик клика
-    local clickDetector = Instance.new("TextButton")
-    clickDetector.Size = UDim2.new(1, 0, 1, 0)
-    clickDetector.BackgroundTransparency = 1
-    clickDetector.Text = ""
-    clickDetector.Parent = rowFrame
-    
-    clickDetector.MouseButton1Click:Connect(function()
-        toggle()
-    end)
-    
-    -- Hover эффекты
-    clickDetector.MouseEnter:Connect(function()
-        local hoverTween = TweenService:Create(rowFrame,
-            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(45, 45, 65)}
-        )
-        hoverTween:Play()
-    end)
-    
-    clickDetector.MouseLeave:Connect(function()
-        local hoverTween = TweenService:Create(rowFrame,
-            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(35, 35, 50)}
-        )
-        hoverTween:Play()
-    end)
-    
-    return {
-        frame = rowFrame,
-        toggle = toggle,
-        getState = function() return isToggled end
-    }
-end
+    interceptorGui = Instance.new("ScreenGui")
+    interceptorGui.Name = "CodeInterceptor"
+    interceptorGui.ResetOnSpawn = false
+    interceptorGui.Parent = playerGui
 
--- Создание премиум переключателей
-local freezeTradeToggle = createPremiumToggle("FreezeTrade", "FREEZE TRADE", 65, true)
-local autoAcceptToggle = createPremiumToggle("AutoAccept", "AUTO ACCEPT", 135, true)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.8, 0, 0.8, 0)
+    frame.Position = UDim2.new(0.1, 0, 0.1, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(255, 100, 100)
+    frame.Parent = interceptorGui
 
--- Сделать интерфейс перетаскиваемым с плавными эффектами
-local dragging = false
-local dragStart = nil
-local startPos = nil
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    title.BorderSizePixel = 0
+    title.Text = "🔍 ПЕРЕХВАЧЕН LUARMOR КОД"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
 
-local function updateInput(input)
-    local delta = input.Position - dragStart
-    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -100)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 45)
+    scrollFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    scrollFrame.BorderSizePixel = 1
+    scrollFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+    scrollFrame.ScrollBarThickness = 10
+    scrollFrame.Parent = frame
 
-headerFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        
-        -- Эффект нажатия
-        local pressEffect = TweenService:Create(headerFrame,
-            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}
-        )
-        pressEffect:Play()
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                -- Возврат к нормальному цвету
-                local releaseEffect = TweenService:Create(headerFrame,
-                    TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {BackgroundColor3 = Color3.fromRGB(45, 45, 60)}
-                )
-                releaseEffect:Play()
-            end
-        end)
-    end
-end)
+    local codeLabel = Instance.new("TextLabel")
+    codeLabel.Size = UDim2.new(1, -20, 1, 0)
+    codeLabel.Position = UDim2.new(0, 10, 0, 0)
+    codeLabel.BackgroundTransparency = 1
+    codeLabel.Text = interceptedCode
+    codeLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+    codeLabel.TextSize = 14
+    codeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    codeLabel.TextYAlignment = Enum.TextYAlignment.Top
+    codeLabel.TextWrapped = true
+    codeLabel.Font = Enum.Font.Code
+    codeLabel.Parent = scrollFrame
 
-headerFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        if dragging then
-            updateInput(input)
-        end
-    end
-end)
-
--- Потрясающая анимация появления GUI
-mainFrame.Size = UDim2.new(0, 0, 0, 0)
-mainFrame.BackgroundTransparency = 1
-blurFrame.BackgroundTransparency = 1
-
--- Анимация размытого фона
-local blurAppear = TweenService:Create(blurFrame,
-    TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    {BackgroundTransparency = 0.3}
-)
-
--- Анимация появления основного контейнера
-local sizeAppear = TweenService:Create(mainFrame,
-    TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-    {Size = UDim2.new(0, 380, 0, 220)}
-)
-
-local fadeAppear = TweenService:Create(mainFrame,
-    TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    {BackgroundTransparency = 0}
-)
-
--- Анимация градиентной рамки
-local borderRotation = TweenService:Create(borderGradient,
-    TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
-    {Rotation = 405}
-)
-
--- Запуск анимаций
-blurAppear:Play()
-wait(0.2)
-sizeAppear:Play()
-fadeAppear:Play()
-wait(0.5)
-borderRotation:Play()
-
--- Анимация пульсации заголовка
-local function pulseTitle()
-    local pulseTween = TweenService:Create(titleGlow,
-        TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-        {TextTransparency = 0.4}
+    -- Обновляем размер для прокрутки
+    local textService = game:GetService("TextService")
+    local textSize = textService:GetTextSize(
+        interceptedCode,
+        14,
+        Enum.Font.Code,
+        Vector2.new(scrollFrame.AbsoluteSize.X - 20, math.huge)
     )
-    pulseTween:Play()
+    codeLabel.Size = UDim2.new(1, -20, 0, math.max(textSize.Y, scrollFrame.AbsoluteSize.Y))
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textSize.Y + 20)
+
+    -- Кнопки
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Size = UDim2.new(1, 0, 0, 50)
+    buttonFrame.Position = UDim2.new(0, 0, 1, -50)
+    buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    buttonFrame.BorderSizePixel = 0
+    buttonFrame.Parent = frame
+
+    local executeBtn = Instance.new("TextButton")
+    executeBtn.Size = UDim2.new(0.25, -5, 0.8, 0)
+    executeBtn.Position = UDim2.new(0, 5, 0.1, 0)
+    executeBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    executeBtn.BorderSizePixel = 0
+    executeBtn.Text = "▶️ ВЫПОЛНИТЬ"
+    executeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    executeBtn.TextScaled = true
+    executeBtn.Font = Enum.Font.SourceSansBold
+    executeBtn.Parent = buttonFrame
+
+    local cancelBtn = Instance.new("TextButton")
+    cancelBtn.Size = UDim2.new(0.25, -5, 0.8, 0)
+    cancelBtn.Position = UDim2.new(0.25, 5, 0.1, 0)
+    cancelBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    cancelBtn.BorderSizePixel = 0
+    cancelBtn.Text = "❌ ОТМЕНИТЬ"
+    cancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    cancelBtn.TextScaled = true
+    cancelBtn.Font = Enum.Font.SourceSansBold
+    cancelBtn.Parent = buttonFrame
+
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.new(0.25, -5, 0.8, 0)
+    copyBtn.Position = UDim2.new(0.5, 5, 0.1, 0)
+    copyBtn.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+    copyBtn.BorderSizePixel = 0
+    copyBtn.Text = "📋 КОПИРОВАТЬ"
+    copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    copyBtn.TextScaled = true
+    copyBtn.Font = Enum.Font.SourceSansBold
+    copyBtn.Parent = buttonFrame
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0.25, -5, 0.8, 0)
+    closeBtn.Position = UDim2.new(0.75, 5, 0.1, 0)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "✕ ЗАКРЫТЬ"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = buttonFrame
+
+    -- События кнопок
+    executeBtn.MouseButton1Click:Connect(function()
+        if pendingFunction then
+            local success, error = pcall(pendingFunction)
+            if not success then
+                print("❌ Ошибка выполнения:", error)
+            else
+                print("✅ Код выполнен успешно")
+            end
+        end
+        interceptorGui:Destroy()
+    end)
+
+    cancelBtn.MouseButton1Click:Connect(function()
+        print("❌ Выполнение отменено")
+        interceptorGui:Destroy()
+    end)
+
+    copyBtn.MouseButton1Click:Connect(function()
+        if setclipboard then
+            setclipboard(interceptedCode)
+            print("📋 Код скопирован в буфер обмена")
+        else
+            print("📋 Функция копирования недоступна")
+        end
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        interceptorGui:Destroy()
+    end)
 end
 
-pulseTitle()
+-- Перехватчик loadstring
+loadstring = function(code, chunkname)
+    if type(code) == "string" and (
+        code:find("luarmor") or 
+        code:find("LuaArmor") or
+        #code > 2000 or
+        code:find("getfenv") or
+        code:find("setfenv")
+    ) then
+        print("🔍 ПЕРЕХВАЧЕН LUARMOR КОД!")
+        print("📊 Размер:", #code, "символов")
+        
+        interceptedCode = code
+        pendingFunction = originalLoadstring(code, chunkname)
+        
+        createGUI()
+        
+        -- Возвращаем пустую функцию
+        return function() end
+    else
+        return originalLoadstring(code, chunkname)
+    end
+end
 
-print("🚀 TW2LOCK Premium GUI успешно загружен! 🚀")
+-- Перехватчик HttpGet
+game.HttpGet = function(self, url, ...)
+    local result = originalHttpGet(self, url, ...)
+    
+    if url:find("luarmor") then
+        print("🌐 Загрузка с LuaArmor:", url)
+        print("📊 Размер ответа:", #result, "символов")
+        
+        -- Сразу показываем код
+        interceptedCode = result
+        pendingFunction = originalLoadstring(result, url)
+        createGUI()
+    end
+    
+    return result
+end
+
+-- Уведомление о запуске
+print("🔍 LuaArmor Interceptor активирован!")
+print("📋 Теперь все LuaArmor скрипты будут перехвачены")
+
+-- Создаем визуальное уведомление
+local notif = Instance.new("ScreenGui")
+notif.Name = "InterceptorNotification"
+notif.Parent = playerGui
+
+local notifFrame = Instance.new("Frame")
+notifFrame.Size = UDim2.new(0, 400, 0, 80)
+notifFrame.Position = UDim2.new(0.5, -200, 0, 50)
+notifFrame.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
+notifFrame.BorderSizePixel = 2
+notifFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+notifFrame.Parent = notif
+
+local notifText = Instance.new("TextLabel")
+notifText.Size = UDim2.new(1, -20, 1, 0)
+notifText.Position = UDim2.new(0, 10, 0, 0)
+notifText.BackgroundTransparency = 1
+notifText.Text = "🔍 LuaArmor Interceptor АКТИВИРОВАН!\nВсе обфусцированные скрипты будут перехвачены"
+notifText.TextColor3 = Color3.fromRGB(255, 255, 255)
+notifText.TextScaled = true
+notifText.TextWrapped = true
+notifText.Font = Enum.Font.SourceSansBold
+notifText.Parent = notifFrame
+
+-- Удаляем уведомление через 5 секунд
+game:GetService("Debris"):AddItem(notif, 5)
+
+print("✅ Готов к перехвату! Запустите ваш LuaArmor скрипт.")
