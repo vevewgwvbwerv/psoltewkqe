@@ -1,673 +1,435 @@
--- CORRECTED EGG CLONE DIAGNOSTIC SCRIPT
--- Правильный анализ яйца с мониторингом Workspace.Visuals
+-- Interactive LuaArmor Interceptor
+-- Self-contained script with GUI for manual input and code interception
 
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-
-local player = Players.LocalPlayer
-
-print("🥚 === CORRECTED EGG DIAGNOSTIC STARTED ===")
-print("🎯 Цель: Правильный анализ яйца с мониторингом Workspace.Visuals")
-
--- Конфигурация
-local CONFIG = {
-    SEARCH_RADIUS = 50,
-    ANALYSIS_TIME = 60, -- 60 секунд анализа
-    EGG_NAMES = {
-        "Common Egg", "Rare Egg", "Legendary Egg", "Mythical Egg",
-        "Bug Egg", "Bee Egg", "Anti Bee Egg", "Night Egg",
-        "Oasis Egg", "Paradise Egg", "Dinosaur Egg", "Primal Egg",
-        "Common Summer Egg", "Rare Summer Egg", "Zen Egg"
-    }
-}
-
--- Полный список питомцев из яиц (ОБНОВЛЕННЫЙ из PetScaler_v222222234.lua)
-local eggPets = {
-    -- Anti Bee Egg
-    "wasp", "tarantula hawk", "moth", "butterfly", "disco bee (divine)",
-    -- Bee Egg  
-    "bee", "honey bee", "bear bee", "petal bee", "queen bee",
-    -- Bug Egg
-    "snail", "giant ant", "caterpillar", "praying mantis", "dragonfly (divine)",
-    -- Common Egg
-    "dog", "bunny", "golden lab",
-    -- Common Summer Egg
-    "starfish", "seagull", "crab",
-    -- Dinosaur Egg
-    "raptor", "triceratops", "stegosaurus", "pterodactyl", "brontosaurus", "t-rex (divine)",
-    -- Legendary Egg
-    "cow", "silver monkey", "sea otter", "turtle", "polar bear",
-    -- Mythical Egg
-    "grey mouse", "brown mouse", "squirrel", "red giant ant", "red fox",
-    -- Night Egg
-    "hedgehog", "mole", "frog", "echo frog", "night owl", "raccoon",
-    -- Oasis Egg
-    "meerkat", "sand snake", "axolotl", "hyacinth macaw", "fennec fox",
-    -- Paradise Egg
-    "ostrich", "peacock", "capybara", "scarlet macaw", "mimic octopus",
-    -- Primal Egg
-    "parasaurolophus", "iguanodon", "pachycephalosaurus", "dilophosaurus", "ankylosaurus", "spinosaurus (divine)",
-    -- Rare Egg
-    "orange tabby", "spotted deer", "pig", "rooster", "monkey",
-    -- Rare Summer Egg
-    "flamingo", "toucan", "sea turtle", "orangutan", "seal",
-    -- Uncommon Egg
-    "black bunny", "chicken", "cat", "deer",
-    -- Zen Egg
-    "shiba inu", "nihonzaru", "tanuki", "tanchozuru", "kappa", "kitsune"
-}
-
--- Структура для хранения данных яйца
-local EggData = {
-    model = nil,
-    position = nil,
-    structure = {},
-    animations = {},
-    effects = {},
-    scripts = {},
-    sounds = {},
-    clickDetector = nil,
-    timer = nil,
-    petChances = {},
-    materials = {},
-    textures = {},
-    petLifecycle = {} -- НОВОЕ: данные о жизненном цикле питомца
-}
-
--- Функция проверки является ли модель питомцем из яйца (ТОЧНОЕ СООТВЕТСТВИЕ как в PetScaler_v222222234.lua)
-local function isPetFromEgg(model)
-    if not model:IsA("Model") then return false end
-    local modelName = model.Name:lower()
-    
-    for _, petName in pairs(eggPets) do
-        if modelName == petName then
-            return true
-        end
-    end
-    return false
+-- Check if we're in a Roblox environment
+if not game then
+    print("[ERROR] This script must be run in a Roblox environment")
+    return
 end
 
--- Функция поиска яйца рядом с игроком
-local function findNearbyEgg()
-    local playerChar = player.Character
-    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
-        return nil
-    end
+-- Store original functions
+local original_loadstring = loadstring
+local original_pcall = pcall
+local original_xpcall = xpcall
+local original_HttpGet = game.HttpGet
+
+-- Table to store intercepted code
+local interceptedCode = {}
+local executionHistory = {}
+
+-- Function to safely add intercepted code
+local function addInterceptedCode(source, chunkname, method)
+    table.insert(interceptedCode, {
+        source = source,
+        chunkname = chunkname,
+        method = method or "unknown",
+        timestamp = tick()
+    })
     
-    local playerPos = playerChar.HumanoidRootPart.Position
-    
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local objName = obj.Name
-            
-            -- Проверяем является ли это яйцом
-            for _, eggName in pairs(CONFIG.EGG_NAMES) do
-                if objName:find(eggName) or objName:lower():find("egg") then
-                    local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-                    if success then
-                        local distance = (modelCFrame.Position - playerPos).Magnitude
-                        if distance <= CONFIG.SEARCH_RADIUS then
-                            print("🥚 НАЙДЕНО ЯЙЦО:", objName, "на расстоянии", math.floor(distance))
-                            return obj
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return nil
+    -- Print to console for immediate viewing
+    print("[INTERCEPTED] Code intercepted via " .. method .. ":")
+    print(source)
+    print("----------------------------------------")
 end
 
--- Функция анализа структуры модели
-local function analyzeModelStructure(model)
-    print("\n📐 === АНАЛИЗ СТРУКТУРЫ МОДЕЛИ ===")
-    print("📛 Имя модели:", model.Name)
-    print("📍 Позиция:", model:GetModelCFrame().Position)
-    print("📏 Размер:", model:GetModelSize())
-    
-    local structure = {
-        name = model.Name,
-        className = model.ClassName,
-        position = model:GetModelCFrame().Position,
-        size = model:GetModelSize(),
-        children = {}
-    }
-    
-    -- Анализируем всех детей
-    for _, child in pairs(model:GetChildren()) do
-        local childData = {
-            name = child.Name,
-            className = child.ClassName,
-            properties = {}
-        }
+-- Enhanced loadstring hook
+loadstring = function(source, chunkname)
+    addInterceptedCode(source, chunkname, "loadstring")
+    -- Return a dummy function instead of the actual loaded function
+    return function() 
+        print("[EXECUTION] Dummy function executed (code was intercepted)")
+    end
+end
+
+-- Enhanced HttpGet hook
+if game.HttpGet then
+    game.HttpGet = function(self, url, nocache)
+        local result = original_HttpGet(self, url, nocache)
+        print("[INTERCEPTED] HttpGet request to: " .. tostring(url))
+        addInterceptedCode(result, url, "HttpGet")
+        return result
+    end
+end
+
+-- Enhanced pcall and xpcall hooks
+pcall = function(func, ...)
+    if type(func) == "function" then
+        table.insert(executionHistory, {
+            func = func,
+            args = {...},
+            timestamp = tick(),
+            method = "pcall"
+        })
+    end
+    return original_pcall(func, ...)
+end
+
+xpcall = function(func, errHandler, ...)
+    if type(func) == "function" then
+        table.insert(executionHistory, {
+            func = func,
+            args = {...},
+            timestamp = tick(),
+            method = "xpcall"
+        })
+    end
+    return original_xpcall(func, errHandler, ...)
+end
+
+-- Function to safely execute user input
+local function safeExecute(input)
+    local success, result = pcall(function()
+        -- Add to execution history
+        table.insert(executionHistory, {
+            input = input,
+            timestamp = tick(),
+            method = "user_input"
+        })
         
-        -- Анализируем свойства BasePart
-        if child:IsA("BasePart") then
-            childData.properties = {
-                size = child.Size,
-                material = child.Material.Name,
-                color = child.Color,
-                transparency = child.Transparency,
-                canCollide = child.CanCollide,
-                anchored = child.Anchored,
-                cframe = child.CFrame
-            }
-            
-            -- Проверяем текстуры
-            for _, desc in pairs(child:GetChildren()) do
-                if desc:IsA("Decal") or desc:IsA("Texture") then
-                    childData.properties.texture = desc.Texture
-                    print("🎨 Найдена текстура:", desc.Texture)
-                end
-            end
-        end
-        
-        table.insert(structure.children, childData)
-        print("  📦 Ребенок:", child.Name, "(" .. child.ClassName .. ")")
-    end
-    
-    return structure
-end
-
--- Функция анализа скриптов
-local function analyzeScripts(model)
-    print("\n📜 === АНАЛИЗ СКРИПТОВ ===")
-    local scripts = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("LocalScript") or obj:IsA("Script") then
-            local scriptData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                source = "Недоступен",
-                parent = obj.Parent.Name
-            }
-            
-            table.insert(scripts, scriptData)
-            print("📜 СКРИПТ:", obj.Name, "(" .. obj.ClassName .. ") в", obj.Parent.Name)
-            
-            -- Пытаемся получить исходный код
-            local success, source = pcall(function() return obj.Source end)
-            if success and source and #source > 0 then
-                scriptData.source = source
-                print("  💻 Код доступен:", #source, "символов")
-                -- Ищем ключевые слова
-                if source:find("timer") or source:find("Timer") then
-                    print("  ⏰ НАЙДЕН ТАЙМЕР в скрипте!")
-                end
-                if source:find("random") or source:find("Random") then
-                    print("  🎲 НАЙДЕН РАНДОМ в скрипте!")
-                end
-                if source:find("pet") or source:find("Pet") then
-                    print("  🐾 НАЙДЕНЫ ПИТОМЦЫ в скрипте!")
-                end
-            else
-                print("  ❌ Код недоступен (защищен)")
-            end
-        end
-    end
-    
-    return scripts
-end
-
--- Функция мониторинга Workspace.Visuals (УЛУЧШЕННАЯ ЛОГИКА как в PetScaler_v222222234.lua)
-local function monitorWorkspaceVisuals()
-    print("\n👁️ === МОНИТОРИНГ WORKSPACE.VISUALS ===")
-    print("🎯 Отслеживаем появление питомцев в Workspace.Visuals!")
-    print("⚡ Используем ChildAdded события вместо постоянного мониторинга!")
-    
-    local visualsFolder = Workspace:FindFirstChild("Visuals")
-    if not visualsFolder then
-        print("❌ Workspace.Visuals не найден!")
-        return nil, nil
-    end
-    
-    print("✅ Найден Workspace.Visuals, настраиваю мониторинг...")
-    
-    local petLifecycleData = {
-        pets = {},
-        timeline = {},
-        totalPets = 0
-    }
-    
-    local processedModels = {}
-    
-    -- Мониторинг появления новых питомцев (ChildAdded) - КАК В РАБОЧЕМ СКРИПТЕ
-    local childAddedConnection = visualsFolder.ChildAdded:Connect(function(child)
-        if child:IsA("Model") and isPetFromEgg(child) then
-            local spawnTime = tick()
-            local petId = tostring(child)
-            
-            print("⚡ СОБЫТИЕ: Новый питомец появился в Visuals:", child.Name, "время:", os.date("%H:%M:%S"))
-            
-            -- Записываем данные о питомце
-            petLifecycleData.pets[petId] = {
-                name = child.Name,
-                spawnTime = spawnTime,
-                despawnTime = nil,
-                lifetime = nil,
-                model = child,
-                structure = {},
-                effects = {},
-                animations = {}
-            }
-            
-            petLifecycleData.totalPets = petLifecycleData.totalPets + 1
-            processedModels[petId] = true
-            
-            table.insert(petLifecycleData.timeline, {
-                time = spawnTime,
-                event = "pet_spawned",
-                petName = child.Name,
-                petId = petId
-            })
-            
-            -- ДИАГНОСТИЧЕСКИЙ АНАЛИЗ ПИТОМЦА (не скрываем, только анализируем)
-            spawn(function()
-                wait(0.05) -- Минимальная задержка для загрузки модели
-                
-                -- Анализируем структуру питомца
-                print("🔍 АНАЛИЗ СТРУКТУРЫ ПИТОМЦА:", child.Name)
-                local structure = analyzeModelStructure(child)
-                petLifecycleData.pets[petId].structure = structure
-                
-                -- Анализируем эффекты
-                for _, descendant in pairs(child:GetDescendants()) do
-                    if descendant:IsA("ParticleEmitter") or descendant:IsA("Fire") or descendant:IsA("Smoke") then
-                        table.insert(petLifecycleData.pets[petId].effects, {
-                            name = descendant.Name,
-                            className = descendant.ClassName,
-                            parent = descendant.Parent.Name
-                        })
-                        print("✨ НАЙДЕН ЭФФЕКТ:", descendant.Name, "(", descendant.ClassName, ")")
-                    end
-                end
-            end)
-            
-            -- Мониторим исчезновение этого конкретного питомца
-            spawn(function()
-                while child and child.Parent do
-                    wait(0.1) -- Проверяем каждые 0.1 секунды
-                end
-                
-                -- Питомец исчез
-                local despawnTime = tick()
-                local lifetime = despawnTime - spawnTime
-                
-                print("💀 ПИТОМЕЦ ИСЧЕЗ:", petLifecycleData.pets[petId].name, 
-                      "время жизни:", string.format("%.2f секунд", lifetime))
-                
-                -- Обновляем данные
-                petLifecycleData.pets[petId].despawnTime = despawnTime
-                petLifecycleData.pets[petId].lifetime = lifetime
-                
-                table.insert(petLifecycleData.timeline, {
-                    time = despawnTime,
-                    event = "pet_despawned",
-                    petName = petLifecycleData.pets[petId].name,
-                    petId = petId,
-                    lifetime = lifetime
-                })
-            end)
-        end
+        -- Execute the input
+        return loadstring(input)()
     end)
     
-    -- НАЧАЛЬНАЯ ПРОВЕРКА уже существующих питомцев в Visuals (КАК В РАБОЧЕМ СКРИПТЕ)
-    print("🔍 НАЧАЛЬНАЯ ПРОВЕРКА: Ищем уже существующих питомцев в Visuals...")
-    for _, child in pairs(visualsFolder:GetChildren()) do
-        if child:IsA("Model") and isPetFromEgg(child) then
-            local petId = tostring(child)
-            if not processedModels[petId] then
-                print("🔍 НАЧАЛЬНАЯ ПРОВЕРКА: Найден питомец в Visuals:", child.Name)
-                
-                local spawnTime = tick()
-                petLifecycleData.pets[petId] = {
-                    name = child.Name,
-                    spawnTime = spawnTime,
-                    despawnTime = nil,
-                    lifetime = nil,
-                    model = child,
-                    structure = {},
-                    effects = {},
-                    animations = {},
-                    foundOnStartup = true
-                }
-                
-                petLifecycleData.totalPets = petLifecycleData.totalPets + 1
-                processedModels[petId] = true
-                
-                table.insert(petLifecycleData.timeline, {
-                    time = spawnTime,
-                    event = "pet_found_on_startup",
-                    petName = child.Name,
-                    petId = petId
-                })
-            end
-        end
+    if not success then
+        warn("[ERROR] Failed to execute input: " .. tostring(result))
+        return false, result
     end
     
-    -- Мониторинг нажатия E для открытия яйца
-    local keyConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
+    return true, result
+end
+
+-- Function to execute LuaArmor script
+local function executeLuaArmorScript(url)
+    local success, result = pcall(function()
+        -- Add to execution history
+        table.insert(executionHistory, {
+            url = url,
+            timestamp = tick(),
+            method = "luarmor_script"
+        })
         
-        if input.KeyCode == Enum.KeyCode.E then
-            print("🔑 НАЖАТА КЛАВИША E - ВОЗМОЖНОЕ ОТКРЫТИЕ ЯЙЦА!")
-            table.insert(petLifecycleData.timeline, {
-                time = tick(),
-                event = "e_key_pressed",
-                petName = "N/A",
-                petId = "player_input"
-            })
-        end
+        -- Execute the LuaArmor script
+        return loadstring(game:HttpGet(url))()
     end)
     
-    print("🔄 Событийная система активна!")
-    print("💡 Все новые питомцы в Visuals будут автоматически отслежены")
-    print("🎯 Откройте яйцо для полного анализа!")
+    if not success then
+        warn("[ERROR] Failed to execute LuaArmor script: " .. tostring(result))
+        return false, result
+    end
     
-    return petLifecycleData, childAddedConnection, keyConnection
+    return true, result
 end
 
--- Функция анализа эффектов взрыва
-local function monitorExplosionEffects()
-    print("\n💥 === МОНИТОРИНГ ЭФФЕКТОВ ВЗРЫВА ===")
-    
-    local explosionData = {
-        effects = {},
-        timeline = {}
-    }
-    
-    -- Мониторим появление EggExplode эффектов
-    local effectConnection = Workspace.DescendantAdded:Connect(function(obj)
-        if obj.Name:find("EggExplode") or obj.Name:find("Explosion") then
-            local effectTime = tick()
-            print("💥 ЭФФЕКТ ВЗРЫВА:", obj.Name, "время:", os.date("%H:%M:%S"))
-            
-            table.insert(explosionData.effects, {
-                name = obj.Name,
-                className = obj.ClassName,
-                spawnTime = effectTime,
-                parent = obj.Parent and obj.Parent.Name or "nil"
-            })
-            
-            table.insert(explosionData.timeline, {
-                time = effectTime,
-                event = "explosion_effect",
-                effectName = obj.Name
-            })
-        end
-    end)
-    
-    return explosionData, effectConnection
-end
-
--- Основная функция диагностики (УЛУЧШЕННАЯ)
-local function runCorrectedDiagnostic(eggModel, statusLabel)
-    print("\n🥚 === ЗАПУСК УЛУЧШЕННОЙ ДИАГНОСТИКИ ===")
-    print("🎯 Яйцо найдено:", eggModel.Name)
-    print("📍 Позиция:", eggModel:GetModelCFrame().Position)
-    print("⚡ Используем логику из PetScaler_v222222234.lua для точного отслеживания!")
-    
-    -- Обновляем статус
-    statusLabel.Text = "🔍 Анализирую яйцо: " .. eggModel.Name
-    statusLabel.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-    
-    -- Сохраняем данные о яйце
-    EggData.model = eggModel
-    EggData.position = eggModel:GetModelCFrame().Position
-    
-    -- Анализируем структуру яйца
-    print("\n📐 Анализирую структуру яйца...")
-    EggData.structure = analyzeModelStructure(eggModel)
-    
-    -- Анализируем скрипты яйца
-    print("\n📜 Анализирую скрипты яйца...")
-    EggData.scripts = analyzeScripts(eggModel)
-    
-    -- Анализируем звуки яйца
-    print("\n🔊 Анализирую звуки яйца...")
-    local sounds = {}
-    for _, obj in pairs(eggModel:GetDescendants()) do
-        if obj:IsA("Sound") then
-            table.insert(sounds, {
-                name = obj.Name,
-                soundId = obj.SoundId,
-                volume = obj.Volume,
-                pitch = obj.Pitch,
-                parent = obj.Parent.Name
-            })
-            print("🔊 НАЙДЕН ЗВУК:", obj.Name, "ID:", obj.SoundId)
-        end
-    end
-    EggData.sounds = sounds
-    
-    -- Анализируем материалы и текстуры яйца
-    print("\n🎨 Анализирую материалы и текстуры...")
-    local materials = {}
-    local textures = {}
-    for _, obj in pairs(eggModel:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(materials, {
-                name = obj.Name,
-                material = obj.Material.Name,
-                color = obj.Color,
-                transparency = obj.Transparency,
-                reflectance = obj.Reflectance
-            })
-        elseif obj:IsA("Decal") or obj:IsA("Texture") then
-            table.insert(textures, {
-                name = obj.Name,
-                className = obj.ClassName,
-                texture = obj.Texture,
-                transparency = obj.Transparency,
-                parent = obj.Parent.Name
-            })
-            print("🎨 НАЙДЕНА ТЕКСТУРА:", obj.Name, "ID:", obj.Texture)
-        end
-    end
-    EggData.materials = materials
-    EggData.textures = textures
-    
-    -- Запускаем мониторинг Workspace.Visuals (ГЛАВНОЕ УЛУЧШЕНИЕ!)
-    print("\n👁️ Запускаю улучшенный мониторинг Workspace.Visuals...")
-    local petLifecycleData, childConnection, keyConnection = monitorWorkspaceVisuals()
-    
-    if petLifecycleData then
-        EggData.petLifecycle = petLifecycleData
-        statusLabel.Text = "✅ Мониторинг активен! Откройте яйцо (E)"
-        statusLabel.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    else
-        statusLabel.Text = "❌ Ошибка мониторинга Visuals"
-        statusLabel.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+-- Interactive GUI Console
+local function createInteractiveGUI()
+    -- Prevent multiple GUI instances
+    if game.Players.LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("LuaArmorInterceptor") then
         return
     end
     
-    -- Запускаем мониторинг эффектов взрыва
-    print("\n💥 Запускаю мониторинг эффектов взрыва...")
-    local explosionData, explosionConnection = monitorExplosionEffects()
-    EggData.explosionEffects = explosionData
-    
-    -- Ждем анализа
-    print("\n⏰ Анализ активен на", CONFIG.ANALYSIS_TIME, "секунд")
-    print("🔑 Нажмите E рядом с яйцом для открытия!")
-    print("🎯 Все питомцы в Workspace.Visuals будут отслежены автоматически!")
-    
-    spawn(function()
-        wait(CONFIG.ANALYSIS_TIME)
-        
-        -- Отключаем соединения безопасно
-        if childConnection then
-            pcall(function() childConnection:Disconnect() end)
-        end
-        if keyConnection then
-            pcall(function() keyConnection:Disconnect() end)
-        end
-        if explosionConnection then
-            pcall(function() explosionConnection:Disconnect() end)
-        end
-        
-        -- Выводим финальный отчет
-        print("\n📊 === ФИНАЛЬНЫЙ ОТЧЕТ УЛУЧШЕННОЙ ДИАГНОСТИКИ ===")
-        print("🥚 Яйцо:", EggData.model.Name)
-        print("📐 Структура: проанализирована (", #EggData.structure.children, "элементов)")
-        print("📜 Скрипты:", #EggData.scripts, "найдено")
-        print("🔊 Звуки:", #EggData.sounds, "найдено")
-        print("🎨 Материалы:", #EggData.materials, "найдено")
-        print("🎨 Текстуры:", #EggData.textures, "найдено")
-        print("🐾 Питомцы отслежено:", EggData.petLifecycle.totalPets)
-        print("💥 Эффекты взрыва:", #EggData.explosionEffects.effects)
-        print("📈 События в timeline:", #EggData.petLifecycle.timeline)
-        
-        -- Детальная информация о питомцах
-        if EggData.petLifecycle.totalPets > 0 then
-            print("\n🐾 === ДЕТАЛИ ПИТОМЦЕВ (ИЗ WORKSPACE.VISUALS) ===")
-            for petId, petData in pairs(EggData.petLifecycle.pets) do
-                print("🐾 Питомец:", petData.name)
-                if petData.foundOnStartup then
-                    print("  🔍 Найден при запуске (уже был в Visuals)")
-                else
-                    print("  ⚡ Появился во время мониторинга")
-                end
-                if petData.lifetime then
-                    print("  ⏱️ Время жизни:", string.format("%.2f секунд", petData.lifetime))
-                else
-                    print("  ⏱️ Время жизни: еще активен")
-                end
-                print("  📦 Структура: проанализирована")
-                print("  ✨ Эффекты:", #petData.effects)
-                if #petData.effects > 0 then
-                    for _, effect in pairs(petData.effects) do
-                        print("    ✨", effect.name, "(", effect.className, ") на", effect.parent)
-                    end
-                end
-            end
-        end
-        
-        -- Информация о timeline событий
-        if #EggData.petLifecycle.timeline > 0 then
-            print("\n📈 === TIMELINE СОБЫТИЙ ===")
-            for _, event in pairs(EggData.petLifecycle.timeline) do
-                local timeStr = os.date("%H:%M:%S", event.time)
-                print("📅", timeStr, "-", event.event, ":", event.petName)
-            end
-        end
-        
-        statusLabel.Text = "✅ УЛУЧШЕННАЯ диагностика завершена! Проверьте консоль"
-        statusLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-        
-        print("\n🎯 === УЛУЧШЕННАЯ ДИАГНОСТИКА ЗАВЕРШЕНА ===")
-        print("💡 Все данные собраны для создания 1:1 визуального симулятора яйца!")
-        print("⚡ Использована точная логика отслеживания из PetScaler_v222222234.lua!")
-        print("🔍 Данные включают: структуру яйца, скрипты, звуки, текстуры, эффекты")
-        print("🐾 И ТОЧНОЕ отслеживание жизненного цикла питомцев в Workspace.Visuals!")
-    end)
-end    
-    return EggData
-end
-
--- Создание GUI
-local function createCorrectedGUI()
+    -- Create ScreenGui
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "CorrectedEggDiagnosticGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+    screenGui.Name = "LuaArmorInterceptor"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
     
+    -- Create Main Frame
     local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 350, 0, 250)
-    mainFrame.Position = UDim2.new(0, 10, 0, 10)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    mainFrame.Size = UDim2.new(0.9, 0, 0.9, 0)
+    mainFrame.Position = UDim2.new(0.05, 0, 0.05, 0)
+    mainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
     mainFrame.BorderSizePixel = 2
-    mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 0)
+    mainFrame.BorderColor3 = Color3.new(0, 0.5, 1)
     mainFrame.Parent = screenGui
     
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "Title"
-    titleLabel.Size = UDim2.new(1, 0, 0, 30)
-    titleLabel.Position = UDim2.new(0, 0, 0, 0)
-    titleLabel.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-    titleLabel.Text = "🥚 CORRECTED EGG DIAGNOSTIC"
-    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleLabel.TextScaled = true
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.Parent = mainFrame
+    -- Create Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0.05, 0)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Interactive LuaArmor Interceptor"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = mainFrame
     
-    local startButton = Instance.new("TextButton")
-    startButton.Name = "StartButton"
-    startButton.Size = UDim2.new(0.9, 0, 0, 40)
-    startButton.Position = UDim2.new(0.05, 0, 0, 40)
-    startButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    startButton.Text = "🔍 ЗАПУСТИТЬ ПРАВИЛЬНУЮ ДИАГНОСТИКУ"
-    startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    startButton.TextScaled = true
-    startButton.Font = Enum.Font.SourceSansBold
-    startButton.Parent = mainFrame
+    -- Create Input Section
+    local inputFrame = Instance.new("Frame")
+    inputFrame.Size = UDim2.new(1, -20, 0.2, 0)
+    inputFrame.Position = UDim2.new(0, 10, 0.05, 10)
+    inputFrame.BackgroundTransparency = 0.8
+    inputFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    inputFrame.Parent = mainFrame
     
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Name = "Status"
-    statusLabel.Size = UDim2.new(0.9, 0, 0, 80)
-    statusLabel.Position = UDim2.new(0.05, 0, 0, 90)
-    statusLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    statusLabel.Text = "📍 Подойдите к яйцу и нажмите кнопку\n🎯 Будет мониториться Workspace.Visuals!"
-    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    statusLabel.TextScaled = true
-    statusLabel.Font = Enum.Font.SourceSans
-    statusLabel.TextWrapped = true
-    statusLabel.Parent = mainFrame
+    local inputLabel = Instance.new("TextLabel")
+    inputLabel.Size = UDim2.new(1, 0, 0.2, 0)
+    inputLabel.Position = UDim2.new(0, 0, 0, 0)
+    inputLabel.BackgroundTransparency = 1
+    inputLabel.Text = "Enter Lua code or LuaArmor URL:"
+    inputLabel.TextColor3 = Color3.new(1, 1, 1)
+    inputLabel.TextScaled = true
+    inputLabel.Font = Enum.Font.SourceSans
+    inputLabel.Parent = inputFrame
     
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Name = "Info"
-    infoLabel.Size = UDim2.new(0.9, 0, 0, 50)
-    infoLabel.Position = UDim2.new(0.05, 0, 0, 180)
-    infoLabel.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-    infoLabel.Text = "⚡ ИСПРАВЛЕНО: Теперь отслеживается\nWorkspace.Visuals и реальное время жизни питомцев!"
-    infoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    infoLabel.TextScaled = true
-    infoLabel.Font = Enum.Font.SourceSans
-    infoLabel.TextWrapped = true
-    infoLabel.Parent = mainFrame
+    local inputBox = Instance.new("TextBox")
+    inputBox.Size = UDim2.new(1, 0, 0.6, 0)
+    inputBox.Position = UDim2.new(0, 0, 0.2, 0)
+    inputBox.BackgroundTransparency = 0.7
+    inputBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    inputBox.TextColor3 = Color3.new(1, 1, 1)
+    inputBox.Text = "loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua\"))()"
+    inputBox.TextXAlignment = Enum.TextXAlignment.Left
+    inputBox.TextYAlignment = Enum.TextYAlignment.Top
+    inputBox.Font = Enum.Font.Monospace
+    inputBox.TextSize = 14
+    inputBox.ClearTextOnFocus = false
+    inputBox.Parent = inputFrame
     
-    local closeButton = Instance.new("TextButton")
-    closeButton.Name = "CloseButton"
-    closeButton.Size = UDim2.new(0.9, 0, 0, 30)
-    closeButton.Position = UDim2.new(0.05, 0, 0, 240)
-    closeButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-    closeButton.Text = "❌ ЗАКРЫТЬ"
-    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextScaled = true
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.Parent = mainFrame
+    -- Create Buttons
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Size = UDim2.new(1, 0, 0.2, 0)
+    buttonFrame.Position = UDim2.new(0, 0, 0.8, 0)
+    buttonFrame.BackgroundTransparency = 1
+    buttonFrame.Parent = inputFrame
     
-    -- Обработчики событий
-    startButton.MouseButton1Click:Connect(function()
-        statusLabel.Text = "🔍 Ищу яйцо рядом с игроком..."
-        statusLabel.BackgroundColor3 = Color3.fromRGB(100, 100, 0)
+    local executeButton = Instance.new("TextButton")
+    executeButton.Size = UDim2.new(0.3, 0, 1, 0)
+    executeButton.Position = UDim2.new(0, 0, 0, 0)
+    executeButton.Text = "Execute Code"
+    executeButton.TextColor3 = Color3.new(1, 1, 1)
+    executeButton.BackgroundColor3 = Color3.new(0.3, 0.6, 0.3)
+    executeButton.Parent = buttonFrame
+    
+    local executeLuaArmorButton = Instance.new("TextButton")
+    executeLuaArmorButton.Size = UDim2.new(0.3, 0, 1, 0)
+    executeLuaArmorButton.Position = UDim2.new(0.35, 0, 0, 0)
+    executeLuaArmorButton.Text = "Execute LuaArmor"
+    executeLuaArmorButton.TextColor3 = Color3.new(1, 1, 1)
+    executeLuaArmorButton.BackgroundColor3 = Color3.new(0.6, 0.3, 0.3)
+    executeLuaArmorButton.Parent = buttonFrame
+    
+    local clearButton = Instance.new("TextButton")
+    clearButton.Size = UDim2.new(0.3, 0, 1, 0)
+    clearButton.Position = UDim2.new(0.7, 0, 0, 0)
+    clearButton.Text = "Clear Results"
+    clearButton.TextColor3 = Color3.new(1, 1, 1)
+    clearButton.BackgroundColor3 = Color3.new(0.6, 0.6, 0.3)
+    clearButton.Parent = buttonFrame
+    
+    -- Create Tabs
+    local tabFrame = Instance.new("Frame")
+    tabFrame.Size = UDim2.new(1, 0, 0.05, 0)
+    tabFrame.Position = UDim2.new(0, 0, 0.25, 10)
+    tabFrame.BackgroundTransparency = 0.8
+    tabFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    tabFrame.Parent = mainFrame
+    
+    local tabIntercepted = Instance.new("TextButton")
+    tabIntercepted.Size = UDim2.new(0.33, 0, 1, 0)
+    tabIntercepted.Position = UDim2.new(0, 0, 0, 0)
+    tabIntercepted.Text = "Intercepted Code"
+    tabIntercepted.TextColor3 = Color3.new(1, 1, 1)
+    tabIntercepted.BackgroundTransparency = 0.5
+    tabIntercepted.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    tabIntercepted.Parent = tabFrame
+    
+    local tabExecution = Instance.new("TextButton")
+    tabExecution.Size = UDim2.new(0.33, 0, 1, 0)
+    tabExecution.Position = UDim2.new(0.33, 0, 0, 0)
+    tabExecution.Text = "Execution History"
+    tabExecution.TextColor3 = Color3.new(1, 1, 1)
+    tabExecution.BackgroundTransparency = 0.5
+    tabExecution.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    tabExecution.Parent = tabFrame
+    
+    local tabInfo = Instance.new("TextButton")
+    tabInfo.Size = UDim2.new(0.34, 0, 1, 0)
+    tabInfo.Position = UDim2.new(0.66, 0, 0, 0)
+    tabInfo.Text = "Info"
+    tabInfo.TextColor3 = Color3.new(1, 1, 1)
+    tabInfo.BackgroundTransparency = 0.5
+    tabInfo.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    tabInfo.Parent = tabFrame
+    
+    -- Create ScrollingFrame for content display
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -20, 0.65, -40)
+    scrollFrame.Position = UDim2.new(0, 10, 0.3, 10)
+    scrollFrame.BackgroundTransparency = 0.5
+    scrollFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 10
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scrollFrame.Parent = mainFrame
+    
+    -- Create TextLabel for content display
+    local contentDisplay = Instance.new("TextLabel")
+    contentDisplay.Name = "ContentDisplay"
+    contentDisplay.Size = UDim2.new(1, -20, 0, 0)
+    contentDisplay.Position = UDim2.new(0, 10, 0, 0)
+    contentDisplay.BackgroundTransparency = 1
+    contentDisplay.Text = "Intercepted code will appear here...\n\n1. Enter your Lua code or LuaArmor URL in the input box above\n2. Click 'Execute Code' to run general Lua code\n3. Click 'Execute LuaArmor' to run a LuaArmor script\n4. Intercepted code will appear in this panel"
+    contentDisplay.TextColor3 = Color3.new(1, 1, 1)
+    contentDisplay.TextXAlignment = Enum.TextXAlignment.Left
+    contentDisplay.TextYAlignment = Enum.TextYAlignment.Top
+    contentDisplay.TextWrapped = true
+    contentDisplay.RichText = true
+    contentDisplay.Font = Enum.Font.Monospace
+    contentDisplay.TextSize = 14
+    contentDisplay.Parent = scrollFrame
+    
+    -- Update function for displaying content
+    local currentTab = "intercepted"
+    
+    local function updateDisplay()
+        local text = ""
         
-        spawn(function()
-            local eggModel = findNearbyEgg()
-            if not eggModel then
-                statusLabel.Text = "❌ Яйцо не найдено! Подойдите ближе"
-                statusLabel.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-                return
+        if currentTab == "intercepted" then
+            for i, code in ipairs(interceptedCode) do
+                text = text .. "[[ " .. code.method .. " - " .. os.date("%H:%M:%S", math.floor(code.timestamp)) .. " ]]\n" .. code.source .. "\n\n"
             end
             
-            statusLabel.Text = "✅ Яйцо найдено: " .. eggModel.Name
-            statusLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+            if text == "" then
+                text = "Intercepted code will appear here...\n\n1. Enter your Lua code or LuaArmor URL in the input box above\n2. Click 'Execute Code' to run general Lua code\n3. Click 'Execute LuaArmor' to run a LuaArmor script\n4. Intercepted code will appear in this panel"
+            end
+        elseif currentTab == "execution" then
+            for i, exec in ipairs(executionHistory) do
+                if exec.input then
+                    text = text .. "[[ " .. exec.method .. " - " .. os.date("%H:%M:%S", math.floor(exec.timestamp)) .. " ]]\nInput: " .. exec.input .. "\n\n"
+                elseif exec.url then
+                    text = text .. "[[ " .. exec.method .. " - " .. os.date("%H:%M:%S", math.floor(exec.timestamp)) .. " ]]\nURL: " .. exec.url .. "\n\n"
+                else
+                    text = text .. "[[ " .. exec.method .. " - " .. os.date("%H:%M:%S", math.floor(exec.timestamp)) .. " ]]\nFunction execution\n\n"
+                end
+            end
             
-            runCorrectedDiagnostic(eggModel, statusLabel)
-        end)
+            if text == "" then
+                text = "Execution history will appear here...\n\nThis tab shows all executed code and scripts."
+            end
+        else -- info tab
+            text = "Interactive LuaArmor Interceptor\n\nFeatures:\n- Execute custom Lua code\n- Execute LuaArmor scripts\n- Intercept loadstring calls\n- Intercept HttpGet requests\n- View intercepted code\n- View execution history\n\nInstructions:\n1. Enter your code or URL in the input box\n2. Click the appropriate execute button\n3. View results in the panels above\n\nNote: This interceptor may not work with all obfuscation methods. Some advanced protection systems may prevent interception."
+        end
+        
+        contentDisplay.Text = text
+        
+        -- Update canvas size
+        contentDisplay.Size = UDim2.new(1, -20, 0, contentDisplay.TextBounds.Y)
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, contentDisplay.TextBounds.Y + 20)
+    end
+    
+    -- Button event handlers
+    executeButton.MouseButton1Click:Connect(function()
+        local input = inputBox.Text
+        if input and input ~= "" then
+            local success, result = safeExecute(input)
+            if success then
+                print("[SUCCESS] Code executed successfully")
+            else
+                print("[ERROR] Code execution failed: " .. tostring(result))
+            end
+            updateDisplay()
+        end
     end)
+    
+    executeLuaArmorButton.MouseButton1Click:Connect(function()
+        local input = inputBox.Text
+        if input and input ~= "" then
+            -- Extract URL from loadstring(game:HttpGet("URL"))()
+            local url = input:match('HttpGet%("(.-)"%)')
+            if url then
+                local success, result = executeLuaArmorScript(url)
+                if success then
+                    print("[SUCCESS] LuaArmor script executed successfully")
+                else
+                    print("[ERROR] LuaArmor script execution failed: " .. tostring(result))
+                end
+                updateDisplay()
+            else
+                print("[ERROR] Could not extract URL from input")
+            end
+        end
+    end)
+    
+    clearButton.MouseButton1Click:Connect(function()
+        interceptedCode = {}
+        executionHistory = {}
+        updateDisplay()
+    end)
+    
+    -- Tab switching
+    tabIntercepted.MouseButton1Click:Connect(function()
+        currentTab = "intercepted"
+        tabIntercepted.BackgroundTransparency = 0.2
+        tabIntercepted.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
+        tabExecution.BackgroundTransparency = 0.5
+        tabExecution.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+        tabInfo.BackgroundTransparency = 0.5
+        tabInfo.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+        updateDisplay()
+    end)
+    
+    tabExecution.MouseButton1Click:Connect(function()
+        currentTab = "execution"
+        tabExecution.BackgroundTransparency = 0.2
+        tabExecution.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
+        tabIntercepted.BackgroundTransparency = 0.5
+        tabIntercepted.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+        tabInfo.BackgroundTransparency = 0.5
+        tabInfo.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+        updateDisplay()
+    end)
+    
+    tabInfo.MouseButton1Click:Connect(function()
+        currentTab = "info"
+        tabInfo.BackgroundTransparency = 0.2
+        tabInfo.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
+        tabIntercepted.BackgroundTransparency = 0.5
+        tabIntercepted.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+        tabExecution.BackgroundTransparency = 0.5
+        tabExecution.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+        updateDisplay()
+    end)
+    
+    -- Update display when new code is intercepted
+    local updateConnection
+    updateConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        -- Update display only when needed to avoid performance issues
+    end)
+    
+    -- Initial update
+    updateDisplay()
+    
+    -- Create Close Button
+    local closeButton = Instance.new("TextButton")
+    closeButton.Size = UDim2.new(0.2, 0, 0.05, 0)
+    closeButton.Position = UDim2.new(0.8, -10, 0.95, -10)
+    closeButton.AnchorPoint = Vector2.new(1, 1)
+    closeButton.Text = "Close"
+    closeButton.TextColor3 = Color3.new(1, 1, 1)
+    closeButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    closeButton.Parent = mainFrame
     
     closeButton.MouseButton1Click:Connect(function()
         screenGui:Destroy()
+        if updateConnection then
+            updateConnection:Disconnect()
+        end
     end)
     
     return screenGui
 end
 
--- Запуск
-createCorrectedGUI()
-print("🎮 ИСПРАВЛЕННЫЙ GUI создан! Теперь мониторится Workspace.Visuals!")
+-- Initialize the interceptor
+print("[LuaArmor Interceptor] Initializing interactive interceptor...")
+
+-- Create GUI
+local success, gui = pcall(createInteractiveGUI)
+if not success then
+    warn("[LuaArmor Interceptor] Failed to create GUI: " .. tostring(gui))
+else
+    print("[LuaArmor Interceptor] Interactive GUI created successfully!")
+end
+
+print("[LuaArmor Interceptor] Ready! Use the GUI to execute and intercept LuaArmor code.")
+
+return true
