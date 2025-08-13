@@ -1,361 +1,192 @@
--- Создаём GUI
-local ScreenGui = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-local TextBox = Instance.new("TextBox")
-local TextLabel = Instance.new("TextLabel")
-local ScrollFrame = Instance.new("ScrollingFrame")
-local CodeLabel = Instance.new("TextLabel")
-local ExecuteButton = Instance.new("TextButton")
-local CopyButton = Instance.new("TextButton")
-local CacheButton = Instance.new("TextButton")
-local SaveButton = Instance.new("TextButton")
-local HookButton = Instance.new("TextButton")
+-- SIMPLE PET ANALYZER v1.0
+-- Максимально простой анализатор питомцев без сложного GUI
 
-local TextService = game:GetService("TextService")
-local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
--- Подключаем GUI к CoreGui
-ScreenGui.Parent = game.CoreGui
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local backpack = player.Backpack
 
--- Настройки главного окна
-Frame.Size = UDim2.new(0, 600, 0, 400)
-Frame.Position = UDim2.new(0.5, -300, 0.5, -200)
-Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Frame.BorderSizePixel = 0
-Frame.Parent = ScreenGui
+print("=== SIMPLE PET ANALYZER STARTED ===")
+print("Monitoring backpack and hands for pets...")
 
--- Текстовое описание
-TextLabel.Text = "Вставь команду с loadstring:"
-TextLabel.Size = UDim2.new(1, 0, 0, 30)
-TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextLabel.BackgroundTransparency = 1
-TextLabel.Font = Enum.Font.SourceSansBold
-TextLabel.TextSize = 18
-TextLabel.Parent = Frame
+-- Простые переменные для хранения данных
+local petEvents = {}
+local currentTool = nil
 
--- Поле для ввода команды
-TextBox.Size = UDim2.new(1, -20, 0, 30)
-TextBox.Position = UDim2.new(0, 10, 0, 35)
-TextBox.Text = ""
-TextBox.PlaceholderText = 'Пример: loadstring(game:HttpGet("https://example.com/script.lua"))()'
-TextBox.TextColor3 = Color3.fromRGB(0, 0, 0)
-TextBox.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
-TextBox.ClearTextOnFocus = false
-TextBox.Parent = Frame
-
--- Кнопка запуска
-ExecuteButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-ExecuteButton.Position = UDim2.new(0, 10, 0, 70)
-ExecuteButton.Text = "Перехватить код"
-ExecuteButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-ExecuteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ExecuteButton.Font = Enum.Font.SourceSansBold
-ExecuteButton.TextSize = 16
-ExecuteButton.Parent = Frame
-
--- Кнопка копирования
-CopyButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-CopyButton.Position = UDim2.new(0.25, 2.5, 0, 70)
-CopyButton.Text = "Копировать"
-CopyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-CopyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CopyButton.Font = Enum.Font.SourceSansBold
-CopyButton.TextSize = 16
-CopyButton.Parent = Frame
-
--- Кнопка кеша
-CacheButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-CacheButton.Position = UDim2.new(0.5, 2.5, 0, 70)
-CacheButton.Text = "Из кеша"
-CacheButton.BackgroundColor3 = Color3.fromRGB(80, 40, 80)
-CacheButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CacheButton.Font = Enum.Font.SourceSansBold
-CacheButton.TextSize = 16
-CacheButton.Parent = Frame
-
--- Кнопка сохранения
-SaveButton.Size = UDim2.new(0.25, -7.5, 0, 30)
-SaveButton.Position = UDim2.new(0.75, 2.5, 0, 70)
-SaveButton.Text = "Сохранить"
-SaveButton.BackgroundColor3 = Color3.fromRGB(40, 80, 40)
-SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SaveButton.Font = Enum.Font.SourceSansBold
-SaveButton.TextSize = 16
-SaveButton.Parent = Frame
-
--- Кнопка Memory Hook
-HookButton.Size = UDim2.new(1, -20, 0, 30)
-HookButton.Position = UDim2.new(0, 10, 0, 105)
-HookButton.Text = "🔓 Установить Memory Hook (перехват кода)"
-HookButton.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
-HookButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-HookButton.Font = Enum.Font.SourceSansBold
-HookButton.TextSize = 16
-HookButton.Parent = Frame
-
--- Поле для отображения кода
-ScrollFrame.Size = UDim2.new(1, -20, 1, -145)
-ScrollFrame.Position = UDim2.new(0, 10, 0, 145)
-ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollFrame.ScrollingDirection = Enum.ScrollingDirection.XY
-ScrollFrame.ScrollBarThickness = 8
-ScrollFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.Parent = Frame
-
-CodeLabel.Size = UDim2.new(0, 0, 0, 0)
-CodeLabel.Text = ""
-CodeLabel.TextXAlignment = Enum.TextXAlignment.Left
-CodeLabel.TextYAlignment = Enum.TextYAlignment.Top
-CodeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-CodeLabel.BackgroundTransparency = 1
-CodeLabel.TextWrapped = false
-CodeLabel.TextSize = 14
-CodeLabel.Font = Enum.Font.Code
-CodeLabel.Parent = ScrollFrame
-
--- Утилиты
-local function UpdateCanvasSize()
-    local text = CodeLabel.Text or ""
-    local bounds = TextService:GetTextSize(text, CodeLabel.TextSize, CodeLabel.Font, Vector2.new(100000, 100000))
-    local padX, padY = 10, 10
-    local width = math.max(bounds.X + padX, ScrollFrame.AbsoluteSize.X)
-    local height = math.max(bounds.Y + padY, ScrollFrame.AbsoluteSize.Y)
-    CodeLabel.Size = UDim2.new(0, width, 0, height)
-    ScrollFrame.CanvasSize = UDim2.new(0, width, 0, height)
-end
-
-local function notify(msg)
-    local prev = TextLabel.Text
-    TextLabel.Text = msg
-    task.delay(1.5, function()
-        -- Возвращаем исходный текст, если пользователь не изменил его вручную
-        if TextLabel and TextLabel.Parent then
-            TextLabel.Text = prev
+-- Простая функция логирования
+local function logEvent(eventType, petName, details)
+    local event = {
+        time = tick(),
+        type = eventType,
+        pet = petName,
+        details = details or {}
+    }
+    table.insert(petEvents, event)
+    
+    print(string.format("[%.2f] %s: %s", event.time, eventType, petName))
+    if details then
+        for key, value in pairs(details) do
+            print(string.format("  %s: %s", key, tostring(value)))
         end
-    end)
+    end
 end
 
-local function truncateText(text, maxLength)
-    if #text <= maxLength then return text end
-    return text:sub(1, maxLength) .. "\n\n[ТЕКСТ ОБРЕЗАН - СЛИШКОМ ДЛИННЫЙ: " .. #text .. " символов]\n[Используйте кнопку 'Сохранить' для полного текста]"
-end
-
-local function tryReadCache()
-    local cachePaths = {
-        "static_content_130525/initv4.lua",
-        "static_content_130525/init.lua", 
-        "static_content_130525/initv2.lua",
-        "static_content_130525/initv3.lua"
+-- Функция анализа Tool
+local function analyzeTool(tool)
+    if not tool then return {} end
+    
+    local data = {
+        name = tool.Name,
+        className = tool.ClassName
     }
     
-    for _, path in ipairs(cachePaths) do
-        local success, content = pcall(function()
-            if readfile then
-                return readfile(path)
+    local handle = tool:FindFirstChild("Handle")
+    if handle then
+        data.handleSize = tostring(handle.Size)
+        data.handlePosition = tostring(handle.Position)
+        data.handleCFrame = tostring(handle.CFrame)
+        
+        -- Ищем Mesh
+        for _, child in pairs(handle:GetChildren()) do
+            if child:IsA("SpecialMesh") then
+                data.meshId = child.MeshId
+                data.textureId = child.TextureId
+                data.meshScale = tostring(child.Scale)
+                break
             end
-            return nil
-        end)
-        if success and content and #content > 100 then
-            return content, path
         end
     end
-    return nil, nil
+    
+    return data
 end
 
-local hookInstalled = false
-local interceptedCode = ""
+-- Проверка является ли Tool питомцем
+local function isPet(tool)
+    if not tool then return false end
+    local name = tool.Name
+    return name:find("KG") or name:find("Dragonfly") or 
+           name:find("{") or name:find("Pet") or name:find("pet")
+end
 
-local function installMemoryHook()
-    if hookInstalled then
-        notify("Hook уже установлен!")
-        return
-    end
-    
-    -- Сохраняем оригинальные функции
-    local original_loadstring = loadstring
-    local original_HttpGet = game.HttpGet
-    local original_writefile = writefile
-    
-    -- Hook loadstring
-    getgenv().loadstring = function(code)
-        if code and #code > 1000 and code:find("luarmor") then
-            interceptedCode = code
-            notify("🎯 Перехвачен код через loadstring! (" .. #code .. " симв.)")
-            CodeLabel.Text = truncateText(code, 50000)
-            UpdateCanvasSize()
+-- Мониторинг Backpack
+backpack.ChildAdded:Connect(function(child)
+    if child:IsA("Tool") then
+        wait(0.1)
+        if isPet(child) then
+            local data = analyzeTool(child)
+            logEvent("BACKPACK_ADDED", child.Name, data)
         end
-        return original_loadstring(code)
     end
+end)
+
+-- Мониторинг Character
+local function monitorCharacter(char)
+    if not char then return end
     
-    -- Hook HttpGet (правильный способ)
-    local HttpService = game:GetService("HttpService")
-    local old_HttpGet = game.HttpGet
-    
-    -- Перехватываем через метатаблицу game
-    local old_index = getmetatable(game).__index
-    getmetatable(game).__index = function(self, key)
-        if key == "HttpGet" then
-            return function(self, url, ...)
-                local result = old_index(self, key)(self, url, ...)
-                if url:find("luarmor") and #result > 1000 then
-                    interceptedCode = result
-                    notify("🎯 Перехвачен код через HttpGet! (" .. #result .. " симв.)")
-                    CodeLabel.Text = truncateText(result, 50000)
-                    UpdateCanvasSize()
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            wait(0.1)
+            currentTool = child
+            
+            if isPet(child) then
+                local data = analyzeTool(child)
+                
+                -- Дополнительный анализ позиции в руке
+                local handle = child:FindFirstChild("Handle")
+                if handle then
+                    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+                    if torso then
+                        local relativePos = torso.CFrame:PointToObjectSpace(handle.Position)
+                        data.relativeToTorso = tostring(relativePos)
+                    end
+                    
+                    -- Анализ RightGrip
+                    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+                    if rightArm then
+                        local rightGrip = rightArm:FindFirstChild("RightGrip")
+                        if rightGrip then
+                            data.rightGripC0 = tostring(rightGrip.C0)
+                            data.rightGripC1 = tostring(rightGrip.C1)
+                        end
+                    end
                 end
-                return result
+                
+                logEvent("HAND_EQUIPPED", child.Name, data)
             end
         end
-        return old_index(self, key)
-    end
-    
-    -- Hook writefile (если доступен)
-    if writefile then
-        getgenv().writefile = function(filename, content, ...)
-            if filename:find("init") and content and #content > 1000 then
-                interceptedCode = content
-                notify("🎯 Перехвачен код через writefile! (" .. #content .. " симв.)")
-                CodeLabel.Text = truncateText(content, 50000)
-                UpdateCanvasSize()
-            end
-            return original_writefile(filename, content, ...)
-        end
-    end
-    
-    hookInstalled = true
-    notify("✅ Memory Hook установлен! Теперь запустите загрузчик.")
-end
-
-local function trySaveFile(content)
-    if not writefile then
-        return false, "writefile не поддерживается"
-    end
-    
-    local timestamp = os.date("%Y%m%d_%H%M%S")
-    local filename = "luafinder_" .. timestamp .. ".lua"
-    
-    local success, err = pcall(function()
-        writefile(filename, content)
     end)
     
-    if success then
-        return true, filename
-    else
-        return false, tostring(err)
-    end
+    char.ChildRemoved:Connect(function(child)
+        if child:IsA("Tool") and child == currentTool then
+            if isPet(child) then
+                logEvent("HAND_REMOVED", child.Name)
+            end
+            currentTool = nil
+        end
+    end)
 end
 
-local function tryCopy(text)
-    local attempts = {
-        function(t)
-            if setclipboard then setclipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if toclipboard then toclipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if syn and syn.write_clipboard then syn.write_clipboard(t) return true end
-            return false
-        end,
-        function(t)
-            if setrbxclipboard then setrbxclipboard(t) return true end
-            return false
-        end,
-    }
-    for _, fn in ipairs(attempts) do
-        local ok = false
-        local success, err = pcall(function()
-            ok = fn(text)
-        end)
-        if success and ok then return true end
-    end
-    return false
+-- Запуск мониторинга
+if character then
+    monitorCharacter(character)
 end
 
--- Логика кнопки
-ExecuteButton.MouseButton1Click:Connect(function()
-    local input = TextBox.Text
-    -- Извлекаем http/https URL до пробела, кавычки или закрывающей скобки
-    local url = input:match("https?://[^%)%s'\"]+")
-    if url then
-        local success, data = pcall(function()
-            return game:HttpGet(url)
-        end)
-        if success then
-            local displayText = truncateText(data, 50000) -- Лимит 50k символов для отображения
-            CodeLabel.Text = displayText
-            UpdateCanvasSize()
-            if #data > 50000 then
-                notify("Текст обрезан (" .. #data .. " симв.). Используйте 'Сохранить'.")
-            end
-        else
-            CodeLabel.Text = "Ошибка запроса: " .. tostring(data)
-        end
-    else
-        CodeLabel.Text = "Не удалось найти ссылку в команде!"
-    end
-end)
+player.CharacterAdded:Connect(monitorCharacter)
 
-CopyButton.MouseButton1Click:Connect(function()
-    if CodeLabel.Text and #CodeLabel.Text > 0 then
-        local ok = tryCopy(CodeLabel.Text)
-        if ok then
-            notify("Скопировано в буфер обмена.")
-        else
-            notify("Не удалось скопировать: среда не поддерживает.")
-        end
-    else
-        notify("Нечего копировать: поле пустое.")
-    end
-end)
-
-CacheButton.MouseButton1Click:Connect(function()
-    local content, path = tryReadCache()
-    if content then
-        local displayText = truncateText(content, 50000)
-        CodeLabel.Text = displayText
-        UpdateCanvasSize()
-        if #content > 50000 then
-            notify("Кеш загружен (" .. #content .. " симв.) из " .. path)
-        else
-            notify("Кеш загружен из " .. path)
-        end
-    else
-        CodeLabel.Text = "Кеш не найден. Попробуйте сначала запустить загрузчик."
-        notify("Файлы кеша не найдены.")
-    end
-end)
-
-SaveButton.MouseButton1Click:Connect(function()
-    if CodeLabel.Text and #CodeLabel.Text > 0 then
-        -- Пытаемся получить полный текст (не обрезанный)
-        local fullText = CodeLabel.Text
+-- Простые команды в чате
+player.Chatted:Connect(function(message)
+    local msg = message:lower()
+    
+    if msg == "/petreport" or msg == "/report" then
+        print("\n=== PET ANALYSIS REPORT ===")
+        print("Total events:", #petEvents)
         
-        -- Если текст был обрезан, пытаемся получить полный из кеша или последнего запроса
-        if fullText:find("ТЕКСТ ОБРЕЗАН") then
-            local content, _ = tryReadCache()
-            if content then
-                fullText = content
+        for i, event in ipairs(petEvents) do
+            print(string.format("\n[%d] %s - %s (%.2f)", i, event.type, event.pet, event.time))
+            
+            if event.details.handleSize then
+                print("  Handle Size:", event.details.handleSize)
+            end
+            if event.details.handlePosition then
+                print("  Handle Position:", event.details.handlePosition)
+            end
+            if event.details.relativeToTorso then
+                print("  Relative to Torso:", event.details.relativeToTorso)
+            end
+            if event.details.rightGripC0 then
+                print("  RightGrip C0:", event.details.rightGripC0)
+                print("  RightGrip C1:", event.details.rightGripC1)
+            end
+            if event.details.meshId then
+                print("  Mesh ID:", event.details.meshId)
             end
         end
+        print("=== END REPORT ===\n")
         
-        local success, result = trySaveFile(fullText)
-        if success then
-            notify("Сохранено в " .. result)
-        else
-            notify("Ошибка сохранения: " .. result)
-        end
-    else
-        notify("Нечего сохранять: поле пустое.")
+    elseif msg == "/petclear" or msg == "/clear" then
+        petEvents = {}
+        print("Pet analysis log cleared!")
+        
+    elseif msg == "/pethelp" or msg == "/help" then
+        print("\n=== PET ANALYZER COMMANDS ===")
+        print("/report or /petreport - Show analysis report")
+        print("/clear or /petclear - Clear analysis log")
+        print("/help or /pethelp - Show this help")
+        print("=============================\n")
     end
 end)
 
-HookButton.MouseButton1Click:Connect(function()
-    installMemoryHook()
+-- Статус каждые 10 секунд
+spawn(function()
+    while true do
+        wait(10)
+        print(string.format("Pet Analyzer Status: %d events recorded, Current tool: %s", 
+              #petEvents, currentTool and currentTool.Name or "None"))
+    end
 end)
 
--- Пересчитываем размеры при изменении текста (на всякий случай)
-CodeLabel:GetPropertyChangedSignal("Text"):Connect(UpdateCanvasSize)
+print("=== ANALYZER READY ===")
+print("Commands: /report, /clear, /help")
+print("Create a pet and take it in your hands to start analysis!")
