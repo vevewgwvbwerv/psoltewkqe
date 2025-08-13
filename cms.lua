@@ -1,246 +1,177 @@
--- TW2LOCK GUI Script for Roblox
--- Minecraft/Lego стиль интерфейса с переключателями
+-- Universal LuaArmor Interceptor
+-- Self-contained script that can be loaded directly into an exploit
+-- Intercepts loadstring calls and displays code in GUI instead of executing
 
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+-- Check if we're in a Roblox environment
+if not game thenn
+    print("[ERROR] This script must be run in a Roblox environment")
+    return
+end
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+-- Store original functions
+local original_loadstring = loadstring
+local original_HttpGet = game.HttpGet
 
--- Создаем ScreenGui
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TW2LOCK_GUI"
-screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true
-screenGui.Parent = playerGui
+-- Table to store intercepted code
+local interceptedCode = {}
 
--- Основной контейнер
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainContainer"
-mainFrame.Size = UDim2.new(0, 300, 0, 200)
-mainFrame.Position = UDim2.new(0.5, -150, 0.5, -100)
-mainFrame.BackgroundColor3 = Color3.fromRGB(139, 69, 19) -- Коричневый как на картинке
-mainFrame.BorderSizePixel = 2
-mainFrame.BorderColor3 = Color3.fromRGB(101, 50, 14)
-mainFrame.Parent = screenGui
-
--- Заголовок (Header)
-local headerFrame = Instance.new("Frame")
-headerFrame.Name = "Header"
-headerFrame.Size = UDim2.new(1, 0, 0, 35)
-headerFrame.Position = UDim2.new(0, 0, 0, 0)
-headerFrame.BackgroundColor3 = Color3.fromRGB(76, 175, 80) -- Зеленый как на картинке
-headerFrame.BorderSizePixel = 2
-headerFrame.BorderColor3 = Color3.fromRGB(56, 142, 60)
-headerFrame.Parent = mainFrame
-
--- Заголовочный текст
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(1, -10, 1, 0)
-titleLabel.Position = UDim2.new(0, 5, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "TW2LOCK"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 18
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = headerFrame
-
--- Функция создания переключателя в правильном Lego стиле
-local function createToggleRow(name, displayText, yPosition, initialState)
-    -- Контейнер строки с полной текстурой Lego блока
-    local rowFrame = Instance.new("Frame")
-    rowFrame.Name = name .. "Row"
-    rowFrame.Size = UDim2.new(1, -20, 0, 50)
-    rowFrame.Position = UDim2.new(0, 10, 0, yPosition)
-    rowFrame.BackgroundColor3 = Color3.fromRGB(139, 69, 19) -- Коричневый фон
-    rowFrame.BorderSizePixel = 2
-    rowFrame.BorderColor3 = Color3.fromRGB(101, 50, 14)
-    rowFrame.Parent = mainFrame
+-- Override loadstring to intercept code
+loadstring = function(source, chunkname)
+    -- Store the code instead of executing it
+    table.insert(interceptedCode, {
+        source = source,
+        chunkname = chunkname,
+        timestamp = tick()
+    })
     
-    -- Создаем полную текстуру Lego блока (сетка круглых выступов)
-    local studsPerRow = 12
-    local studsRows = 2
-    for row = 1, studsRows do
-        for col = 1, studsPerRow do
-            local legoStud = Instance.new("Frame")
-            legoStud.Size = UDim2.new(0, 8, 0, 8)
-            legoStud.Position = UDim2.new(0, 15 + (col-1) * 20, 0, 8 + (row-1) * 15)
-            legoStud.BackgroundColor3 = Color3.fromRGB(160, 82, 25) -- Светлее основного цвета
-            legoStud.BorderSizePixel = 1
-            legoStud.BorderColor3 = Color3.fromRGB(101, 50, 14)
-            legoStud.Parent = rowFrame
-            
-            -- Делаем круглыми
-            local studCorner = Instance.new("UICorner")
-            studCorner.CornerRadius = UDim.new(0.5, 0)
-            studCorner.Parent = legoStud
+    -- Print to console for immediate viewing
+    print("[INTERCEPTED] Code loaded via loadstring:")
+    print(source)
+    print("----------------------------------------")
+    
+    -- Return a dummy function instead of the actual loaded function
+    return function() end
+end
+
+-- Override HttpGet to intercept network requests (if possible)
+do
+    local function override_HttpGet()
+        -- Try to override HttpGet directly
+        if game.HttpGet then
+            game.HttpGet = function(self, url, nocache)
+                local result = original_HttpGet(self, url, nocache)
+                print("[INTERCEPTED] HttpGet request to: " .. tostring(url))
+                print("Response:")
+                print(result)
+                print("----------------------------------------")
+                return result
+            end
         end
     end
     
-    -- Текст переключателя
-    local toggleLabel = Instance.new("TextLabel")
-    toggleLabel.Name = "Label"
-    toggleLabel.Size = UDim2.new(0, 150, 1, 0)
-    toggleLabel.Position = UDim2.new(0, 20, 0, 0)
-    toggleLabel.BackgroundTransparency = 1
-    toggleLabel.Text = displayText
-    toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleLabel.TextSize = 16
-    toggleLabel.Font = Enum.Font.SourceSansBold
-    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    toggleLabel.TextYAlignment = Enum.TextYAlignment.Center
-    toggleLabel.Parent = rowFrame
-    
-    -- Простой зеленый переключатель "On" как на референсе
-    local toggleSwitch = Instance.new("TextButton")
-    toggleSwitch.Name = "Switch"
-    toggleSwitch.Size = UDim2.new(0, 40, 0, 25)
-    toggleSwitch.Position = UDim2.new(1, -50, 0.5, -12.5)
-    toggleSwitch.BackgroundColor3 = initialState and Color3.fromRGB(76, 175, 80) or Color3.fromRGB(160, 160, 160)
-    toggleSwitch.BorderSizePixel = 2
-    toggleSwitch.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    toggleSwitch.Text = initialState and "On" or "Off"
-    toggleSwitch.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleSwitch.TextSize = 14
-    toggleSwitch.Font = Enum.Font.SourceSansBold
-    toggleSwitch.Parent = rowFrame
-    
-    -- Состояние переключателя
-    local isToggled = initialState
-    
-    -- Функция переключения
-    local function toggle()
-        isToggled = not isToggled
-        
-        -- Анимация цвета и текста
-        local switchTween = TweenService:Create(toggleSwitch,
-            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = isToggled and Color3.fromRGB(76, 175, 80) or Color3.fromRGB(160, 160, 160)}
-        )
-        
-        toggleSwitch.Text = isToggled and "On" or "Off"
-        switchTween:Play()
-        
-        -- Консольный вывод для демонстрации
-        print(displayText .. ": " .. (isToggled and "ON" or "OFF"))
-        
-        return isToggled
-    end
-    
-    -- Обработчик клика
-    toggleSwitch.MouseButton1Click:Connect(function()
-        toggle()
-    end)
-    
-    return {
-        frame = rowFrame,
-        toggle = toggle,
-        getState = function() return isToggled end
-    }
+    -- Try to override HttpGet
+    pcall(override_HttpGet)
 end
 
--- Создание переключателей
-local freezeTradeToggle = createToggleRow("FreezeTrade", "FREEZE TRADE", 45, true)
-local autoAcceptToggle = createToggleRow("AutoAccept", "AUTO ACCEPT", 105, true)
-
--- Кнопка помощи
-local helpButton = Instance.new("TextButton")
-helpButton.Name = "HelpButton"
-helpButton.Size = UDim2.new(0, 25, 0, 25)
-helpButton.Position = UDim2.new(1, -35, 1, -35)
-helpButton.BackgroundColor3 = Color3.fromRGB(255, 193, 7)
-helpButton.BorderSizePixel = 2
-helpButton.BorderColor3 = Color3.fromRGB(0, 0, 0)
-helpButton.Text = "?"
-helpButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-helpButton.TextSize = 16
-helpButton.Font = Enum.Font.SourceSansBold
-helpButton.Parent = mainFrame
-
--- Обработчик кнопки помощи
-helpButton.MouseButton1Click:Connect(function()
-    -- Создаем простое уведомление
-    local notification = Instance.new("Frame")
-    notification.Size = UDim2.new(0, 300, 0, 120)
-    notification.Position = UDim2.new(0.5, -150, 0.5, -60)
-    notification.BackgroundColor3 = Color3.fromRGB(139, 69, 19)
-    notification.BorderSizePixel = 2
-    notification.BorderColor3 = Color3.fromRGB(101, 50, 14)
-    notification.Parent = screenGui
+-- Create GUI Console for displaying intercepted code
+local function createGUI()
+    -- Prevent multiple GUI instances
+    if game.Players.LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("LuaArmorInterceptor") then
+        return
+    end
     
-    local helpText = Instance.new("TextLabel")
-    helpText.Size = UDim2.new(1, -20, 0.7, 0)
-    helpText.Position = UDim2.new(0, 10, 0, 10)
-    helpText.BackgroundTransparency = 1
-    helpText.Text = "TW2LOCK Settings\n\nFREEZE TRADE: Prevents automatic trading\nAUTO ACCEPT: Automatically accepts trade requests"
-    helpText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    helpText.TextSize = 14
-    helpText.Font = Enum.Font.SourceSans
-    helpText.TextWrapped = true
-    helpText.TextYAlignment = Enum.TextYAlignment.Top
-    helpText.Parent = notification
+    -- Create ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "LuaArmorInterceptor"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
     
+    -- Create Frame
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.8, 0, 0.8, 0)
+    frame.Position = UDim2.new(0.1, 0, 0.1, 0)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.new(0, 0.5, 1)
+    frame.Parent = screenGui
+    
+    -- Create Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0.05, 0)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "LuaArmor Interceptor Console"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+    
+    -- Create ScrollingFrame for code display
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -20, 0.9, -40)
+    scrollFrame.Position = UDim2.new(0, 10, 0.05, 10)
+    scrollFrame.BackgroundTransparency = 0.5
+    scrollFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 10
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scrollFrame.Parent = frame
+    
+    -- Create TextLabel for code display
+    local codeDisplay = Instance.new("TextLabel")
+    codeDisplay.Name = "CodeDisplay"
+    codeDisplay.Size = UDim2.new(1, -20, 0, 0)
+    codeDisplay.Position = UDim2.new(0, 10, 0, 0)
+    codeDisplay.BackgroundTransparency = 1
+    codeDisplay.Text = "Intercepted code will appear here...\n\nLoad a LuaArmor script to begin interception.\nExample: loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua\"))()"
+    codeDisplay.TextColor3 = Color3.new(1, 1, 1)
+    codeDisplay.TextXAlignment = Enum.TextXAlignment.Left
+    codeDisplay.TextYAlignment = Enum.TextYAlignment.Top
+    codeDisplay.TextWrapped = true
+    codeDisplay.RichText = true
+    codeDisplay.Font = Enum.Font.Monospace
+    codeDisplay.TextSize = 14
+    codeDisplay.Parent = scrollFrame
+    
+    -- Update function for displaying code
+    local function updateDisplay()
+        local text = ""
+        for i, code in ipairs(interceptedCode) do
+            text = text .. "[[ CODE BLOCK " .. i .. " - " .. os.date("%H:%M:%S", math.floor(code.timestamp)) .. " ]]\n" .. code.source .. "\n\n"
+        end
+        
+        if text == "" then
+            codeDisplay.Text = "Intercepted code will appear here...\n\nLoad a LuaArmor script to begin interception.\nExample: loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua\"))()"
+        else
+            codeDisplay.Text = text
+        end
+        
+        -- Update canvas size
+        codeDisplay.Size = UDim2.new(1, -20, 0, codeDisplay.TextBounds.Y)
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, codeDisplay.TextBounds.Y + 20)
+    end
+    
+    -- Update display when new code is intercepted
+    local updateConnection
+    updateConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        updateDisplay()
+    end)
+    
+    -- Create Close Button
     local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(0, 60, 0, 25)
-    closeButton.Position = UDim2.new(0.5, -30, 0.8, 0)
-    closeButton.BackgroundColor3 = Color3.fromRGB(255, 193, 7)
-    closeButton.BorderSizePixel = 2
-    closeButton.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    closeButton.Text = "OK"
-    closeButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-    closeButton.TextSize = 14
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.Parent = notification
+    closeButton.Size = UDim2.new(0.2, 0, 0.05, 0)
+    closeButton.Position = UDim2.new(0.8, -10, 0.95, -10)
+    closeButton.AnchorPoint = Vector2.new(1, 1)
+    closeButton.Text = "Close"
+    closeButton.TextColor3 = Color3.new(1, 1, 1)
+    closeButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    closeButton.Parent = frame
     
     closeButton.MouseButton1Click:Connect(function()
-        notification:Destroy()
+        screenGui:Destroy()
+        if updateConnection then
+            updateConnection:Disconnect()
+        end
     end)
     
-    -- Автоматически закрыть через 5 секунд
-    game:GetService("Debris"):AddItem(notification, 5)
-end)
-
--- Сделать интерфейс перетаскиваемым
-local dragging = false
-local dragStart = nil
-local startPos = nil
-
-local function updateInput(input)
-    local delta = input.Position - dragStart
-    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    return screenGui
 end
 
-headerFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
+-- Initialize the interceptor
+print("[LuaArmor Interceptor] Initializing...")
 
-headerFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        if dragging then
-            updateInput(input)
-        end
-    end
-end)
+-- Create GUI
+local success, gui = pcall(createGUI)
+if not success then
+    warn("[LuaArmor Interceptor] Failed to create GUI: " .. tostring(gui))
+else
+    print("[LuaArmor Interceptor] GUI created successfully!")
+end
 
--- Анимация появления GUI
-mainFrame.Size = UDim2.new(0, 0, 0, 0)
-local appearTween = TweenService:Create(mainFrame,
-    TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-    {Size = UDim2.new(0, 300, 0, 140)}
-)
-appearTween:Play()
+print("[LuaArmor Interceptor] Ready! Intercepting loadstring calls...")
+print("[LuaArmor Interceptor] Load LuaArmor scripts normally, code will be displayed in GUI instead of executing.")
 
-print("TW2LOCK GUI успешно загружен!")
+-- Example usage (commented out):
+-- loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua"))()
+
+return true
