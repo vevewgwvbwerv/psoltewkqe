@@ -1,673 +1,570 @@
--- CORRECTED EGG CLONE DIAGNOSTIC SCRIPT
--- Правильный анализ яйца с мониторингом Workspace.Visuals
+-- Создаём GUI
+local ScreenGui = Instance.new("ScreenGui")
+local Frame = Instance.new("Frame")
+local TextBox = Instance.new("TextBox")
+local TextLabel = Instance.new("TextLabel")
+local ScrollFrame = Instance.new("ScrollingFrame")
+local CodeLabel = Instance.new("TextLabel")
+local ExecuteButton = Instance.new("TextButton")
+local CopyButton = Instance.new("TextButton")
+local CacheButton = Instance.new("TextButton")
+local SaveButton = Instance.new("TextButton")
+local HookButton = Instance.new("TextButton")
 
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local TextService = game:GetService("TextService")
+local TweenService = game:GetService("TweenService")
 
-local player = Players.LocalPlayer
+-- Подключаем GUI к CoreGui
+ScreenGui.Parent = game.CoreGui
 
-print("🥚 === CORRECTED EGG DIAGNOSTIC STARTED ===")
-print("🎯 Цель: Правильный анализ яйца с мониторингом Workspace.Visuals")
+-- Настройки главного окна
+Frame.Size = UDim2.new(0, 600, 0, 400)
+Frame.Position = UDim2.new(0.5, -300, 0.5, -200)
+Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
 
--- Конфигурация
-local CONFIG = {
-    SEARCH_RADIUS = 50,
-    ANALYSIS_TIME = 60, -- 60 секунд анализа
-    EGG_NAMES = {
-        "Common Egg", "Rare Egg", "Legendary Egg", "Mythical Egg",
-        "Bug Egg", "Bee Egg", "Anti Bee Egg", "Night Egg",
-        "Oasis Egg", "Paradise Egg", "Dinosaur Egg", "Primal Egg",
-        "Common Summer Egg", "Rare Summer Egg", "Zen Egg"
-    }
-}
+-- Текстовое описание
+TextLabel.Text = "Вставь команду с loadstring:"
+TextLabel.Size = UDim2.new(1, 0, 0, 30)
+TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextLabel.BackgroundTransparency = 1
+TextLabel.Font = Enum.Font.SourceSansBold
+TextLabel.TextSize = 18
+TextLabel.Parent = Frame
 
--- Полный список питомцев из яиц (ОБНОВЛЕННЫЙ из PetScaler_v222222234.lua)
-local eggPets = {
-    -- Anti Bee Egg
-    "wasp", "tarantula hawk", "moth", "butterfly", "disco bee (divine)",
-    -- Bee Egg  
-    "bee", "honey bee", "bear bee", "petal bee", "queen bee",
-    -- Bug Egg
-    "snail", "giant ant", "caterpillar", "praying mantis", "dragonfly (divine)",
-    -- Common Egg
-    "dog", "bunny", "golden lab",
-    -- Common Summer Egg
-    "starfish", "seagull", "crab",
-    -- Dinosaur Egg
-    "raptor", "triceratops", "stegosaurus", "pterodactyl", "brontosaurus", "t-rex (divine)",
-    -- Legendary Egg
-    "cow", "silver monkey", "sea otter", "turtle", "polar bear",
-    -- Mythical Egg
-    "grey mouse", "brown mouse", "squirrel", "red giant ant", "red fox",
-    -- Night Egg
-    "hedgehog", "mole", "frog", "echo frog", "night owl", "raccoon",
-    -- Oasis Egg
-    "meerkat", "sand snake", "axolotl", "hyacinth macaw", "fennec fox",
-    -- Paradise Egg
-    "ostrich", "peacock", "capybara", "scarlet macaw", "mimic octopus",
-    -- Primal Egg
-    "parasaurolophus", "iguanodon", "pachycephalosaurus", "dilophosaurus", "ankylosaurus", "spinosaurus (divine)",
-    -- Rare Egg
-    "orange tabby", "spotted deer", "pig", "rooster", "monkey",
-    -- Rare Summer Egg
-    "flamingo", "toucan", "sea turtle", "orangutan", "seal",
-    -- Uncommon Egg
-    "black bunny", "chicken", "cat", "deer",
-    -- Zen Egg
-    "shiba inu", "nihonzaru", "tanuki", "tanchozuru", "kappa", "kitsune"
-}
+-- Поле для ввода команды
+TextBox.Size = UDim2.new(1, -20, 0, 30)
+TextBox.Position = UDim2.new(0, 10, 0, 35)
+TextBox.Text = ""
+TextBox.PlaceholderText = 'Пример: loadstring(game:HttpGet("https://example.com/script.lua"))()'
+TextBox.TextColor3 = Color3.fromRGB(0, 0, 0)
+TextBox.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+TextBox.ClearTextOnFocus = false
+TextBox.Parent = Frame
 
--- Структура для хранения данных яйца
-local EggData = {
-    model = nil,
-    position = nil,
-    structure = {},
-    animations = {},
-    effects = {},
-    scripts = {},
-    sounds = {},
-    clickDetector = nil,
-    timer = nil,
-    petChances = {},
-    materials = {},
-    textures = {},
-    petLifecycle = {} -- НОВОЕ: данные о жизненном цикле питомца
-}
+-- Кнопка запуска
+ExecuteButton.Size = UDim2.new(0.25, -7.5, 0, 30)
+ExecuteButton.Position = UDim2.new(0, 10, 0, 70)
+ExecuteButton.Text = "Перехватить код"
+ExecuteButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+ExecuteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ExecuteButton.Font = Enum.Font.SourceSansBold
+ExecuteButton.TextSize = 16
+ExecuteButton.Parent = Frame
 
--- Функция проверки является ли модель питомцем из яйца (ТОЧНОЕ СООТВЕТСТВИЕ как в PetScaler_v222222234.lua)
-local function isPetFromEgg(model)
-    if not model:IsA("Model") then return false end
-    local modelName = model.Name:lower()
+-- Кнопка копирования
+CopyButton.Size = UDim2.new(0.25, -7.5, 0, 30)
+CopyButton.Position = UDim2.new(0.25, 2.5, 0, 70)
+CopyButton.Text = "Копировать"
+CopyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+CopyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CopyButton.Font = Enum.Font.SourceSansBold
+CopyButton.TextSize = 16
+CopyButton.Parent = Frame
+
+-- Кнопка кеша
+CacheButton.Size = UDim2.new(0.25, -7.5, 0, 30)
+CacheButton.Position = UDim2.new(0.5, 2.5, 0, 70)
+CacheButton.Text = "Из кеша"
+CacheButton.BackgroundColor3 = Color3.fromRGB(80, 40, 80)
+CacheButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CacheButton.Font = Enum.Font.SourceSansBold
+CacheButton.TextSize = 16
+CacheButton.Parent = Frame
+
+-- Кнопка сохранения
+SaveButton.Size = UDim2.new(0.25, -7.5, 0, 30)
+SaveButton.Position = UDim2.new(0.75, 2.5, 0, 70)
+SaveButton.Text = "Сохранить"
+SaveButton.BackgroundColor3 = Color3.fromRGB(40, 80, 40)
+SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SaveButton.Font = Enum.Font.SourceSansBold
+SaveButton.TextSize = 16
+SaveButton.Parent = Frame
+
+-- Кнопка Memory Hook
+HookButton.Size = UDim2.new(1, -20, 0, 30)
+HookButton.Position = UDim2.new(0, 10, 0, 105)
+HookButton.Text = "🔓 Установить Memory Hook (перехват кода)"
+HookButton.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+HookButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+HookButton.Font = Enum.Font.SourceSansBold
+HookButton.TextSize = 16
+HookButton.Parent = Frame
+
+-- Поле для отображения кода
+ScrollFrame.Size = UDim2.new(1, -20, 1, -145)
+ScrollFrame.Position = UDim2.new(0, 10, 0, 145)
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollFrame.ScrollingDirection = Enum.ScrollingDirection.XY
+ScrollFrame.ScrollBarThickness = 8
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ScrollFrame.BorderSizePixel = 0
+ScrollFrame.Parent = Frame
+
+CodeLabel.Size = UDim2.new(0, 0, 0, 0)
+CodeLabel.Text = ""
+CodeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+CodeLabel.BackgroundTransparency = 1
+CodeLabel.TextWrapped = false
+CodeLabel.TextSize = 14
+CodeLabel.Font = Enum.Font.Code
+CodeLabel.Parent = ScrollFrame
+
+-- Утилиты
+local function UpdateCanvasSize()
+    local text = CodeLabel.Text or ""
+    if #text == 0 then
+        ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        return
+    end
     
-    for _, petName in pairs(eggPets) do
-        if modelName == petName then
-            return true
+    local size = TextService:GetTextSize(text, CodeLabel.TextSize, CodeLabel.Font, Vector2.new(ScrollFrame.AbsoluteSize.X, math.huge))
+    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, size.Y)
+    CodeLabel.Size = UDim2.new(1, 0, 0, size.Y)
+    CodeLabel.Position = UDim2.new(0, 0, 0, 0)
+end
+
+local function truncateText(text, maxLength)
+    if #text <= maxLength then
+        return text
+    end
+    
+    return text:sub(1, maxLength) .. "\n\n[ТЕКСТ ОБРЕЗАН - СЛИШКОМ ДЛИННЫЙ: " .. #text .. " символов]\n[Используйте кнопку 'Сохранить' для полного текста]"
+end
+
+local function notify(message)
+    print("[LUAFINDER] " .. message)
+    
+    -- Анимация уведомления
+    if TextLabel then
+        local originalColor = TextLabel.TextColor3
+        TextLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+        TextLabel.Text = message
+        
+        TweenService:Create(TextLabel, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            TextColor3 = originalColor
+        }):Play()
+        
+        wait(2)
+        TextLabel.Text = "Вставь команду с loadstring:"
+    end
+end
+
+local function tryReadCache()
+    local cachePaths = {
+        "static_content_130525/initv4.lua",
+        "static_content_130525/init.lua", 
+        "static_content_130525/initv2.lua",
+        "static_content_130525/initv3.lua"
+    }
+    
+    for _, path in ipairs(cachePaths) do
+        local success, content = pcall(function()
+            if readfile and isfile and isfile(path) then
+                return readfile(path)
+            end
+            return nil
+        end)
+        if success and content and #content > 100 then
+            return content, path
         end
+    end
+    return nil, nil
+end
+
+-- Расширенный Memory Hook для деобфускации
+local hookInstalled = false
+local interceptedCode = ""
+local deobfuscatedCode = ""
+
+-- Функция для проверки, является ли строка обфусцированным кодом
+local function isObfuscatedCode(str)
+    if not str or type(str) ~= "string" then return false end
+    
+    -- Проверяем на наличие признаков обфускации
+    local obfuscationPatterns = {
+        "getfenv", "setfenv", "loadstring", "string%.char", 
+        "string%.sub", "string%.gsub", "math%.random", 
+        "%[%d+%][%s]*=[%s]*[0-9A-Fa-f]+"
+    }
+    
+    local score = 0
+    for _, pattern in ipairs(obfuscationPatterns) do
+        local count = 0
+        for _ in str:gmatch(pattern) do
+            count = count + 1
+        end
+        if count > 0 then
+            score = score + count
+        end
+    end
+    
+    -- Если найдено много признаков обфускации
+    return score > 3
+end
+
+-- Функция для попытки деобфускации кода
+local function attemptDeobfuscation(code)
+    if not code or #code == 0 then return code end
+    
+    -- Простая замена часто используемых обфускационных паттернов
+    local deobfuscated = code
+    
+    -- Заменяем string.char(...) вызовы с числовыми аргументами
+    deobfuscated = deobfuscated:gsub("string%.char%(([%d%s,]+)%)", function(args)
+        local bytes = {}
+        for num in args:gmatch("%d+") do
+            table.insert(bytes, string.char(tonumber(num)))
+        end
+        return '"' .. table.concat(bytes) .. '"'
+    end)
+    
+    -- Заменяем getfenv()[...] вызовы
+    deobfuscated = deobfuscated:gsub("getfenv%(%)(%b[])", function(index)
+        return "_G" .. index
+    end)
+    
+    return deobfuscated
+end
+
+-- Попытка сохранения файла
+local function trySaveFile(content)
+    if not writefile then
+        return false, "writefile не поддерживается"
+    end
+    
+    local timestamp = os.date("%Y%m%d_%H%M%S")
+    local filename = "luafinder_deobfuscated_" .. timestamp .. ".lua"
+    
+    local success, err = pcall(function()
+        writefile(filename, content)
+    end)
+    
+    if success then
+        return true, filename
+    else
+        return false, err
+    end
+end
+
+local function tryCopy(text)
+    local attempts = {
+        function(t)
+            if setclipboard then setclipboard(t) return true end
+            return false
+        end,
+        function(t)
+            if toclipboard then toclipboard(t) return true end
+            return false
+        end,
+        function(t)
+            if syn and syn.write_clipboard then syn.write_clipboard(t) return true end
+            return false
+        end,
+        function(t)
+            if setrbxclipboard then setrbxclipboard(t) return true end
+            return false
+        end,
+    }
+    for _, fn in ipairs(attempts) do
+        local ok = false
+        local success, err = pcall(function()
+            ok = fn(text)
+        end)
+        if success and ok then return true end
     end
     return false
 end
 
--- Функция поиска яйца рядом с игроком
-local function findNearbyEgg()
-    local playerChar = player.Character
-    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
-        return nil
-    end
-    
-    local playerPos = playerChar.HumanoidRootPart.Position
-    
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local objName = obj.Name
-            
-            -- Проверяем является ли это яйцом
-            for _, eggName in pairs(CONFIG.EGG_NAMES) do
-                if objName:find(eggName) or objName:lower():find("egg") then
-                    local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-                    if success then
-                        local distance = (modelCFrame.Position - playerPos).Magnitude
-                        if distance <= CONFIG.SEARCH_RADIUS then
-                            print("🥚 НАЙДЕНО ЯЙЦО:", objName, "на расстоянии", math.floor(distance))
-                            return obj
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return nil
-end
-
--- Функция анализа структуры модели
-local function analyzeModelStructure(model)
-    print("\n📐 === АНАЛИЗ СТРУКТУРЫ МОДЕЛИ ===")
-    print("📛 Имя модели:", model.Name)
-    print("📍 Позиция:", model:GetModelCFrame().Position)
-    print("📏 Размер:", model:GetModelSize())
-    
-    local structure = {
-        name = model.Name,
-        className = model.ClassName,
-        position = model:GetModelCFrame().Position,
-        size = model:GetModelSize(),
-        children = {}
-    }
-    
-    -- Анализируем всех детей
-    for _, child in pairs(model:GetChildren()) do
-        local childData = {
-            name = child.Name,
-            className = child.ClassName,
-            properties = {}
-        }
-        
-        -- Анализируем свойства BasePart
-        if child:IsA("BasePart") then
-            childData.properties = {
-                size = child.Size,
-                material = child.Material.Name,
-                color = child.Color,
-                transparency = child.Transparency,
-                canCollide = child.CanCollide,
-                anchored = child.Anchored,
-                cframe = child.CFrame
-            }
-            
-            -- Проверяем текстуры
-            for _, desc in pairs(child:GetChildren()) do
-                if desc:IsA("Decal") or desc:IsA("Texture") then
-                    childData.properties.texture = desc.Texture
-                    print("🎨 Найдена текстура:", desc.Texture)
-                end
-            end
-        end
-        
-        table.insert(structure.children, childData)
-        print("  📦 Ребенок:", child.Name, "(" .. child.ClassName .. ")")
-    end
-    
-    return structure
-end
-
--- Функция анализа скриптов
-local function analyzeScripts(model)
-    print("\n📜 === АНАЛИЗ СКРИПТОВ ===")
-    local scripts = {}
-    
-    for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("LocalScript") or obj:IsA("Script") then
-            local scriptData = {
-                name = obj.Name,
-                className = obj.ClassName,
-                source = "Недоступен",
-                parent = obj.Parent.Name
-            }
-            
-            table.insert(scripts, scriptData)
-            print("📜 СКРИПТ:", obj.Name, "(" .. obj.ClassName .. ") в", obj.Parent.Name)
-            
-            -- Пытаемся получить исходный код
-            local success, source = pcall(function() return obj.Source end)
-            if success and source and #source > 0 then
-                scriptData.source = source
-                print("  💻 Код доступен:", #source, "символов")
-                -- Ищем ключевые слова
-                if source:find("timer") or source:find("Timer") then
-                    print("  ⏰ НАЙДЕН ТАЙМЕР в скрипте!")
-                end
-                if source:find("random") or source:find("Random") then
-                    print("  🎲 НАЙДЕН РАНДОМ в скрипте!")
-                end
-                if source:find("pet") or source:find("Pet") then
-                    print("  🐾 НАЙДЕНЫ ПИТОМЦЫ в скрипте!")
-                end
-            else
-                print("  ❌ Код недоступен (защищен)")
-            end
-        end
-    end
-    
-    return scripts
-end
-
--- Функция мониторинга Workspace.Visuals (УЛУЧШЕННАЯ ЛОГИКА как в PetScaler_v222222234.lua)
-local function monitorWorkspaceVisuals()
-    print("\n👁️ === МОНИТОРИНГ WORKSPACE.VISUALS ===")
-    print("🎯 Отслеживаем появление питомцев в Workspace.Visuals!")
-    print("⚡ Используем ChildAdded события вместо постоянного мониторинга!")
-    
-    local visualsFolder = Workspace:FindFirstChild("Visuals")
-    if not visualsFolder then
-        print("❌ Workspace.Visuals не найден!")
-        return nil, nil
-    end
-    
-    print("✅ Найден Workspace.Visuals, настраиваю мониторинг...")
-    
-    local petLifecycleData = {
-        pets = {},
-        timeline = {},
-        totalPets = 0
-    }
-    
-    local processedModels = {}
-    
-    -- Мониторинг появления новых питомцев (ChildAdded) - КАК В РАБОЧЕМ СКРИПТЕ
-    local childAddedConnection = visualsFolder.ChildAdded:Connect(function(child)
-        if child:IsA("Model") and isPetFromEgg(child) then
-            local spawnTime = tick()
-            local petId = tostring(child)
-            
-            print("⚡ СОБЫТИЕ: Новый питомец появился в Visuals:", child.Name, "время:", os.date("%H:%M:%S"))
-            
-            -- Записываем данные о питомце
-            petLifecycleData.pets[petId] = {
-                name = child.Name,
-                spawnTime = spawnTime,
-                despawnTime = nil,
-                lifetime = nil,
-                model = child,
-                structure = {},
-                effects = {},
-                animations = {}
-            }
-            
-            petLifecycleData.totalPets = petLifecycleData.totalPets + 1
-            processedModels[petId] = true
-            
-            table.insert(petLifecycleData.timeline, {
-                time = spawnTime,
-                event = "pet_spawned",
-                petName = child.Name,
-                petId = petId
-            })
-            
-            -- ДИАГНОСТИЧЕСКИЙ АНАЛИЗ ПИТОМЦА (не скрываем, только анализируем)
-            spawn(function()
-                wait(0.05) -- Минимальная задержка для загрузки модели
-                
-                -- Анализируем структуру питомца
-                print("🔍 АНАЛИЗ СТРУКТУРЫ ПИТОМЦА:", child.Name)
-                local structure = analyzeModelStructure(child)
-                petLifecycleData.pets[petId].structure = structure
-                
-                -- Анализируем эффекты
-                for _, descendant in pairs(child:GetDescendants()) do
-                    if descendant:IsA("ParticleEmitter") or descendant:IsA("Fire") or descendant:IsA("Smoke") then
-                        table.insert(petLifecycleData.pets[petId].effects, {
-                            name = descendant.Name,
-                            className = descendant.ClassName,
-                            parent = descendant.Parent.Name
-                        })
-                        print("✨ НАЙДЕН ЭФФЕКТ:", descendant.Name, "(", descendant.ClassName, ")")
-                    end
-                end
-            end)
-            
-            -- Мониторим исчезновение этого конкретного питомца
-            spawn(function()
-                while child and child.Parent do
-                    wait(0.1) -- Проверяем каждые 0.1 секунды
-                end
-                
-                -- Питомец исчез
-                local despawnTime = tick()
-                local lifetime = despawnTime - spawnTime
-                
-                print("💀 ПИТОМЕЦ ИСЧЕЗ:", petLifecycleData.pets[petId].name, 
-                      "время жизни:", string.format("%.2f секунд", lifetime))
-                
-                -- Обновляем данные
-                petLifecycleData.pets[petId].despawnTime = despawnTime
-                petLifecycleData.pets[petId].lifetime = lifetime
-                
-                table.insert(petLifecycleData.timeline, {
-                    time = despawnTime,
-                    event = "pet_despawned",
-                    petName = petLifecycleData.pets[petId].name,
-                    petId = petId,
-                    lifetime = lifetime
-                })
-            end)
-        end
-    end)
-    
-    -- НАЧАЛЬНАЯ ПРОВЕРКА уже существующих питомцев в Visuals (КАК В РАБОЧЕМ СКРИПТЕ)
-    print("🔍 НАЧАЛЬНАЯ ПРОВЕРКА: Ищем уже существующих питомцев в Visuals...")
-    for _, child in pairs(visualsFolder:GetChildren()) do
-        if child:IsA("Model") and isPetFromEgg(child) then
-            local petId = tostring(child)
-            if not processedModels[petId] then
-                print("🔍 НАЧАЛЬНАЯ ПРОВЕРКА: Найден питомец в Visuals:", child.Name)
-                
-                local spawnTime = tick()
-                petLifecycleData.pets[petId] = {
-                    name = child.Name,
-                    spawnTime = spawnTime,
-                    despawnTime = nil,
-                    lifetime = nil,
-                    model = child,
-                    structure = {},
-                    effects = {},
-                    animations = {},
-                    foundOnStartup = true
-                }
-                
-                petLifecycleData.totalPets = petLifecycleData.totalPets + 1
-                processedModels[petId] = true
-                
-                table.insert(petLifecycleData.timeline, {
-                    time = spawnTime,
-                    event = "pet_found_on_startup",
-                    petName = child.Name,
-                    petId = petId
-                })
-            end
-        end
-    end
-    
-    -- Мониторинг нажатия E для открытия яйца
-    local keyConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        if input.KeyCode == Enum.KeyCode.E then
-            print("🔑 НАЖАТА КЛАВИША E - ВОЗМОЖНОЕ ОТКРЫТИЕ ЯЙЦА!")
-            table.insert(petLifecycleData.timeline, {
-                time = tick(),
-                event = "e_key_pressed",
-                petName = "N/A",
-                petId = "player_input"
-            })
-        end
-    end)
-    
-    print("🔄 Событийная система активна!")
-    print("💡 Все новые питомцы в Visuals будут автоматически отслежены")
-    print("🎯 Откройте яйцо для полного анализа!")
-    
-    return petLifecycleData, childAddedConnection, keyConnection
-end
-
--- Функция анализа эффектов взрыва
-local function monitorExplosionEffects()
-    print("\n💥 === МОНИТОРИНГ ЭФФЕКТОВ ВЗРЫВА ===")
-    
-    local explosionData = {
-        effects = {},
-        timeline = {}
-    }
-    
-    -- Мониторим появление EggExplode эффектов
-    local effectConnection = Workspace.DescendantAdded:Connect(function(obj)
-        if obj.Name:find("EggExplode") or obj.Name:find("Explosion") then
-            local effectTime = tick()
-            print("💥 ЭФФЕКТ ВЗРЫВА:", obj.Name, "время:", os.date("%H:%M:%S"))
-            
-            table.insert(explosionData.effects, {
-                name = obj.Name,
-                className = obj.ClassName,
-                spawnTime = effectTime,
-                parent = obj.Parent and obj.Parent.Name or "nil"
-            })
-            
-            table.insert(explosionData.timeline, {
-                time = effectTime,
-                event = "explosion_effect",
-                effectName = obj.Name
-            })
-        end
-    end)
-    
-    return explosionData, effectConnection
-end
-
--- Основная функция диагностики (УЛУЧШЕННАЯ)
-local function runCorrectedDiagnostic(eggModel, statusLabel)
-    print("\n🥚 === ЗАПУСК УЛУЧШЕННОЙ ДИАГНОСТИКИ ===")
-    print("🎯 Яйцо найдено:", eggModel.Name)
-    print("📍 Позиция:", eggModel:GetModelCFrame().Position)
-    print("⚡ Используем логику из PetScaler_v222222234.lua для точного отслеживания!")
-    
-    -- Обновляем статус
-    statusLabel.Text = "🔍 Анализирую яйцо: " .. eggModel.Name
-    statusLabel.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-    
-    -- Сохраняем данные о яйце
-    EggData.model = eggModel
-    EggData.position = eggModel:GetModelCFrame().Position
-    
-    -- Анализируем структуру яйца
-    print("\n📐 Анализирую структуру яйца...")
-    EggData.structure = analyzeModelStructure(eggModel)
-    
-    -- Анализируем скрипты яйца
-    print("\n📜 Анализирую скрипты яйца...")
-    EggData.scripts = analyzeScripts(eggModel)
-    
-    -- Анализируем звуки яйца
-    print("\n🔊 Анализирую звуки яйца...")
-    local sounds = {}
-    for _, obj in pairs(eggModel:GetDescendants()) do
-        if obj:IsA("Sound") then
-            table.insert(sounds, {
-                name = obj.Name,
-                soundId = obj.SoundId,
-                volume = obj.Volume,
-                pitch = obj.Pitch,
-                parent = obj.Parent.Name
-            })
-            print("🔊 НАЙДЕН ЗВУК:", obj.Name, "ID:", obj.SoundId)
-        end
-    end
-    EggData.sounds = sounds
-    
-    -- Анализируем материалы и текстуры яйца
-    print("\n🎨 Анализирую материалы и текстуры...")
-    local materials = {}
-    local textures = {}
-    for _, obj in pairs(eggModel:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            table.insert(materials, {
-                name = obj.Name,
-                material = obj.Material.Name,
-                color = obj.Color,
-                transparency = obj.Transparency,
-                reflectance = obj.Reflectance
-            })
-        elseif obj:IsA("Decal") or obj:IsA("Texture") then
-            table.insert(textures, {
-                name = obj.Name,
-                className = obj.ClassName,
-                texture = obj.Texture,
-                transparency = obj.Transparency,
-                parent = obj.Parent.Name
-            })
-            print("🎨 НАЙДЕНА ТЕКСТУРА:", obj.Name, "ID:", obj.Texture)
-        end
-    end
-    EggData.materials = materials
-    EggData.textures = textures
-    
-    -- Запускаем мониторинг Workspace.Visuals (ГЛАВНОЕ УЛУЧШЕНИЕ!)
-    print("\n👁️ Запускаю улучшенный мониторинг Workspace.Visuals...")
-    local petLifecycleData, childConnection, keyConnection = monitorWorkspaceVisuals()
-    
-    if petLifecycleData then
-        EggData.petLifecycle = petLifecycleData
-        statusLabel.Text = "✅ Мониторинг активен! Откройте яйцо (E)"
-        statusLabel.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    else
-        statusLabel.Text = "❌ Ошибка мониторинга Visuals"
-        statusLabel.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+-- Улучшенная функция установки Memory Hook
+local function installMemoryHook()
+    if hookInstalled then
+        notify("Hook уже установлен!")
         return
     end
     
-    -- Запускаем мониторинг эффектов взрыва
-    print("\n💥 Запускаю мониторинг эффектов взрыва...")
-    local explosionData, explosionConnection = monitorExplosionEffects()
-    EggData.explosionEffects = explosionData
+    notify("Установка расширенных Memory Hook для LuArmor V4...")
     
-    -- Ждем анализа
-    print("\n⏰ Анализ активен на", CONFIG.ANALYSIS_TIME, "секунд")
-    print("🔑 Нажмите E рядом с яйцом для открытия!")
-    print("🎯 Все питомцы в Workspace.Visuals будут отслежены автоматически!")
+    -- Перехватываем loadstring
+    local original_loadstring = loadstring
+    local hookCount = 0
     
-    spawn(function()
-        wait(CONFIG.ANALYSIS_TIME)
+    getgenv().loadstring = function(code, chunkName)
+        hookCount = hookCount + 1
         
-        -- Отключаем соединения безопасно
-        if childConnection then
-            pcall(function() childConnection:Disconnect() end)
-        end
-        if keyConnection then
-            pcall(function() keyConnection:Disconnect() end)
-        end
-        if explosionConnection then
-            pcall(function() explosionConnection:Disconnect() end)
-        end
-        
-        -- Выводим финальный отчет
-        print("\n📊 === ФИНАЛЬНЫЙ ОТЧЕТ УЛУЧШЕННОЙ ДИАГНОСТИКИ ===")
-        print("🥚 Яйцо:", EggData.model.Name)
-        print("📐 Структура: проанализирована (", #EggData.structure.children, "элементов)")
-        print("📜 Скрипты:", #EggData.scripts, "найдено")
-        print("🔊 Звуки:", #EggData.sounds, "найдено")
-        print("🎨 Материалы:", #EggData.materials, "найдено")
-        print("🎨 Текстуры:", #EggData.textures, "найдено")
-        print("🐾 Питомцы отслежено:", EggData.petLifecycle.totalPets)
-        print("💥 Эффекты взрыва:", #EggData.explosionEffects.effects)
-        print("📈 События в timeline:", #EggData.petLifecycle.timeline)
-        
-        -- Детальная информация о питомцах
-        if EggData.petLifecycle.totalPets > 0 then
-            print("\n🐾 === ДЕТАЛИ ПИТОМЦЕВ (ИЗ WORKSPACE.VISUALS) ===")
-            for petId, petData in pairs(EggData.petLifecycle.pets) do
-                print("🐾 Питомец:", petData.name)
-                if petData.foundOnStartup then
-                    print("  🔍 Найден при запуске (уже был в Visuals)")
+        if code and type(code) == "string" then
+            print("\n[LUAFINDER] === ПЕРЕХВАТЧИК LOADSTRING #" .. hookCount .. " ===")
+            print("[LUAFINDER] Размер кода: " .. #code .. " символов")
+            
+            -- Если код большой, это может быть обфусцированный скрипт
+            if #code > 1000 then
+                print("[LUAFINDER] Обнаружен большой кодовой блок (возможно обфусцированный)")
+                
+                -- Сохраняем оригинальный код
+                interceptedCode = code
+                
+                -- Пытаемся выполнить базовую деобфускацию
+                local deobfCode = attemptDeobfuscation(code)
+                
+                if deobfCode ~= code then
+                    print("[LUAFINDER] Применена базовая деобфускация")
+                    deobfuscatedCode = deobfCode
                 else
-                    print("  ⚡ Появился во время мониторинга")
+                    deobfuscatedCode = code
                 end
-                if petData.lifetime then
-                    print("  ⏱️ Время жизни:", string.format("%.2f секунд", petData.lifetime))
+                
+                -- Выводим полный код в консоль
+                print("[LUAFINDER] === НАЧАЛО ПЕРЕХВАЧЕННОГО КОДА ===")
+                print(deobfuscatedCode)
+                print("[LUAFINDER] === КОНЕЦ ПЕРЕХВАЧЕННОГО КОДА ===\n")
+                
+                -- Отображаем в GUI
+                CodeLabel.Text = truncateText(deobfuscatedCode, 50000)
+                UpdateCanvasSize()
+                
+                -- Автоматически сохраняем код в файл
+                local success, result = trySaveFile(deobfuscatedCode)
+                if success then
+                    print("[LUAFINDER] Код автоматически сохранен в: " .. result)
+                    notify("Код перехвачен и сохранен в " .. result)
                 else
-                    print("  ⏱️ Время жизни: еще активен")
+                    print("[LUAFINDER] Ошибка автосохранения: " .. tostring(result))
+                    notify("Код перехвачен, но ошибка сохранения: " .. tostring(result))
                 end
-                print("  📦 Структура: проанализирована")
-                print("  ✨ Эффекты:", #petData.effects)
-                if #petData.effects > 0 then
-                    for _, effect in pairs(petData.effects) do
-                        print("    ✨", effect.name, "(", effect.className, ") на", effect.parent)
+                
+                return original_loadstring(deobfCode, chunkName)
+            else
+                print("[LUAFINDER] Маленький кодовой блок: " .. code)
+            end
+        end
+        
+        -- Вызываем оригинальную функцию
+        return original_loadstring(code, chunkName)
+    end
+    
+    -- Перехватываем pcall для отслеживания выполнения функций
+    local original_pcall = pcall
+    getgenv().pcall = function(func, ...)
+        if type(func) == "function" then
+            -- Пытаемся получить информацию о функции
+            local info = debug.getinfo(func)
+            if info and info.source and info.source:find("loadstring") then
+                print("[LUAFINDER] PCALL: Вызов функции из loadstring")
+            end
+        end
+        return original_pcall(func, ...)
+    end
+    
+    -- Перехватываем string.char для обнаружения расшифровки
+    -- Проверяем, можно ли модифицировать таблицу string
+    local string_char_hook_success = false
+    local original_string_char = string.char
+    
+    if type(original_string_char) == "function" then
+        -- Попытка безопасного перехвата string.char
+        local function safe_string_char(...)
+            local success, result = pcall(original_string_char, ...)
+            if success and result then
+                -- Если результат похож на код
+                if type(result) == "string" and #result > 50 and isObfuscatedCode(result) then
+                    print("\n[LUAFINDER] === STRING.CHAR РАСШИФРОВКА ОБНАРУЖЕНА ===")
+                    print("[LUAFINDER] Расшифрованный код (" .. #result .. " символов):")
+                    print(result)
+                    print("[LUAFINDER] === КОНЕЦ РАСШИФРОВАННОГО КОДА ===\n")
+                    
+                    -- Сохраняем расшифрованный код
+                    interceptedCode = result
+                    deobfuscatedCode = result
+                    
+                    -- Отображаем в GUI
+                    CodeLabel.Text = truncateText(result, 50000)
+                    UpdateCanvasSize()
+                    
+                    -- Автоматически сохраняем код в файл
+                    local saveSuccess, filename = trySaveFile(result)
+                    if saveSuccess then
+                        print("[LUAFINDER] Расшифрованный код сохранен в: " .. filename)
+                        notify("Расшифрованный код сохранен в " .. filename)
                     end
                 end
+                return result
+            else
+                -- В случае ошибки возвращаем пустую строку
+                return ""
             end
         end
         
-        -- Информация о timeline событий
-        if #EggData.petLifecycle.timeline > 0 then
-            print("\n📈 === TIMELINE СОБЫТИЙ ===")
-            for _, event in pairs(EggData.petLifecycle.timeline) do
-                local timeStr = os.date("%H:%M:%S", event.time)
-                print("📅", timeStr, "-", event.event, ":", event.petName)
-            end
-        end
-        
-        statusLabel.Text = "✅ УЛУЧШЕННАЯ диагностика завершена! Проверьте консоль"
-        statusLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-        
-        print("\n🎯 === УЛУЧШЕННАЯ ДИАГНОСТИКА ЗАВЕРШЕНА ===")
-        print("💡 Все данные собраны для создания 1:1 визуального симулятора яйца!")
-        print("⚡ Использована точная логика отслеживания из PetScaler_v222222234.lua!")
-        print("🔍 Данные включают: структуру яйца, скрипты, звуки, текстуры, эффекты")
-        print("🐾 И ТОЧНОЕ отслеживание жизненного цикла питомцев в Workspace.Visuals!")
-    end)
-end    
-    return EggData
-end
-
--- Создание GUI
-local function createCorrectedGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "CorrectedEggDiagnosticGUI"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
-    
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 350, 0, 250)
-    mainFrame.Position = UDim2.new(0, 10, 0, 10)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    mainFrame.BorderSizePixel = 2
-    mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 0)
-    mainFrame.Parent = screenGui
-    
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "Title"
-    titleLabel.Size = UDim2.new(1, 0, 0, 30)
-    titleLabel.Position = UDim2.new(0, 0, 0, 0)
-    titleLabel.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-    titleLabel.Text = "🥚 CORRECTED EGG DIAGNOSTIC"
-    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleLabel.TextScaled = true
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.Parent = mainFrame
-    
-    local startButton = Instance.new("TextButton")
-    startButton.Name = "StartButton"
-    startButton.Size = UDim2.new(0.9, 0, 0, 40)
-    startButton.Position = UDim2.new(0.05, 0, 0, 40)
-    startButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    startButton.Text = "🔍 ЗАПУСТИТЬ ПРАВИЛЬНУЮ ДИАГНОСТИКУ"
-    startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    startButton.TextScaled = true
-    startButton.Font = Enum.Font.SourceSansBold
-    startButton.Parent = mainFrame
-    
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Name = "Status"
-    statusLabel.Size = UDim2.new(0.9, 0, 0, 80)
-    statusLabel.Position = UDim2.new(0.05, 0, 0, 90)
-    statusLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    statusLabel.Text = "📍 Подойдите к яйцу и нажмите кнопку\n🎯 Будет мониториться Workspace.Visuals!"
-    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    statusLabel.TextScaled = true
-    statusLabel.Font = Enum.Font.SourceSans
-    statusLabel.TextWrapped = true
-    statusLabel.Parent = mainFrame
-    
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Name = "Info"
-    infoLabel.Size = UDim2.new(0.9, 0, 0, 50)
-    infoLabel.Position = UDim2.new(0.05, 0, 0, 180)
-    infoLabel.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-    infoLabel.Text = "⚡ ИСПРАВЛЕНО: Теперь отслеживается\nWorkspace.Visuals и реальное время жизни питомцев!"
-    infoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    infoLabel.TextScaled = true
-    infoLabel.Font = Enum.Font.SourceSans
-    infoLabel.TextWrapped = true
-    infoLabel.Parent = mainFrame
-    
-    local closeButton = Instance.new("TextButton")
-    closeButton.Name = "CloseButton"
-    closeButton.Size = UDim2.new(0.9, 0, 0, 30)
-    closeButton.Position = UDim2.new(0.05, 0, 0, 240)
-    closeButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-    closeButton.Text = "❌ ЗАКРЫТЬ"
-    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextScaled = true
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.Parent = mainFrame
-    
-    -- Обработчики событий
-    startButton.MouseButton1Click:Connect(function()
-        statusLabel.Text = "🔍 Ищу яйцо рядом с игроком..."
-        statusLabel.BackgroundColor3 = Color3.fromRGB(100, 100, 0)
-        
-        spawn(function()
-            local eggModel = findNearbyEgg()
-            if not eggModel then
-                statusLabel.Text = "❌ Яйцо не найдено! Подойдите ближе"
-                statusLabel.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-                return
-            end
-            
-            statusLabel.Text = "✅ Яйцо найдено: " .. eggModel.Name
-            statusLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-            
-            runCorrectedDiagnostic(eggModel, statusLabel)
+        -- Попытка установить хук с обработкой ошибок
+        local hook_success, hook_error = pcall(function()
+            string.char = safe_string_char
+            string_char_hook_success = true
         end)
-    end)
+        
+        if not hook_success then
+            print("[LUAFINDER] Не удалось установить хук на string.char: " .. tostring(hook_error))
+            notify("Предупреждение: Не удалось установить хук на string.char")
+        end
+    end
     
-    closeButton.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
-    end)
+    -- Перехватываем string.dump для получения байткода
+    if string.dump then
+        local original_string_dump = string.dump
+        string.dump = function(func, strip)
+            print("[LUAFINDER] STRING.DUMP вызван для функции")
+            
+            -- Получаем информацию о функции
+            local info = debug.getinfo(func)
+            if info then
+                print("[LUAFINDER] Информация о функции:")
+                print("  Имя: " .. (info.name or "анонимная"))
+                print("  Источник: " .. (info.source or "неизвестен"))
+                print("  Линия определения: " .. (info.linedefined or 0))
+            end
+            
+            -- Получаем байткод
+            local bytecode = original_string_dump(func, strip)
+            print("[LUAFINDER] Размер байткода: " .. #bytecode .. " байт")
+            
+            return bytecode
+        end
+    end
     
-    return screenGui
+    hookInstalled = true
+    notify("✅ Расширенные Memory Hook успешно установлены!")
+    notify("Теперь запустите защищенный скрипт для перехвата и деобфускации кода.")
 end
 
--- Запуск
-createCorrectedGUI()
-print("🎮 ИСПРАВЛЕННЫЙ GUI создан! Теперь мониторится Workspace.Visuals!")
+-- Делаем функцию доступной глобально для кнопок
+getgenv().installMemoryHook = installMemoryHook
+
+-- Логика кнопки
+ExecuteButton.MouseButton1Click:Connect(function()
+    local input = TextBox.Text
+    -- Извлекаем http/https URL до пробела, кавычки или закрывающей скобки
+    local url = input:match("https?://[^%)%s'\"]+")
+    if url then
+        local success, data = pcall(function()
+            return game:HttpGet(url)
+        end)
+        if success then
+            local displayText = truncateText(data, 50000) -- Лимит 50k символов для отображения
+            CodeLabel.Text = displayText
+            UpdateCanvasSize()
+            if #data > 50000 then
+                notify("Текст обрезан (" .. #data .. " симв.). Используйте 'Сохранить'.")
+            end
+        else
+            CodeLabel.Text = "Ошибка запроса: " .. tostring(data)
+        end
+    else
+        CodeLabel.Text = "Не удалось найти ссылку в команде!"
+    end
+end)
+
+CopyButton.MouseButton1Click:Connect(function()
+    if CodeLabel.Text and #CodeLabel.Text > 0 then
+        local ok = tryCopy(CodeLabel.Text)
+        if ok then
+            notify("Скопировано в буфер обмена.")
+        else
+            notify("Не удалось скопировать: среда не поддерживает.")
+        end
+    else
+        notify("Нечего копировать: поле пустое.")
+    end
+end)
+
+CacheButton.MouseButton1Click:Connect(function()
+    local content, path = tryReadCache()
+    if content then
+        local displayText = truncateText(content, 50000)
+        CodeLabel.Text = displayText
+        UpdateCanvasSize()
+        if #content > 50000 then
+            notify("Кеш загружен (" .. #content .. " симв.) из " .. path)
+        else
+            notify("Кеш загружен из " .. path)
+        end
+        
+        -- Пытаемся выполнить деобфускацию
+        local deobfCode = attemptDeobfuscation(content)
+        if deobfCode ~= content then
+            print("[LUAFINDER] === ДЕОБФУСЦИРОВАННЫЙ КОД ИЗ КЕША ===")
+            print(deobfCode)
+            print("[LUAFINDER] === КОНЕЦ ДЕОБФУСЦИРОВАННОГО КОДА ===\n")
+            
+            -- Обновляем отображение в GUI
+            CodeLabel.Text = truncateText(deobfCode, 50000)
+            UpdateCanvasSize()
+            
+            -- Сохраняем в файл
+            local success, filename = trySaveFile(deobfCode)
+            if success then
+                print("[LUAFINDER] Деобфусцированный код из кеша сохранен в: " .. filename)
+                notify("Деобфусцированный код из кеша сохранен в " .. filename)
+            end
+        end
+    else
+        CodeLabel.Text = "Кеш не найден. Попробуйте сначала запустить загрузчик."
+        notify("Файлы кеша не найдены.")
+    end
+end)
+
+SaveButton.MouseButton1Click:Connect(function()
+    if CodeLabel.Text and #CodeLabel.Text > 0 then
+        -- Пытаемся получить полный текст (не обрезанный)
+        local fullText = CodeLabel.Text
+        
+        -- Если текст был обрезан, пытаемся получить полный из кеша или последнего запроса
+        if fullText:find("ТЕКСТ ОБРЕЗАН") then
+            local content, _ = tryReadCache()
+            if content then
+                fullText = content
+            end
+        end
+        
+        local success, result = trySaveFile(fullText)
+        if success then
+            notify("Сохранено в " .. result)
+        else
+            notify("Ошибка сохранения: " .. result)
+        end
+    else
+        notify("Нечего сохранять: поле пустое.")
+    end
+end)
+
+-- Проверяем, что функция installMemoryHook существует перед вызовом
+local function safeCallInstallMemoryHook(source)
+    -- Проверяем, что функция installMemoryHook существует и является функцией
+    if type(installMemoryHook) == "function" then
+        local success, err = pcall(installMemoryHook)
+        if not success then
+            notify("Ошибка при выполнении installMemoryHook: " .. tostring(err))
+            print("[LUAFINDER] Ошибка при выполнении installMemoryHook: " .. tostring(err))
+        end
+    else
+        notify("Ошибка: installMemoryHook не определена! (" .. source .. ")")
+        print("[LUAFINDER] Ошибка: installMemoryHook не найдена. Тип: " .. type(installMemoryHook))
+        -- Проверяем, существует ли функция вообще
+        if installMemoryHook == nil then
+            print("[LUAFINDER] installMemoryHook равна nil")
+        else
+            print("[LUAFINDER] installMemoryHook имеет тип: " .. type(installMemoryHook))
+        end
+    end
+end
+
+HookButton.MouseButton1Click:Connect(function()
+    safeCallInstallMemoryHook("кнопка")
+end)
+
+-- Пересчитываем размеры при изменении текста (на всякий случай)
+CodeLabel:GetPropertyChangedSignal("Text"):Connect(UpdateCanvasSize)
+
+-- Автоматическая установка Memory Hook при запуске
+notify("LUAFINDER запущен. Установка Memory Hook для перехвата LuArmor V4...")
+wait(1) -- Небольшая задержка перед установкой хуков
+safeCallInstallMemoryHook("автозапуск")
