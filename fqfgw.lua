@@ -1,339 +1,411 @@
--- Advanced LuaArmor Interceptor
--- Self-contained script that uses advanced hooking techniques to intercept LuaArmor code
+-- Создаём GUI
+local ScreenGui = Instance.new("ScreenGui")
+local Frame = Instance.new("Frame")
+local TextBox = Instance.new("TextBox")
+local TextLabel = Instance.new("TextLabel")
+local ScrollFrame = Instance.new("ScrollingFrame")
+local CodeLabel = Instance.new("TextLabel")
+local ExecuteButton = Instance.new("TextButton")
+local CopyButton = Instance.new("TextButton")
+local CacheButton = Instance.new("TextButton")
+local SaveButton = Instance.new("TextButton")
+local HookButton = Instance.new("TextButton")
 
--- Check if we're in a Roblox environment
-if not game then
-    print("[ERROR] This script must be run in a Roblox environment")
-    return
+local TextService = game:GetService("TextService")
+local TweenService = game:GetService("TweenService")
+
+-- Подключаем GUI к CoreGui
+ScreenGui.Parent = game.CoreGui
+
+-- Настройки главного окна
+Frame.Size = UDim2.new(0, 600, 0, 400)
+Frame.Position = UDim2.new(0.5, -300, 0.5, -200)
+Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+-- Текстовое описание
+TextLabel.Text = "Вставь команду с loadstring:"
+TextLabel.Size = UDim2.new(1, 0, 0, 30)
+TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextLabel.BackgroundTransparency = 1
+TextLabel.Font = Enum.Font.SourceSansBold
+TextLabel.TextSize = 18
+TextLabel.Parent = Frame
+
+-- Поле для ввода команды
+TextBox.Size = UDim2.new(1, -20, 0, 30)
+TextBox.Position = UDim2.new(0, 10, 0, 35)
+TextBox.Text = ""
+TextBox.PlaceholderText = 'Пример: loadstring(game:HttpGet("https://example.com/script.lua"))()'
+TextBox.TextColor3 = Color3.fromRGB(0, 0, 0)
+TextBox.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+TextBox.ClearTextOnFocus = false
+TextBox.Parent = Frame
+
+-- Кнопка запуска
+ExecuteButton.Size = UDim2.new(0.25, -7.5, 0, 30)
+ExecuteButton.Position = UDim2.new(0, 10, 0, 70)
+ExecuteButton.Text = "Перехватить код"
+ExecuteButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+ExecuteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ExecuteButton.Font = Enum.Font.SourceSansBold
+ExecuteButton.TextSize = 16
+ExecuteButton.Parent = Frame
+
+-- Кнопка копирования
+CopyButton.Size = UDim2.new(0.25, -7.5, 0, 30)
+CopyButton.Position = UDim2.new(0.25, 2.5, 0, 70)
+CopyButton.Text = "Копировать"
+CopyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+CopyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CopyButton.Font = Enum.Font.SourceSansBold
+CopyButton.TextSize = 16
+CopyButton.Parent = Frame
+
+-- Кнопка кеша
+CacheButton.Size = UDim2.new(0.25, -7.5, 0, 30)
+CacheButton.Position = UDim2.new(0.5, 2.5, 0, 70)
+CacheButton.Text = "Из кеша"
+CacheButton.BackgroundColor3 = Color3.fromRGB(80, 40, 80)
+CacheButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CacheButton.Font = Enum.Font.SourceSansBold
+CacheButton.TextSize = 16
+CacheButton.Parent = Frame
+
+-- Кнопка сохранения
+SaveButton.Size = UDim2.new(0.25, -7.5, 0, 30)
+SaveButton.Position = UDim2.new(0.75, 2.5, 0, 70)
+SaveButton.Text = "Сохранить"
+SaveButton.BackgroundColor3 = Color3.fromRGB(40, 80, 40)
+SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SaveButton.Font = Enum.Font.SourceSansBold
+SaveButton.TextSize = 16
+SaveButton.Parent = Frame
+
+-- Кнопка Memory Hook
+HookButton.Size = UDim2.new(1, -20, 0, 30)
+HookButton.Position = UDim2.new(0, 10, 0, 105)
+HookButton.Text = "🔓 Установить Memory Hook (перехват кода)"
+HookButton.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+HookButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+HookButton.Font = Enum.Font.SourceSansBold
+HookButton.TextSize = 16
+HookButton.Parent = Frame
+
+-- Поле для отображения кода
+ScrollFrame.Size = UDim2.new(1, -20, 1, -145)
+ScrollFrame.Position = UDim2.new(0, 10, 0, 145)
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollFrame.ScrollingDirection = Enum.ScrollingDirection.XY
+ScrollFrame.ScrollBarThickness = 8
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ScrollFrame.BorderSizePixel = 0
+ScrollFrame.Parent = Frame
+
+CodeLabel.Size = UDim2.new(0, 0, 0, 0)
+CodeLabel.Text = ""
+CodeLabel.TextXAlignment = Enum.TextXAlignment.Left
+CodeLabel.TextYAlignment = Enum.TextYAlignment.Top
+CodeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+CodeLabel.BackgroundTransparency = 1
+CodeLabel.TextWrapped = false
+CodeLabel.TextSize = 14
+CodeLabel.Font = Enum.Font.Code
+CodeLabel.Parent = ScrollFrame
+
+-- Утилиты
+local function UpdateCanvasSize()
+    local text = CodeLabel.Text or ""
+    local bounds = TextService:GetTextSize(text, CodeLabel.TextSize, CodeLabel.Font, Vector2.new(100000, 100000))
+    local padX, padY = 10, 10
+    local width = math.max(bounds.X + padX, ScrollFrame.AbsoluteSize.X)
+    local height = math.max(bounds.Y + padY, ScrollFrame.AbsoluteSize.Y)
+    CodeLabel.Size = UDim2.new(0, width, 0, height)
+    ScrollFrame.CanvasSize = UDim2.new(0, width, 0, height)
 end
 
--- Store original functions
-local original_loadstring = loadstring
-local original_pcall = pcall
-local original_xpcall = xpcall
-local original_HttpGet = game.HttpGet
-
--- Table to store intercepted code
-local interceptedCode = {}
-local interceptedFunctions = {}
-
--- Function to safely add intercepted code
-local function addInterceptedCode(source, chunkname, method)
-    table.insert(interceptedCode, {
-        source = source,
-        chunkname = chunkname,
-        method = method or "unknown",
-        timestamp = tick()
-    })
-    
-    -- Print to console for immediate viewing
-    print("[INTERCEPTED] Code intercepted via " .. method .. ":")
-    print(source)
-    print("----------------------------------------")
-end
-
--- Advanced loadstring hook using hookfunction if available
-local function hookLoadstring()
-    -- Try to hook loadstring directly
-    loadstring = function(source, chunkname)
-        addInterceptedCode(source, chunkname, "loadstring")
-        -- Return a dummy function instead of the actual loaded function
-        return function() end
-    end
-    
-    -- Try to hook with hookfunction if available (in some exploits)
-    if hookfunction then
-        local success, err = pcall(function()
-            hookfunction(original_loadstring, function(source, chunkname)
-                addInterceptedCode(source, chunkname, "hookfunction(loadstring)")
-                return function() end
-            end)
-        end)
-        
-        if success then
-            print("[HOOK] Successfully hooked loadstring with hookfunction")
-        else
-            print("[HOOK] Failed to hook loadstring with hookfunction: " .. tostring(err))
+local function notify(msg)
+    local prev = TextLabel.Text
+    TextLabel.Text = msg
+    task.delay(1.5, function()
+        -- Возвращаем исходный текст, если пользователь не изменил его вручную
+        if TextLabel and TextLabel.Parent then
+            TextLabel.Text = prev
         end
-    end
+    end)
 end
 
--- Hook HttpGet to intercept network requests
-local function hookHttpGet()
-    if game.HttpGet then
-        local success, err = pcall(function()
-            game.HttpGet = function(self, url, nocache)
-                local result = original_HttpGet(self, url, nocache)
-                print("[INTERCEPTED] HttpGet request to: " .. tostring(url))
-                addInterceptedCode(result, url, "HttpGet")
-                return result
+local function truncateText(text, maxLength)
+    if #text <= maxLength then return text end
+    return text:sub(1, maxLength) .. "\n\n[ТЕКСТ ОБРЕЗАН - СЛИШКОМ ДЛИННЫЙ: " .. #text .. " символов]\n[Используйте кнопку 'Сохранить' для полного текста]"
+end
+
+local function tryReadCache()
+    local cachePaths = {
+        "static_content_130525/initv4.lua",
+        "static_content_130525/init.lua", 
+        "static_content_130525/initv2.lua",
+        "static_content_130525/initv3.lua"
+    }
+    
+    for _, path in ipairs(cachePaths) do
+        local success, content = pcall(function()
+            if readfile then
+                return readfile(path)
             end
+            return nil
         end)
-        
-        if success then
-            print("[HOOK] Successfully hooked HttpGet")
-        else
-            print("[HOOK] Failed to hook HttpGet: " .. tostring(err))
+        if success and content and #content > 100 then
+            return content, path
         end
     end
+    return nil, nil
 end
 
--- Hook pcall and xpcall to catch executed functions
-local function hookCallFunctions()
-    pcall = function(func, ...)
-        if type(func) == "function" then
-            table.insert(interceptedFunctions, {
-                func = func,
-                args = {...},
-                timestamp = tick(),
-                method = "pcall"
-            })
-        end
-        return original_pcall(func, ...)
-    end
-    
-    xpcall = function(func, errHandler, ...)
-        if type(func) == "function" then
-            table.insert(interceptedFunctions, {
-                func = func,
-                args = {...},
-                timestamp = tick(),
-                method = "xpcall"
-            })
-        end
-        return original_xpcall(func, errHandler, ...)
-    end
-end
+local hookInstalled = false
+local interceptedCode = ""
 
--- Try to hook metamethods if possible
-local function hookMetamethods()
-    if hookmetamethod then
-        local success, err = pcall(function()
-            -- Hook __call metamethod
-            local original_call = hookmetamethod(game, "__call", function(func, ...)
-                if type(func) == "function" then
-                    table.insert(interceptedFunctions, {
-                        func = func,
-                        args = {...},
-                        timestamp = tick(),
-                        method = "__call"
-                    })
-                end
-                return original_call(func, ...)
-            end)
-            
-            if success then
-                print("[HOOK] Successfully hooked __call metamethod")
-            else
-                print("[HOOK] Failed to hook __call metamethod: " .. tostring(err))
-            end
-        end)
-    end
-end
-
--- Try to get function source if possible
-local function tryGetFunctionSource(func)
-    -- Some exploits have getinfo or similar functions
-    if getinfo then
-        local info = getinfo(func)
-        if info and info.source then
-            return info.source
-        end
-    end
-    
-    -- Try other methods if available
-    if typeof and typeof(func) == "function" then
-        -- In some environments, we can get function details
-        return "function source not available"
-    end
-    
-    return "function source not available"
-end
-
--- Enhanced GUI Console for displaying intercepted code
-local function createGUI()
-    -- Prevent multiple GUI instances
-    if game.Players.LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("LuaArmorInterceptor") then
+local function installMemoryHook()
+    if hookInstalled then
+        notify("Hook уже установлен!")
         return
     end
     
-    -- Create ScreenGui
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "LuaArmorInterceptor"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    -- Простой и надежный подход - перехватываем только loadstring
+    local original_loadstring = loadstring
     
-    -- Create Frame
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.9, 0, 0.9, 0)
-    frame.Position = UDim2.new(0.05, 0, 0.05, 0)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-    frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.new(0, 0.5, 1)
-    frame.Parent = screenGui
-    
-    -- Create Title
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0.05, 0)
-    title.Position = UDim2.new(0, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "Advanced LuaArmor Interceptor Console"
-    title.TextColor3 = Color3.new(1, 1, 1)
-    title.TextScaled = true
-    title.Font = Enum.Font.SourceSansBold
-    title.Parent = frame
-    
-    -- Create Tabs
-    local tabFrame = Instance.new("Frame")
-    tabFrame.Size = UDim2.new(1, 0, 0.05, 0)
-    tabFrame.Position = UDim2.new(0, 0, 0.05, 0)
-    tabFrame.BackgroundTransparency = 0.8
-    tabFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    tabFrame.Parent = frame
-    
-    local tabLoadstring = Instance.new("TextButton")
-    tabLoadstring.Size = UDim2.new(0.5, 0, 1, 0)
-    tabLoadstring.Position = UDim2.new(0, 0, 0, 0)
-    tabLoadstring.Text = "Loadstring Code"
-    tabLoadstring.TextColor3 = Color3.new(1, 1, 1)
-    tabLoadstring.BackgroundTransparency = 0.5
-    tabLoadstring.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    tabLoadstring.Parent = tabFrame
-    
-    local tabFunctions = Instance.new("TextButton")
-    tabFunctions.Size = UDim2.new(0.5, 0, 1, 0)
-    tabFunctions.Position = UDim2.new(0.5, 0, 0, 0)
-    tabFunctions.Text = "Intercepted Functions"
-    tabFunctions.TextColor3 = Color3.new(1, 1, 1)
-    tabFunctions.BackgroundTransparency = 0.5
-    tabFunctions.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    tabFunctions.Parent = tabFrame
-    
-    -- Create ScrollingFrame for code display
-    local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, -20, 0.85, -40)
-    scrollFrame.Position = UDim2.new(0, 10, 0.1, 10)
-    scrollFrame.BackgroundTransparency = 0.5
-    scrollFrame.BackgroundColor3 = Color3.new(0, 0, 0)
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.ScrollBarThickness = 10
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scrollFrame.Parent = frame
-    
-    -- Create TextLabel for code display
-    local codeDisplay = Instance.new("TextLabel")
-    codeDisplay.Name = "CodeDisplay"
-    codeDisplay.Size = UDim2.new(1, -20, 0, 0)
-    codeDisplay.Position = UDim2.new(0, 10, 0, 0)
-    codeDisplay.BackgroundTransparency = 1
-    codeDisplay.Text = "Intercepted code will appear here...\n\nLoad a LuaArmor script to begin interception.\nExample: loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua\"))()\n\nAdvanced hooks status:\n- loadstring: " .. (hookfunction and "Available" or "Not available") .. "\n- hookmetamethod: " .. (hookmetamethod and "Available" or "Not available")
-    codeDisplay.TextColor3 = Color3.new(1, 1, 1)
-    codeDisplay.TextXAlignment = Enum.TextXAlignment.Left
-    codeDisplay.TextYAlignment = Enum.TextYAlignment.Top
-    codeDisplay.TextWrapped = true
-    codeDisplay.RichText = true
-    codeDisplay.Font = Enum.Font.Monospace
-    codeDisplay.TextSize = 14
-    codeDisplay.Parent = scrollFrame
-    
-    -- Update function for displaying code
-    local currentTab = "loadstring"
-    
-    local function updateDisplay()
-        local text = ""
-        
-        if currentTab == "loadstring" then
-            for i, code in ipairs(interceptedCode) do
-                text = text .. "[[ " .. code.method .. " - " .. os.date("%H:%M:%S", math.floor(code.timestamp)) .. " ]]\n" .. code.source .. "\n\n"
-            end
+    -- Hook loadstring с перехватом выполнения
+    local hookCount = 0
+    getgenv().loadstring = function(code)
+        if code and type(code) == "string" and #code > 500 then
+            hookCount = hookCount + 1
             
-            if text == "" then
-                text = "Intercepted code will appear here...\n\nLoad a LuaArmor script to begin interception.\nExample: loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua\"))()\n\nAdvanced hooks status:\n- loadstring: " .. (hookfunction and "Available" or "Not available") .. "\n- hookmetamethod: " .. (hookmetamethod and "Available" or "Not available")
-            end
-        else
-            for i, funcData in ipairs(interceptedFunctions) do
-                local source = tryGetFunctionSource(funcData.func)
-                text = text .. "[[ " .. funcData.method .. " - " .. os.date("%H:%M:%S", math.floor(funcData.timestamp)) .. " ]]\nFunction source: " .. source .. "\nArgs: " .. tostring(funcData.args) .. "\n\n"
-            end
+            -- Логируем ВСЕ большие loadstring вызовы
+            local isObfuscated = code:find("luarmor") or code:find("superflow") or code:find("bytecode") or 
+                                code:find("getfenv") or code:find("setfenv") or code:find("\\%d+") or
+                                (#code > 10000 and (code:find("local") or code:find("function")))
             
-            if text == "" then
-                text = "Intercepted functions will appear here...\n\nThis tab shows functions that were intercepted via pcall/xpcall/__call hooks."
+            if isObfuscated then
+                interceptedCode = code
+                notify("🎯 Hook #" .. hookCount .. ": Перехвачен код (" .. #code .. " симв.)")
+                CodeLabel.Text = "=== HOOK #" .. hookCount .. " ===\n" .. truncateText(code, 45000)
+                UpdateCanvasSize()
+                
+                print("=== LUAFINDER HOOK #" .. hookCount .. " ===")
+                print("Размер:", #code)
+                print("Первые 200 символов:", code:sub(1, 200))
+                print("================================")
             end
         end
         
-        codeDisplay.Text = text
+        -- Создаем функцию через оригинальный loadstring
+        local func = original_loadstring(code)
         
-        -- Update canvas size
-        codeDisplay.Size = UDim2.new(1, -20, 0, codeDisplay.TextBounds.Y)
-        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, codeDisplay.TextBounds.Y + 20)
+        -- Если это большая обфусцированная функция, перехватываем её выполнение
+        if func and code and #code > 10000 then
+            return function(...)
+                print("🚀 ВЫПОЛНЯЕТСЯ БОЛЬШАЯ ФУНКЦИЯ (" .. #code .. " символов)")
+                
+                -- Перехватываем debug.getinfo для анализа стека
+                local old_getinfo = debug.getinfo
+                debug.getinfo = function(...)
+                    local info = old_getinfo(...)
+                    if info and info.source and info.source:find("@") then
+                        print("📍 Выполнение в:", info.source)
+                    end
+                    return info
+                end
+                
+                local result = func(...)
+                
+                -- Восстанавливаем debug.getinfo
+                debug.getinfo = old_getinfo
+                
+                return result
+            end
+        end
+        
+        return func
     end
     
-    -- Tab switching
-    tabLoadstring.MouseButton1Click:Connect(function()
-        currentTab = "loadstring"
-        tabLoadstring.BackgroundTransparency = 0.2
-        tabLoadstring.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
-        tabFunctions.BackgroundTransparency = 0.5
-        tabFunctions.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-        updateDisplay()
-    end)
-    
-    tabFunctions.MouseButton1Click:Connect(function()
-        currentTab = "functions"
-        tabFunctions.BackgroundTransparency = 0.2
-        tabFunctions.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
-        tabLoadstring.BackgroundTransparency = 0.5
-        tabLoadstring.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-        updateDisplay()
-    end)
-    
-    -- Update display when new code is intercepted
-    local updateConnection
-    updateConnection = game:GetService("RunService").Heartbeat:Connect(function()
-        updateDisplay()
-    end)
-    
-    -- Create Close Button
-    local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(0.2, 0, 0.05, 0)
-    closeButton.Position = UDim2.new(0.8, -10, 0.95, -10)
-    closeButton.AnchorPoint = Vector2.new(1, 1)
-    closeButton.Text = "Close"
-    closeButton.TextColor3 = Color3.new(1, 1, 1)
-    closeButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    closeButton.Parent = frame
-    
-    closeButton.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
-        if updateConnection then
-            updateConnection:Disconnect()
+    -- Дополнительно перехватываем writefile (безопасно)
+    if writefile then
+        local original_writefile = writefile
+        getgenv().writefile = function(filename, content, ...)
+            if filename and content and type(content) == "string" and #content > 1000 then
+                if filename:find("init") or filename:find("luarmor") then
+                    interceptedCode = content
+                    notify("🎯 Перехвачен код через writefile! (" .. #content .. " симв.)")
+                    CodeLabel.Text = truncateText(content, 50000)
+                    UpdateCanvasSize()
+                end
+            end
+            return original_writefile(filename, content, ...)
         end
+    end
+    
+    -- Дополнительно: Hook для анализа строк и переменных
+    local old_string_sub = string.sub
+    local old_string_char = string.char
+    local stringHookCount = 0
+    
+    -- Перехватываем string.char (часто используется для расшифровки)
+    string.char = function(...)
+        local args = {...}
+        local result = old_string_char(...)
+        
+        -- Если результат большой и содержит код
+        if #result > 1000 and (result:find("function") or result:find("local") or result:find("return")) then
+            stringHookCount = stringHookCount + 1
+            print("🔤 STRING.CHAR HOOK #" .. stringHookCount .. ": Расшифрован текст (" .. #result .. " символов)")
+            print("Первые 300 символов:", result:sub(1, 300))
+            
+            -- Показываем в GUI если это выглядит как код
+            if result:find("function") and result:find("end") then
+                notify("🔤 Перехвачена расшифровка через string.char!")
+                CodeLabel.Text = "=== STRING.CHAR HOOK #" .. stringHookCount .. " ===\n" .. truncateText(result, 45000)
+                UpdateCanvasSize()
+                interceptedCode = result
+            end
+        end
+        
+        return result
+    end
+    
+    hookInstalled = true
+    notify("✅ Memory Hook + String Hook установлен! Запустите загрузчик.")
+end
+
+local function trySaveFile(content)
+    if not writefile then
+        return false, "writefile не поддерживается"
+    end
+    
+    local timestamp = os.date("%Y%m%d_%H%M%S")
+    local filename = "luafinder_" .. timestamp .. ".lua"
+    
+    local success, err = pcall(function()
+        writefile(filename, content)
     end)
     
-    return screenGui
+    if success then
+        return true, filename
+    else
+        return false, tostring(err)
+    end
 end
 
--- Initialize the interceptor
-print("[LuaArmor Interceptor] Initializing advanced hooks...")
-
--- Apply hooks
-hookLoadstring()
-hookHttpGet()
-hookCallFunctions()
-hookMetamethods()
-
--- Create GUI
-local success, gui = pcall(createGUI)
-if not success then
-    warn("[LuaArmor Interceptor] Failed to create GUI: " .. tostring(gui))
-else
-    print("[LuaArmor Interceptor] Advanced GUI created successfully!")
+local function tryCopy(text)
+    local attempts = {
+        function(t)
+            if setclipboard then setclipboard(t) return true end
+            return false
+        end,
+        function(t)
+            if toclipboard then toclipboard(t) return true end
+            return false
+        end,
+        function(t)
+            if syn and syn.write_clipboard then syn.write_clipboard(t) return true end
+            return false
+        end,
+        function(t)
+            if setrbxclipboard then setrbxclipboard(t) return true end
+            return false
+        end,
+    }
+    for _, fn in ipairs(attempts) do
+        local ok = false
+        local success, err = pcall(function()
+            ok = fn(text)
+        end)
+        if success and ok then return true end
+    end
+    return false
 end
 
-print("[LuaArmor Interceptor] Advanced hooks ready! Intercepting loadstring calls and functions...")
-print("[LuaArmor Interceptor] Load LuaArmor scripts normally, code will be displayed in GUI instead of executing.")
+-- Логика кнопки
+ExecuteButton.MouseButton1Click:Connect(function()
+    local input = TextBox.Text
+    -- Извлекаем http/https URL до пробела, кавычки или закрывающей скобки
+    local url = input:match("https?://[^%)%s'\"]+")
+    if url then
+        local success, data = pcall(function()
+            return game:HttpGet(url)
+        end)
+        if success then
+            local displayText = truncateText(data, 50000) -- Лимит 50k символов для отображения
+            CodeLabel.Text = displayText
+            UpdateCanvasSize()
+            if #data > 50000 then
+                notify("Текст обрезан (" .. #data .. " симв.). Используйте 'Сохранить'.")
+            end
+        else
+            CodeLabel.Text = "Ошибка запроса: " .. tostring(data)
+        end
+    else
+        CodeLabel.Text = "Не удалось найти ссылку в команде!"
+    end
+end)
 
--- Example usage (commented out):
--- loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/0e08efc5390446f12bb3f48e59cc6766.lua"))()
+CopyButton.MouseButton1Click:Connect(function()
+    if CodeLabel.Text and #CodeLabel.Text > 0 then
+        local ok = tryCopy(CodeLabel.Text)
+        if ok then
+            notify("Скопировано в буфер обмена.")
+        else
+            notify("Не удалось скопировать: среда не поддерживает.")
+        end
+    else
+        notify("Нечего копировать: поле пустое.")
+    end
+end)
 
-return true
+CacheButton.MouseButton1Click:Connect(function()
+    local content, path = tryReadCache()
+    if content then
+        local displayText = truncateText(content, 50000)
+        CodeLabel.Text = displayText
+        UpdateCanvasSize()
+        if #content > 50000 then
+            notify("Кеш загружен (" .. #content .. " симв.) из " .. path)
+        else
+            notify("Кеш загружен из " .. path)
+        end
+    else
+        CodeLabel.Text = "Кеш не найден. Попробуйте сначала запустить загрузчик."
+        notify("Файлы кеша не найдены.")
+    end
+end)
+
+SaveButton.MouseButton1Click:Connect(function()
+    if CodeLabel.Text and #CodeLabel.Text > 0 then
+        -- Пытаемся получить полный текст (не обрезанный)
+        local fullText = CodeLabel.Text
+        
+        -- Если текст был обрезан, пытаемся получить полный из кеша или последнего запроса
+        if fullText:find("ТЕКСТ ОБРЕЗАН") then
+            local content, _ = tryReadCache()
+            if content then
+                fullText = content
+            end
+        end
+        
+        local success, result = trySaveFile(fullText)
+        if success then
+            notify("Сохранено в " .. result)
+        else
+            notify("Ошибка сохранения: " .. result)
+        end
+    else
+        notify("Нечего сохранять: поле пустое.")
+    end
+end)
+
+HookButton.MouseButton1Click:Connect(function()
+    installMemoryHook()
+end)
+
+-- Пересчитываем размеры при изменении текста (на всякий случай)
+CodeLabel:GetPropertyChangedSignal("Text"):Connect(UpdateCanvasSize)
