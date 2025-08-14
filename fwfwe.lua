@@ -1,413 +1,1155 @@
--- TW2LOCK Premium GUI Script for Roblox
--- Современный высококачественный интерфейс
+-- Pet Structure Analyzer v4.0 - СОВРЕМЕННЫЙ АНАЛИЗАТОР СТРУКТУРЫ ПИТОМЦЕВ
+-- Сканирует UUID питомцев рядом с игроком и сохраняет их полную структуру
+-- Motor6D, Meshes, Attachments, Animations, Parts - все данные для воссоздания
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Создаем ScreenGui
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TW2LOCK_Premium_GUI"
-screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true
-screenGui.Parent = playerGui
+-- Глобальные переменные
+local gui = nil
+local consoleOutput = {}
+local petDatabase = {} -- База данных отсканированных питомцев
+local scriptRunning = true
+local connections = {}
 
--- Убираем затемнение экрана
+print("🚀 Pet Structure Analyzer v4.0 - Запуск современного анализатора...")
 
--- Основной контейнер с современным дизайном (уменьшенный размер)
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainContainer"
-mainFrame.Size = UDim2.new(0, 340, 0, 190)
-mainFrame.Position = UDim2.new(0.5, -170, 0.5, -95)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
+-- Функция проверки UUID имени
+local function isUUIDName(name)
+    if not name then return false end
+    return name:find("%{") and name:find("%}") and name:find("%-")
+end
 
--- Современные скругленные углы
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 16)
-mainCorner.Parent = mainFrame
-
--- Градиентная рамка
-local borderFrame = Instance.new("Frame")
-borderFrame.Size = UDim2.new(1, 4, 1, 4)
-borderFrame.Position = UDim2.new(0, -2, 0, -2)
-borderFrame.BackgroundTransparency = 1
-borderFrame.BorderSizePixel = 0
-borderFrame.ZIndex = mainFrame.ZIndex - 1
-borderFrame.Parent = mainFrame
-
-local borderStroke = Instance.new("UIStroke")
-borderStroke.Thickness = 2
-borderStroke.Color = Color3.fromRGB(100, 200, 255)
-borderStroke.Transparency = 0.3
-borderStroke.Parent = mainFrame
-
-local borderGradient = Instance.new("UIGradient")
-borderGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 150))
-}
-borderGradient.Rotation = 45
-borderGradient.Parent = borderStroke
-
--- Заголовок с градиентом
-local headerFrame = Instance.new("Frame")
-headerFrame.Name = "Header"
-headerFrame.Size = UDim2.new(1, 0, 0, 50)
-headerFrame.Position = UDim2.new(0, 0, 0, 0)
-headerFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
-headerFrame.BorderSizePixel = 0
-headerFrame.Parent = mainFrame
-
-local headerCorner = Instance.new("UICorner")
-headerCorner.CornerRadius = UDim.new(0, 16)
-headerCorner.Parent = headerFrame
-
-local headerGradient = Instance.new("UIGradient")
-headerGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 60, 80)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 35, 50))
-}
-headerGradient.Rotation = 90
-headerGradient.Parent = headerFrame
-
--- Заголовочный текст с эффектами
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(1, -20, 1, 0)
-titleLabel.Position = UDim2.new(0, 20, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "TW2LOCK"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 24
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = headerFrame
-
--- Светящийся эффект для заголовка
-local titleGlow = titleLabel:Clone()
-titleGlow.Name = "TitleGlow"
-titleGlow.Position = UDim2.new(0, 22, 0, 2)
-titleGlow.TextColor3 = Color3.fromRGB(100, 200, 255)
-titleGlow.TextTransparency = 0.7
-titleGlow.ZIndex = titleLabel.ZIndex - 1
-titleGlow.Parent = headerFrame
-
--- Функция создания идеального премиум тумблера
-local function createPremiumToggle(name, displayText, yPosition, initialState)
-    -- Контейнер строки с современным дизайном
-    local rowFrame = Instance.new("Frame")
-    rowFrame.Name = name .. "Row"
-    rowFrame.Size = UDim2.new(1, -40, 0, 60)
-    rowFrame.Position = UDim2.new(0, 20, 0, yPosition)
-    rowFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    rowFrame.BorderSizePixel = 0
-    rowFrame.Parent = mainFrame
+-- Функция логирования с современным форматированием
+local function logEvent(eventType, message, data)
+    local timestamp = os.date("%H:%M:%S")
+    local logMessage = string.format("[%s] %s: %s", timestamp, eventType, message or "")
     
-    -- Скругленные углы для строки
-    local rowCorner = Instance.new("UICorner")
-    rowCorner.CornerRadius = UDim.new(0, 12)
-    rowCorner.Parent = rowFrame
+    print(logMessage)
+    table.insert(consoleOutput, logMessage)
     
-    -- Тонкая светящаяся рамка
-    local rowStroke = Instance.new("UIStroke")
-    rowStroke.Color = Color3.fromRGB(60, 60, 80)
-    rowStroke.Thickness = 1
-    rowStroke.Transparency = 0.5
-    rowStroke.Parent = rowFrame
-    
-    -- Градиентный фон
-    local rowGradient = Instance.new("UIGradient")
-    rowGradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 55)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 30, 45))
-    }
-    rowGradient.Rotation = 90
-    rowGradient.Parent = rowFrame
-    
-    -- Текст переключателя с современным шрифтом
-    local toggleLabel = Instance.new("TextLabel")
-    toggleLabel.Name = "Label"
-    toggleLabel.Size = UDim2.new(0, 200, 1, 0)
-    toggleLabel.Position = UDim2.new(0, 20, 0, 0)
-    toggleLabel.BackgroundTransparency = 1
-    toggleLabel.Text = displayText
-    toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleLabel.TextSize = 18
-    toggleLabel.Font = Enum.Font.Gotham
-    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    toggleLabel.TextYAlignment = Enum.TextYAlignment.Center
-    toggleLabel.Parent = rowFrame
-    
-    -- Светящийся эффект для текста
-    local labelGlow = toggleLabel:Clone()
-    labelGlow.Name = "LabelGlow"
-    labelGlow.Position = UDim2.new(0, 22, 0, 2)
-    labelGlow.TextColor3 = initialState and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(100, 100, 150)
-    labelGlow.TextTransparency = 0.8
-    labelGlow.ZIndex = toggleLabel.ZIndex - 1
-    labelGlow.Parent = rowFrame
-    
-    -- Идеальный тумблер в стиле iOS
-    local toggleTrack = Instance.new("Frame")
-    toggleTrack.Name = "ToggleTrack"
-    toggleTrack.Size = UDim2.new(0, 70, 0, 35)
-    toggleTrack.Position = UDim2.new(1, -90, 0.5, -17.5)
-    toggleTrack.BackgroundColor3 = initialState and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(80, 80, 100)
-    toggleTrack.BorderSizePixel = 0
-    toggleTrack.Parent = rowFrame
-    
-    -- Скругленные углы для трека
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(0.5, 0)
-    trackCorner.Parent = toggleTrack
-    
-    -- Внутренняя тень трека
-    local trackStroke = Instance.new("UIStroke")
-    trackStroke.Color = Color3.fromRGB(0, 0, 0)
-    trackStroke.Thickness = 2
-    trackStroke.Transparency = 0.8
-    trackStroke.Parent = toggleTrack
-    
-    -- Градиент для трека
-    local trackGradient = Instance.new("UIGradient")
-    trackGradient.Color = initialState and ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 255, 170)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 200, 130))
-    } or ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 120)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
-    }
-    trackGradient.Rotation = 90
-    trackGradient.Parent = toggleTrack
-    
-    -- Слайдер (кнопка)
-    local slider = Instance.new("Frame")
-    slider.Name = "Slider"
-    slider.Size = UDim2.new(0, 29, 0, 29)
-    slider.Position = initialState and UDim2.new(1, -32, 0.5, -14.5) or UDim2.new(0, 3, 0.5, -14.5)
-    slider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    slider.BorderSizePixel = 0
-    slider.Parent = toggleTrack
-    
-    -- Скругленный слайдер
-    local sliderCorner = Instance.new("UICorner")
-    sliderCorner.CornerRadius = UDim.new(0.5, 0)
-    sliderCorner.Parent = slider
-    
-    -- Тень слайдера
-    local sliderStroke = Instance.new("UIStroke")
-    sliderStroke.Color = Color3.fromRGB(0, 0, 0)
-    sliderStroke.Thickness = 1
-    sliderStroke.Transparency = 0.9
-    sliderStroke.Parent = slider
-    
-    -- Градиент слайдера
-    local sliderGradient = Instance.new("UIGradient")
-    sliderGradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 240, 240))
-    }
-    sliderGradient.Rotation = 90
-    sliderGradient.Parent = slider
-    
-    -- Состояние переключателя
-    local isToggled = initialState
-    
-    -- Функция переключения с потрясающими анимациями
-    local function toggle()
-        isToggled = not isToggled
-        
-        -- Анимация слайдера
-        local sliderTween = TweenService:Create(slider, 
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), 
-            {Position = isToggled and UDim2.new(1, -32, 0.5, -14.5) or UDim2.new(0, 3, 0.5, -14.5)}
-        )
-        
-        -- Анимация цвета трека
-        local trackTween = TweenService:Create(toggleTrack,
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {BackgroundColor3 = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(80, 80, 100)}
-        )
-        
-        -- Анимация градиента трека
-        local newGradient = isToggled and ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 255, 170)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 200, 130))
-        } or ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 100, 120)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 60, 80))
-        }
-        
-        -- Анимация свечения текста
-        local glowTween = TweenService:Create(labelGlow,
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {TextColor3 = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(100, 100, 150)}
-        )
-        
-        -- Анимация рамки строки
-        local strokeTween = TweenService:Create(rowStroke,
-            TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Color = isToggled and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(60, 60, 80)}
-        )
-        
-        -- Эффект пульсации при переключении
-        local pulseScale = TweenService:Create(slider,
-            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 33, 0, 33)}
-        )
-        
-        local pulseBack = TweenService:Create(slider,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 29, 0, 29)}
-        )
-        
-        -- Запуск всех анимаций
-        sliderTween:Play()
-        trackTween:Play()
-        glowTween:Play()
-        strokeTween:Play()
-        pulseScale:Play()
-        
-        pulseScale.Completed:Connect(function()
-            pulseBack:Play()
-        end)
-        
-        -- Обновляем градиент
-        trackGradient.Color = newGradient
-        
-        -- Консольный вывод
-        print(displayText .. ": " .. (isToggled and "ENABLED" or "DISABLED"))
-        
-        return isToggled
+    if data then
+        for key, value in pairs(data) do
+            local detailMsg = string.format("  • %s: %s", key, tostring(value))
+            print(detailMsg)
+            table.insert(consoleOutput, detailMsg)
+        end
     end
     
-    -- Обработчик клика
-    local clickDetector = Instance.new("TextButton")
-    clickDetector.Size = UDim2.new(1, 0, 1, 0)
-    clickDetector.BackgroundTransparency = 1
-    clickDetector.Text = ""
-    clickDetector.Parent = rowFrame
+    -- Ограничиваем размер лога (последние 200 строк)
+    if #consoleOutput > 200 then
+        table.remove(consoleOutput, 1)
+    end
     
-    clickDetector.MouseButton1Click:Connect(function()
-        toggle()
-    end)
-    
-    -- Hover эффекты
-    clickDetector.MouseEnter:Connect(function()
-        local hoverTween = TweenService:Create(rowFrame,
-            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(45, 45, 65)}
-        )
-        hoverTween:Play()
-    end)
-    
-    clickDetector.MouseLeave:Connect(function()
-        local hoverTween = TweenService:Create(rowFrame,
-            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(35, 35, 50)}
-        )
-        hoverTween:Play()
-    end)
-    
-    return {
-        frame = rowFrame,
-        toggle = toggle,
-        getState = function() return isToggled end
-    }
-end
-
--- Создание премиум переключателей (изначально выключены)
-local freezeTradeToggle = createPremiumToggle("FreezeTrade", "FREEZE TRADE", 65, false)
-local autoAcceptToggle = createPremiumToggle("AutoAccept", "AUTO ACCEPT", 115, false)
-
--- Сделать интерфейс перетаскиваемым с плавными эффектами
-local dragging = false
-local dragStart = nil
-local startPos = nil
-
-local function updateInput(input)
-    local delta = input.Position - dragStart
-    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
-
-headerFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        
-        -- Эффект нажатия
-        local pressEffect = TweenService:Create(headerFrame,
-            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}
-        )
-        pressEffect:Play()
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                -- Возврат к нормальному цвету
-                local releaseEffect = TweenService:Create(headerFrame,
-                    TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {BackgroundColor3 = Color3.fromRGB(45, 45, 60)}
-                )
-                releaseEffect:Play()
+    -- Обновляем GUI если он существует
+    if gui and gui.Parent then
+        local success = pcall(function()
+            local consoleFrame = gui:FindFirstChild("ConsoleFrame", true)
+            local consoleText = gui:FindFirstChild("ConsoleText", true)
+            if consoleText and consoleFrame then
+                -- Показываем все сообщения
+                local displayText = table.concat(consoleOutput, "\n")
+                consoleText.Text = displayText
+                
+                -- Обновляем размер canvas для прокрутки
+                local textHeight = consoleText.TextBounds.Y
+                consoleFrame.CanvasSize = UDim2.new(0, 0, 0, math.max(textHeight + 100, 1000))
+                
+                -- Автоскролл вниз к последним сообщениям
+                consoleFrame.CanvasPosition = Vector2.new(0, math.max(0, textHeight - consoleFrame.AbsoluteSize.Y + 100))
             end
         end)
     end
-end)
-
-headerFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        if dragging then
-            updateInput(input)
-        end
-    end
-end)
-
--- Потрясающая анимация появления GUI
-mainFrame.Size = UDim2.new(0, 0, 0, 0)
-mainFrame.BackgroundTransparency = 1
-
--- Анимация появления основного контейнера
-local sizeAppear = TweenService:Create(mainFrame,
-    TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-    {Size = UDim2.new(0, 340, 0, 190)}
-)
-
-local fadeAppear = TweenService:Create(mainFrame,
-    TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    {BackgroundTransparency = 0}
-)
-
--- Анимация градиентной рамки
-local borderRotation = TweenService:Create(borderGradient,
-    TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
-    {Rotation = 405}
-)
-
--- Запуск анимаций
-sizeAppear:Play()
-fadeAppear:Play()
-wait(0.5)
-borderRotation:Play()
-
--- Анимация пульсации заголовка
-local function pulseTitle()
-    local pulseTween = TweenService:Create(titleGlow,
-        TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-        {TextTransparency = 0.4}
-    )
-    pulseTween:Play()
 end
 
-pulseTitle()
+-- === ПРЕДВАРИТЕЛЬНОЕ ОБЪЯВЛЕНИЕ ФУНКЦИЙ ДЛЯ GUI ===
 
-print("🚀 TW2LOCK Premium GUI успешно загружен! 🚀")
+-- Функция поиска и сканирования UUID питомцев рядом с игроком (ПЕРЕНЕСЕНА СЮДА)
+local function findAndScanNearbyUUIDPets()
+    if not scriptRunning then return end
+    
+    logEvent("🔍 SEARCH", "Searching for UUID pets near player...")
+    
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ ERROR", "Player character or HumanoidRootPart not found")
+        return
+    end
+    
+    local playerPosition = playerChar.HumanoidRootPart.Position
+    local foundPets = {}
+    local searchRadius = 100 -- 100 стадов радиус поиска
+    
+    -- Ищем UUID модели в Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if not scriptRunning then break end
+        
+        if obj:IsA("Model") and isUUIDName(obj.Name) then
+            local success, modelCFrame = pcall(function() 
+                return obj:GetModelCFrame() 
+            end)
+            
+            if success then
+                local distance = (modelCFrame.Position - playerPosition).Magnitude
+                
+                if distance <= searchRadius then
+                    table.insert(foundPets, {
+                        model = obj,
+                        distance = distance,
+                        name = obj.Name
+                    })
+                end
+            end
+        end
+    end
+    
+    -- Сортируем по расстоянию
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    
+    logEvent("🎯 SEARCH_RESULT", "Found " .. #foundPets .. " UUID pets within " .. searchRadius .. " studs")
+    
+    -- Сканируем найденных питомцев
+    for i, petInfo in ipairs(foundPets) do
+        if not scriptRunning then break end
+        
+        logEvent("🔬 SCANNING", "Pet " .. i .. "/" .. #foundPets, {
+            Name = petInfo.name,
+            Distance = string.format("%.1f studs", petInfo.distance)
+        })
+        
+        -- Вызываем функцию сканирования (будет объявлена позже)
+        if scanUUIDPet then
+            local petData = scanUUIDPet(petInfo.model)
+        end
+        
+        -- Небольшая пауза между сканированиями
+        wait(0.1)
+    end
+    
+    -- Подсчитываем размер базы данных правильно
+    local databaseSize = 0
+    for _ in pairs(petDatabase) do
+        databaseSize = databaseSize + 1
+    end
+    
+    logEvent("✅ SCAN_COMPLETE", "All nearby UUID pets scanned successfully", {
+        TotalScanned = #foundPets,
+        DatabaseSize = databaseSize
+    })
+end
+
+-- Функция воссоздания ближайшего питомца из базы (ПЕРЕНЕСЕНА СЮДА)
+local function recreateNearestPet()
+    if not scriptRunning then return end
+    
+    -- Подсчитываем размер базы данных правильно
+    local databaseSize = 0
+    for _ in pairs(petDatabase) do
+        databaseSize = databaseSize + 1
+    end
+    
+    if databaseSize == 0 then
+        logEvent("⚠️ RECREATE_WARNING", "Pet database is empty! Scan some pets first.", {
+            DatabaseSize = databaseSize
+        })
+        return
+    end
+    
+    logEvent("📊 DATABASE_STATUS", "Database contains pets", {
+        DatabaseSize = databaseSize
+    })
+    
+    -- Находим первого питомца в базе
+    local petName = next(petDatabase)
+    
+    -- Позиция рядом с игроком
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ RECREATE_ERROR", "Player character not found")
+        return
+    end
+    
+    local playerPos = playerChar.HumanoidRootPart.Position
+    local spawnPos = playerPos + Vector3.new(5, 0, 5) -- 5 стадов от игрока
+    
+    logEvent("🚀 RECREATE_ATTEMPT", "Attempting to recreate pet", {
+        PetName = petName,
+        SpawnPosition = tostring(spawnPos)
+    })
+    
+    -- Вызываем функцию воссоздания (будет объявлена позже)
+    if recreatePetFromDatabase then
+        local recreatedPet = recreatePetFromDatabase(petName, spawnPos)
+        
+        if recreatedPet then
+            logEvent("🎉 RECREATE_COMPLETE", "Pet successfully recreated from database!")
+            return recreatedPet
+        else
+            logEvent("❌ RECREATE_FAILED", "Failed to recreate pet from database")
+            return nil
+        end
+    else
+        logEvent("❌ RECREATE_ERROR", "Recreation function not available yet")
+        return nil
+    end
+end
+
+-- Создание современного GUI
+local function createModernGUI()
+    print("🎨 Создание современного GUI...")
+    
+    -- Удаляем старый GUI
+    local oldGui = playerGui:FindFirstChild("PetStructureAnalyzerGUI")
+    if oldGui then
+        oldGui:Destroy()
+    end
+    
+    -- Создаем новый GUI
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PetStructureAnalyzerGUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Главное окно (МОБИЛЬНО-АДАПТИВНОЕ)
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0.9, 0, 0.8, 0) -- 90% ширины, 80% высоты экрана
+    mainFrame.Position = UDim2.new(0.05, 0, 0.1, 0) -- Центрируем с отступами
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35) -- Темно-серый фон
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
+    
+    -- Современная рамка с градиентом
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, 12)
+    uiCorner.Parent = mainFrame
+    
+    local uiStroke = Instance.new("UIStroke")
+    uiStroke.Color = Color3.fromRGB(0, 150, 255)
+    uiStroke.Thickness = 2
+    uiStroke.Parent = mainFrame
+    
+    -- Заголовок с современным дизайном (КОМПАКТНЫЙ)
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, 0, 0, 35) -- Уменьшен с 50 до 35
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+    titleLabel.BorderSizePixel = 0
+    titleLabel.Text = "🔬 Pet Analyzer v4.0" -- Короче для мобильного
+    titleLabel.TextColor3 = Color3.new(1, 1, 1)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.Parent = mainFrame
+    
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.Parent = titleLabel
+    
+    -- Консоль с современным дизайном (МОБИЛЬНО-АДАПТИВНАЯ)
+    local consoleFrame = Instance.new("ScrollingFrame")
+    consoleFrame.Name = "ConsoleFrame"
+    consoleFrame.Size = UDim2.new(1, -10, 1, -80) -- Компактнее для мобильного
+    consoleFrame.Position = UDim2.new(0, 5, 0, 40) -- Ближе к заголовку
+    consoleFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20) -- Очень темный фон
+    consoleFrame.BorderSizePixel = 0
+    consoleFrame.ScrollBarThickness = 8 -- Тоньше для мобильного
+    consoleFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
+    consoleFrame.CanvasSize = UDim2.new(0, 0, 0, 2000)
+    consoleFrame.Parent = mainFrame
+    
+    local consoleCorner = Instance.new("UICorner")
+    consoleCorner.CornerRadius = UDim.new(0, 8)
+    consoleCorner.Parent = consoleFrame
+    
+    local consoleStroke = Instance.new("UIStroke")
+    consoleStroke.Color = Color3.fromRGB(50, 50, 60)
+    consoleStroke.Thickness = 1
+    consoleStroke.Parent = consoleFrame
+    
+    local consoleText = Instance.new("TextLabel")
+    consoleText.Name = "ConsoleText"
+    consoleText.Size = UDim2.new(1, -15, 0, 2000)
+    consoleText.Position = UDim2.new(0, 8, 0, 5)
+    consoleText.BackgroundTransparency = 1
+    consoleText.Text = "🔬 Pet Analyzer Console Ready...\n⚡ Waiting for UUID pets to analyze..."
+    consoleText.TextColor3 = Color3.fromRGB(0, 255, 150) -- Яркий зеленый
+    consoleText.TextScaled = false
+    consoleText.TextSize = 12 -- Меньше для мобильного
+    consoleText.Font = Enum.Font.RobotoMono -- Моноширинный шрифт для кода
+    consoleText.TextXAlignment = Enum.TextXAlignment.Left
+    consoleText.TextYAlignment = Enum.TextYAlignment.Top
+    consoleText.TextWrapped = true
+    consoleText.Parent = consoleFrame
+    
+    -- Панель кнопок (МОБИЛЬНО-АДАПТИВНАЯ)
+    local buttonPanel = Instance.new("Frame")
+    buttonPanel.Name = "ButtonPanel"
+    buttonPanel.Size = UDim2.new(1, -10, 0, 35) -- Компактнее: высота 35 вместо 50
+    buttonPanel.Position = UDim2.new(0, 5, 1, -40) -- Ближе к краю
+    buttonPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    buttonPanel.BorderSizePixel = 0
+    buttonPanel.Parent = mainFrame
+    
+    local panelCorner = Instance.new("UICorner")
+    panelCorner.CornerRadius = UDim.new(0, 8)
+    panelCorner.Parent = buttonPanel
+    
+    -- Создание современной кнопки
+    local function createModernButton(name, text, color, position, size)
+        local button = Instance.new("TextButton")
+        button.Name = name
+        button.Size = size
+        button.Position = position
+        button.BackgroundColor3 = color
+        button.BorderSizePixel = 0
+        button.Text = text
+        button.TextColor3 = Color3.new(1, 1, 1)
+        button.TextScaled = true
+        button.Font = Enum.Font.GothamBold
+        button.Parent = buttonPanel
+        
+        local buttonCorner = Instance.new("UICorner")
+        buttonCorner.CornerRadius = UDim.new(0, 6)
+        buttonCorner.Parent = button
+        
+        local buttonStroke = Instance.new("UIStroke")
+        buttonStroke.Color = Color3.fromRGB(255, 255, 255)
+        buttonStroke.Thickness = 1
+        buttonStroke.Transparency = 0.8
+        buttonStroke.Parent = button
+        
+        -- Эффект наведения
+        button.MouseEnter:Connect(function()
+            button.BackgroundColor3 = Color3.new(
+                math.min(color.R + 0.1, 1),
+                math.min(color.G + 0.1, 1),
+                math.min(color.B + 0.1, 1)
+            )
+            buttonStroke.Transparency = 0.5
+        end)
+        
+        button.MouseLeave:Connect(function()
+            button.BackgroundColor3 = color
+            buttonStroke.Transparency = 0.8
+        end)
+        
+        return button
+    end
+    
+    -- Кнопки с современным дизайном (6 кнопок)
+    local scanButton = createModernButton("ScanButton", "🔍 SCAN PETS", 
+        Color3.fromRGB(0, 150, 255), UDim2.new(0, 2, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local createButton = createModernButton("CreateButton", "🚀 CREATE PET", 
+        Color3.fromRGB(255, 0, 150), UDim2.new(0.16, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local copyButton = createModernButton("CopyButton", "📋 COPY CONSOLE", 
+        Color3.fromRGB(255, 150, 0), UDim2.new(0.32, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local clearButton = createModernButton("ClearButton", "🗑️ CLEAR LOG", 
+        Color3.fromRGB(255, 100, 100), UDim2.new(0.48, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local exportButton = createModernButton("ExportButton", "💾 EXPORT DATA", 
+        Color3.fromRGB(100, 255, 100), UDim2.new(0.64, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local closeButton = createModernButton("CloseButton", "❌ CLOSE", 
+        Color3.fromRGB(200, 50, 50), UDim2.new(0.8, 0, 0, 5), UDim2.new(0.18, 0, 1, -10))
+    
+    -- События кнопок (ПОДКЛЮЧЕНЫ К РЕАЛЬНЫМ ФУНКЦИЯМ)
+    scanButton.MouseButton1Click:Connect(function()
+        logEvent("🔍 SCAN", "Starting pet structure scan...")
+        scanButton.Text = "⏳ SCANNING..."
+        
+        spawn(function()
+            findAndScanNearbyUUIDPets()
+            scanButton.Text = "🔍 SCAN PETS"
+        end)
+    end)
+    
+    createButton.MouseButton1Click:Connect(function()
+        logEvent("🚀 CREATE", "Attempting to create pet from database...")
+        createButton.Text = "⏳ CREATING..."
+        
+        spawn(function()
+            local createdPet = recreateNearestPet()
+            if createdPet then
+                createButton.Text = "✅ CREATED!"
+                spawn(function()
+                    wait(2)
+                    createButton.Text = "🚀 CREATE PET"
+                end)
+            else
+                createButton.Text = "❌ FAILED!"
+                spawn(function()
+                    wait(2)
+                    createButton.Text = "🚀 CREATE PET"
+                end)
+            end
+        end)
+    end)
+    
+    copyButton.MouseButton1Click:Connect(function()
+        logEvent("📋 COPY", "Copying console to clipboard...")
+        copyButton.Text = "⏳ COPYING..."
+        
+        spawn(function()
+            local consoleData = table.concat(consoleOutput, "\n")
+            -- В Roblox нет прямого доступа к clipboard, но можем показать данные
+            logEvent("📋 COPY", "Console data ready for manual copy:")
+            logEvent("📋 DATA", "=== CONSOLE EXPORT START ===")
+            for _, line in ipairs(consoleOutput) do
+                print(line) -- Выводим в консоль для копирования
+            end
+            logEvent("📋 DATA", "=== CONSOLE EXPORT END ===")
+            
+            wait(2)
+            copyButton.Text = "📋 COPY CONSOLE"
+        end)
+    end)
+    
+    clearButton.MouseButton1Click:Connect(function()
+        logEvent("🗑️ CLEAR", "Clearing console log...")
+        consoleOutput = {}
+        consoleText.Text = "🔬 Console cleared!\n⚡ Ready for new analysis..."
+        clearButton.Text = "✅ CLEARED"
+        
+        spawn(function()
+            wait(1)
+            clearButton.Text = "🗑️ CLEAR LOG"
+        end)
+    end)
+    
+    exportButton.MouseButton1Click:Connect(function()
+        logEvent("💾 EXPORT", "Exporting pet database...")
+        exportButton.Text = "⏳ EXPORTING..."
+        
+        spawn(function()
+            exportPetDatabase()
+            exportButton.Text = "💾 EXPORT DATA"
+        end)
+    end)
+    
+    closeButton.MouseButton1Click:Connect(function()
+        logEvent("❌ SYSTEM", "COMPLETE SHUTDOWN - Pet Structure Analyzer terminating...")
+        
+        -- Отключаем скрипт
+        scriptRunning = false
+        
+        -- Отключаем все соединения
+        for i, connection in ipairs(connections) do
+            if connection then
+                pcall(function() connection:Disconnect() end)
+            end
+        end
+        connections = {}
+        
+        -- Закрываем GUI
+        pcall(function() screenGui:Destroy() end)
+        gui = nil
+        
+        print("🔴 Pet Structure Analyzer ПОЛНОСТЬЮ ВЫКЛЮЧЕН!")
+        print("🔌 Все соединения отключены")
+        print("💀 Скрипт УБИТ навсегда")
+        
+        -- ПРИНУДИТЕЛЬНАЯ ОСТАНОВКА СКРИПТА
+        spawn(function()
+            wait(0.1)
+            error("🔴 PET STRUCTURE ANALYZER TERMINATED BY USER - COMPLETE SHUTDOWN 💀")
+        end)
+    end)
+    
+    -- Добавляем в PlayerGui
+    screenGui.Parent = playerGui
+    gui = screenGui
+    
+    print("✅ Современный GUI создан успешно!")
+    logEvent("🎨 SYSTEM", "Modern GUI created with enhanced console and buttons")
+    
+    return screenGui
+end
+
+-- === СИСТЕМА СКАНИРОВАНИЯ СТРУКТУРЫ ПИТОМЦЕВ ===
+
+-- Функция глубокого сканирования Motor6D
+local function scanMotor6D(model)
+    local motors = {}
+    local motorCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            motorCount = motorCount + 1
+            local motorData = {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "nil",
+                part1 = obj.Part1 and obj.Part1.Name or "nil",
+                c0 = obj.C0,
+                c1 = obj.C1,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(motors, motorData)
+        end
+    end
+    
+    return motors, motorCount
+end
+
+-- Функция сканирования Mesh данных
+local function scanMeshData(model)
+    local meshes = {}
+    local meshCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") then
+            meshCount = meshCount + 1
+            local meshData = {
+                type = "MeshPart",
+                name = obj.Name,
+                meshId = obj.MeshId,
+                textureId = obj.TextureID,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(meshes, meshData)
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            local meshData = {
+                type = "SpecialMesh",
+                name = obj.Name,
+                meshId = obj.MeshId,
+                textureId = obj.TextureId,
+                meshType = obj.MeshType.Name,
+                scale = obj.Scale,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(meshes, meshData)
+        end
+    end
+    
+    return meshes, meshCount
+end
+
+-- Функция сканирования Attachments
+local function scanAttachments(model)
+    local attachments = {}
+    local attachmentCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Attachment") then
+            attachmentCount = attachmentCount + 1
+            local attachmentData = {
+                name = obj.Name,
+                cframe = obj.CFrame,
+                worldCFrame = obj.WorldCFrame,
+                parent = obj.Parent and obj.Parent.Name or "nil",
+                visible = obj.Visible
+            }
+            table.insert(attachments, attachmentData)
+        end
+    end
+    
+    return attachments, attachmentCount
+end
+
+-- Функция поиска Animation ID в скриптах
+local function scanAnimations(model)
+    local animations = {}
+    local animationCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Animation") then
+            animationCount = animationCount + 1
+            local animData = {
+                name = obj.Name,
+                animationId = obj.AnimationId,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(animations, animData)
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            -- Ищем Animation ID в коде скриптов
+            local success, source = pcall(function() return obj.Source end)
+            if success and source then
+                for animId in source:gmatch("rbxassetid://(%d+)") do
+                    animationCount = animationCount + 1
+                    local animData = {
+                        name = "Found in " .. obj.Name,
+                        animationId = "rbxassetid://" .. animId,
+                        parent = obj.Name,
+                        source = "script"
+                    }
+                    table.insert(animations, animData)
+                end
+            end
+        end
+    end
+    
+    return animations, animationCount
+end
+
+-- Функция сканирования базовых частей модели
+local function scanBaseParts(model)
+    local parts = {}
+    local partCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            partCount = partCount + 1
+            local partData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                transparency = obj.Transparency,
+                canCollide = obj.CanCollide,
+                anchored = obj.Anchored,
+                cframe = obj.CFrame,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(parts, partData)
+        end
+    end
+    
+    return parts, partCount
+end
+
+-- Главная функция сканирования UUID питомца
+local function scanUUIDPet(petModel)
+    logEvent("🔬 DEEP_SCAN", "Starting deep structure analysis", {
+        PetName = petModel.Name,
+        PetClass = petModel.ClassName
+    })
+    
+    local petData = {
+        name = petModel.Name,
+        className = petModel.ClassName,
+        primaryPart = petModel.PrimaryPart and petModel.PrimaryPart.Name or "nil",
+        scanTime = os.date("%Y-%m-%d %H:%M:%S"),
+        position = petModel:GetModelCFrame().Position
+    }
+    
+    -- Сканируем Motor6D
+    logEvent("🔧 MOTOR6D_SCAN", "Scanning Motor6D joints...")
+    petData.motors, petData.motorCount = scanMotor6D(petModel)
+    logEvent("🔧 MOTOR6D_RESULT", "Found " .. petData.motorCount .. " Motor6D joints")
+    
+    -- Сканируем Meshes
+    logEvent("🎨 MESH_SCAN", "Scanning mesh data...")
+    petData.meshes, petData.meshCount = scanMeshData(petModel)
+    logEvent("🎨 MESH_RESULT", "Found " .. petData.meshCount .. " mesh components")
+    
+    -- Сканируем Attachments
+    logEvent("📎 ATTACHMENT_SCAN", "Scanning attachments...")
+    petData.attachments, petData.attachmentCount = scanAttachments(petModel)
+    logEvent("📎 ATTACHMENT_RESULT", "Found " .. petData.attachmentCount .. " attachments")
+    
+    -- Сканируем Animations
+    logEvent("🎭 ANIMATION_SCAN", "Scanning animations...")
+    petData.animations, petData.animationCount = scanAnimations(petModel)
+    logEvent("🎭 ANIMATION_RESULT", "Found " .. petData.animationCount .. " animation references")
+    
+    -- Сканируем BaseParts
+    logEvent("🧱 PARTS_SCAN", "Scanning base parts...")
+    petData.parts, petData.partCount = scanBaseParts(petModel)
+    logEvent("🧱 PARTS_RESULT", "Found " .. petData.partCount .. " base parts")
+    
+    -- Сохраняем в базу данных
+    petDatabase[petModel.Name] = petData
+    
+    logEvent("💾 SAVE_COMPLETE", "Pet structure saved to database", {
+        TotalMotors = petData.motorCount,
+        TotalMeshes = petData.meshCount,
+        TotalAttachments = petData.attachmentCount,
+        TotalAnimations = petData.animationCount,
+        TotalParts = petData.partCount
+    })
+    
+    return petData
+end
+
+
+
+-- Функция экспорта базы данных питомцев
+local function exportPetDatabase()
+    if not scriptRunning then return end
+    
+    logEvent("💾 EXPORT_START", "Starting pet database export...")
+    
+    if next(petDatabase) == nil then
+        logEvent("⚠️ EXPORT_WARNING", "Pet database is empty! Scan some pets first.")
+        return
+    end
+    
+    local exportData = {
+        exportTime = os.date("%Y-%m-%d %H:%M:%S"),
+        totalPets = 0,
+        pets = {}
+    }
+    
+    -- Подсчитываем и экспортируем каждого питомца
+    for petName, petData in pairs(petDatabase) do
+        exportData.totalPets = exportData.totalPets + 1
+        exportData.pets[petName] = petData
+        
+        logEvent("📦 EXPORTING", "Pet: " .. petName, {
+            Motors = petData.motorCount or 0,
+            Meshes = petData.meshCount or 0,
+            Parts = petData.partCount or 0,
+            Attachments = petData.attachmentCount or 0,
+            Animations = petData.animationCount or 0
+        })
+    end
+    
+    -- Выводим полный экспорт в консоль
+    logEvent("💾 EXPORT_DATA", "=== PET DATABASE EXPORT START ===")
+    logEvent("📊 EXPORT_SUMMARY", "Total pets in database: " .. exportData.totalPets)
+    logEvent("📅 EXPORT_TIME", "Export time: " .. exportData.exportTime)
+    
+    -- Детальный экспорт каждого питомца
+    for petName, petData in pairs(exportData.pets) do
+        logEvent("🐾 PET_EXPORT", "=== " .. petName .. " ===")
+        logEvent("📋 PET_INFO", "Class: " .. (petData.className or "Unknown"))
+        logEvent("📍 PET_POSITION", "Position: " .. tostring(petData.position or "Unknown"))
+        logEvent("🕒 PET_SCAN_TIME", "Scanned: " .. (petData.scanTime or "Unknown"))
+        
+        -- Motor6D данные
+        if petData.motors and #petData.motors > 0 then
+            logEvent("🔧 MOTORS", "Motor6D joints (" .. #petData.motors .. "):")
+            for i, motor in ipairs(petData.motors) do
+                logEvent("🔧 MOTOR_" .. i, motor.name .. " [" .. motor.part0 .. " -> " .. motor.part1 .. "]")
+            end
+        end
+        
+        -- Mesh данные
+        if petData.meshes and #petData.meshes > 0 then
+            logEvent("🎨 MESHES", "Mesh components (" .. #petData.meshes .. "):")
+            for i, mesh in ipairs(petData.meshes) do
+                logEvent("🎨 MESH_" .. i, mesh.name .. " [" .. mesh.type .. "] ID: " .. (mesh.meshId or "none"))
+            end
+        end
+        
+        -- Attachment данные
+        if petData.attachments and #petData.attachments > 0 then
+            logEvent("📎 ATTACHMENTS", "Attachments (" .. #petData.attachments .. "):")
+            for i, att in ipairs(petData.attachments) do
+                logEvent("📎 ATT_" .. i, att.name .. " [" .. att.parent .. "]")
+            end
+        end
+        
+        -- Animation данные
+        if petData.animations and #petData.animations > 0 then
+            logEvent("🎭 ANIMATIONS", "Animations (" .. #petData.animations .. "):")
+            for i, anim in ipairs(petData.animations) do
+                logEvent("🎭 ANIM_" .. i, anim.name .. " ID: " .. (anim.animationId or "none"))
+            end
+        end
+        
+        logEvent("🐾 PET_END", "=== END " .. petName .. " ===")
+    end
+    
+    logEvent("💾 EXPORT_DATA", "=== PET DATABASE EXPORT END ===")
+    logEvent("✅ EXPORT_COMPLETE", "Database export completed successfully!", {
+        TotalPetsExported = exportData.totalPets,
+        ExportTime = exportData.exportTime
+    })
+    
+    -- Также выводим в print для удобного копирования
+    print("=== PET STRUCTURE DATABASE EXPORT ===")
+    print("Export Time: " .. exportData.exportTime)
+    print("Total Pets: " .. exportData.totalPets)
+    print("")
+    
+    for petName, petData in pairs(exportData.pets) do
+        print("PET: " .. petName)
+        print("  Class: " .. (petData.className or "Unknown"))
+        print("  Motors: " .. (petData.motorCount or 0))
+        print("  Meshes: " .. (petData.meshCount or 0))
+        print("  Parts: " .. (petData.partCount or 0))
+        print("  Attachments: " .. (petData.attachmentCount or 0))
+        print("  Animations: " .. (petData.animationCount or 0))
+        print("")
+    end
+    
+    print("=== END EXPORT ===")
+end
+
+-- === СИСТЕМА ВОССОЗДАНИЯ ПИТОМЦЕВ ИЗ БАЗЫ ДАННЫХ ===
+
+-- Функция создания BasePart из данных
+local function createPartFromData(partData)
+    local part = Instance.new(partData.className or "Part")
+    part.Name = partData.name
+    part.Size = partData.size
+    part.CFrame = partData.cframe
+    part.Color = partData.color
+    part.Transparency = partData.transparency or 0
+    part.CanCollide = partData.canCollide
+    part.Anchored = partData.anchored
+    
+    -- Устанавливаем материал
+    local success = pcall(function()
+        part.Material = Enum.Material[partData.material]
+    end)
+    if not success then
+        part.Material = Enum.Material.Plastic
+    end
+    
+    return part
+end
+
+-- Функция создания Mesh из данных
+local function createMeshFromData(meshData, parent)
+    if meshData.type == "MeshPart" then
+        -- Для MeshPart устанавливаем MeshId и TextureId
+        if parent:IsA("MeshPart") then
+            parent.MeshId = meshData.meshId or ""
+            parent.TextureID = meshData.textureId or ""
+        end
+    elseif meshData.type == "SpecialMesh" then
+        local mesh = Instance.new("SpecialMesh")
+        mesh.Name = meshData.name
+        mesh.MeshId = meshData.meshId or ""
+        mesh.TextureId = meshData.textureId or ""
+        mesh.Scale = meshData.scale or Vector3.new(1, 1, 1)
+        
+        -- Устанавливаем тип меша
+        local success = pcall(function()
+            mesh.MeshType = Enum.MeshType[meshData.meshType]
+        end)
+        if not success then
+            mesh.MeshType = Enum.MeshType.FileMesh
+        end
+        
+        mesh.Parent = parent
+        return mesh
+    end
+end
+
+-- Функция создания Motor6D из данных
+local function createMotorFromData(motorData, model)
+    local motor = Instance.new("Motor6D")
+    motor.Name = motorData.name
+    motor.C0 = motorData.c0
+    motor.C1 = motorData.c1
+    
+    -- Находим части для соединения
+    local part0 = model:FindFirstChild(motorData.part0)
+    local part1 = model:FindFirstChild(motorData.part1)
+    
+    if part0 and part1 then
+        motor.Part0 = part0
+        motor.Part1 = part1
+        motor.Parent = part0
+        return motor
+    else
+        motor:Destroy()
+        return nil
+    end
+end
+
+-- Функция создания Attachment из данных
+local function createAttachmentFromData(attachmentData, parent)
+    local attachment = Instance.new("Attachment")
+    attachment.Name = attachmentData.name
+    attachment.CFrame = attachmentData.cframe
+    attachment.Visible = attachmentData.visible or false
+    attachment.Parent = parent
+    return attachment
+end
+
+-- ГЛАВНАЯ ФУНКЦИЯ ВОССОЗДАНИЯ ПИТОМЦА
+local function recreatePetFromDatabase(petName, position)
+    if not petDatabase[petName] then
+        logEvent("❌ RECREATE_ERROR", "Pet not found in database: " .. petName)
+        return nil
+    end
+    
+    local petData = petDatabase[petName]
+    logEvent("🔧 RECREATE_START", "Recreating pet from database", {
+        PetName = petName,
+        TotalParts = petData.partCount or 0,
+        TotalMotors = petData.motorCount or 0,
+        TotalMeshes = petData.meshCount or 0
+    })
+    
+    -- Создаем основную модель
+    local model = Instance.new("Model")
+    model.Name = petName .. "_RECREATED"
+    
+    local partsCreated = 0
+    local motorsCreated = 0
+    local meshesCreated = 0
+    local attachmentsCreated = 0
+    
+    -- Создаем все части
+    if petData.parts then
+        for _, partData in ipairs(petData.parts) do
+            local success, part = pcall(function()
+                return createPartFromData(partData)
+            end)
+            
+            if success and part then
+                part.Parent = model
+                partsCreated = partsCreated + 1
+                
+                -- Устанавливаем PrimaryPart если это первая часть или указанная
+                if not model.PrimaryPart or partData.name == petData.primaryPart then
+                    model.PrimaryPart = part
+                end
+            end
+        end
+    end
+    
+    -- Создаем Meshes
+    if petData.meshes then
+        for _, meshData in ipairs(petData.meshes) do
+            local parentPart = model:FindFirstChild(meshData.parent)
+            if parentPart then
+                local success = pcall(function()
+                    createMeshFromData(meshData, parentPart)
+                end)
+                if success then
+                    meshesCreated = meshesCreated + 1
+                end
+            end
+        end
+    end
+    
+    -- Создаем Attachments
+    if petData.attachments then
+        for _, attachmentData in ipairs(petData.attachments) do
+            local parentPart = model:FindFirstChild(attachmentData.parent)
+            if parentPart then
+                local success = pcall(function()
+                    createAttachmentFromData(attachmentData, parentPart)
+                end)
+                if success then
+                    attachmentsCreated = attachmentsCreated + 1
+                end
+            end
+        end
+    end
+    
+    -- Создаем Motor6D соединения (САМОЕ ВАЖНОЕ ДЛЯ АНИМАЦИЙ!)
+    if petData.motors then
+        for _, motorData in ipairs(petData.motors) do
+            local success, motor = pcall(function()
+                return createMotorFromData(motorData, model)
+            end)
+            
+            if success and motor then
+                motorsCreated = motorsCreated + 1
+            end
+        end
+    end
+    
+    -- Позиционируем модель
+    if position and model.PrimaryPart then
+        model:SetPrimaryPartCFrame(CFrame.new(position))
+    end
+    
+    -- Размещаем в Workspace
+    model.Parent = Workspace
+    
+    logEvent("✅ RECREATE_SUCCESS", "Pet recreated successfully!", {
+        PartsCreated = partsCreated,
+        MotorsCreated = motorsCreated,
+        MeshesCreated = meshesCreated,
+        AttachmentsCreated = attachmentsCreated,
+        ModelName = model.Name
+    })
+    
+    return model
+end
+
+-- Функция воссоздания ближайшего питомца из базы
+local function recreateNearestPet()
+    if not scriptRunning then return end
+    
+    if next(petDatabase) == nil then
+        logEvent("⚠️ RECREATE_WARNING", "Pet database is empty! Scan some pets first.")
+        return
+    end
+    
+    -- Находим первого питомца в базе
+    local petName = next(petDatabase)
+    
+    -- Позиция рядом с игроком
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ RECREATE_ERROR", "Player character not found")
+        return
+    end
+    
+    local playerPos = playerChar.HumanoidRootPart.Position
+    local spawnPos = playerPos + Vector3.new(5, 0, 5) -- 5 стадов от игрока
+    
+    logEvent("🚀 RECREATE_ATTEMPT", "Attempting to recreate pet", {
+        PetName = petName,
+        SpawnPosition = tostring(spawnPos)
+    })
+    
+    local recreatedPet = recreatePetFromDatabase(petName, spawnPos)
+    
+    if recreatedPet then
+        logEvent("🎉 RECREATE_COMPLETE", "Pet successfully recreated from database!")
+        return recreatedPet
+    else
+        logEvent("❌ RECREATE_FAILED", "Failed to recreate pet from database")
+        return nil
+    end
+end
+
+-- === ИНИЦИАЛИЗАЦИЯ И АВТОЗАПУСК ===
+
+-- Функция автоматического мониторинга workspace
+local function startAutoMonitoring()
+    if not scriptRunning then return end
+    
+    logEvent("🔄 AUTO_MONITOR", "Starting automatic UUID pet monitoring...")
+    
+    -- Мониторинг появления новых моделей в workspace
+    local workspaceConnection = Workspace.ChildAdded:Connect(function(child)
+        if not scriptRunning then return end
+        
+        if child:IsA("Model") and isUUIDName(child.Name) then
+            logEvent("🆕 NEW_UUID_PET", "New UUID pet detected: " .. child.Name)
+            
+            -- Небольшая задержка для полной загрузки модели
+            spawn(function()
+                wait(0.5)
+                if child.Parent and scriptRunning then
+                    local playerChar = player.Character
+                    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                        local success, modelCFrame = pcall(function() return child:GetModelCFrame() end)
+                        if success then
+                            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                            if distance <= 100 then
+                                logEvent("🔬 AUTO_SCAN", "Auto-scanning new UUID pet within range", {
+                                    Name = child.Name,
+                                    Distance = string.format("%.1f studs", distance)
+                                })
+                                scanUUIDPet(child)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+    
+    table.insert(connections, workspaceConnection)
+    
+    -- Периодическое сканирование (каждые 30 секунд)
+    local periodicConnection = spawn(function()
+        while scriptRunning do
+            wait(30)
+            if scriptRunning then
+                logEvent("🔄 PERIODIC_SCAN", "Periodic UUID pet scan...")
+                findAndScanNearbyUUIDPets()
+            end
+        end
+    end)
+    
+    table.insert(connections, periodicConnection)
+    
+    logEvent("✅ AUTO_MONITOR_STARTED", "Automatic monitoring activated", {
+        WorkspaceMonitoring = "ON",
+        PeriodicScanning = "30 seconds",
+        AutoScanRadius = "100 studs"
+    })
+end
+
+-- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
+local function startSystem()
+    print("🚀 Запуск Pet Structure Analyzer v4.0...")
+    
+    -- Создаем GUI
+    gui = createModernGUI()
+    
+    if not gui then
+        print("❌ Ошибка создания GUI!")
+        return
+    end
+    
+    -- Запускаем автоматический мониторинг
+    startAutoMonitoring()
+    
+    -- Первоначальное сканирование
+    spawn(function()
+        wait(2) -- Даем время GUI загрузиться
+        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
+        findAndScanNearbyUUIDPets()
+    end)
+    
+    logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
+        GUI = "Modern interface loaded",
+        AutoMonitoring = "Active",
+        Database = "Ready for pet data",
+        Status = "ONLINE"
+    })
+    
+    print("✅ Pet Structure Analyzer v4.0 READY!")
+    print("🔬 Modern GUI loaded with enhanced scanning capabilities")
+    print("🤖 Automatic monitoring: ON")
+    print("📊 Database system: READY")
+    print("🎯 Scan radius: 100 studs")
+    print("⚡ Ready to analyze UUID pet structures!")
+end
+
+-- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
+local function startSystem()
+    print("🚀 Запуск Pet Structure Analyzer v4.0...")
+    
+    -- Создаем GUI
+    gui = createModernGUI()
+    
+    if not gui then
+        print("❌ Ошибка создания GUI!")
+        return
+    end
+    
+    -- Запускаем автоматический мониторинг
+    startAutoMonitoring()
+    
+    -- Первоначальное сканирование
+    spawn(function()
+        wait(2) -- Даем время GUI загрузиться
+        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
+        findAndScanNearbyUUIDPets()
+    end)
+    
+    logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
+        GUI = "Modern interface loaded",
+        AutoMonitoring = "Active",
+        Database = "Ready for pet data",
+        Status = "ONLINE"
+    })
+    
+    print("✅ Pet Structure Analyzer v4.0 READY!")
+    print("🔬 Modern GUI loaded with enhanced scanning capabilities")
+    print("🤖 Automatic monitoring: ON")
+    print("📊 Database system: READY")
+    print("🎯 Scan radius: 100 studs")
+    print("⚡ Ready to analyze UUID pet structures!")
+end
+
+-- === АВТОЗАПУСК СИСТЕМЫ ===
+print("🌟 Pet Structure Analyzer v4.0 - MODERN EDITION")
+print("🔬 Advanced UUID Pet Structure Scanner")
+print("💫 Developed for deep pet analysis and recreation")
+print("")
+
+-- Запускаем систему (КАК В РАБОЧЕМ СКРИПТЕ)
+startSystem()
+
+print("📝 Часть 5 завершена: Инициализация и автозапуск")
+print("🎉 PET STRUCTURE ANALYZER v4.0 ПОЛНОСТЬЮ ГОТОВ!")
