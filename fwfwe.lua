@@ -13,10 +13,74 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 -- Глобальные переменные
 local gui = nil
+local autoStartMonitoring = false -- конфиг: автоскан при запуске отключен
 local consoleOutput = {}
 local petDatabase = {} -- База данных отсканированных питомцев
 local scriptRunning = true
 local connections = {}
+
+-- Предварительные объявления, чтобы функции, определенные выше по файлу, видели локальные ссылки
+local scanUUIDPet
+local recreatePetFromDatabase
+local startAutoMonitoring
+
+-- Визуальное подчёркивание воссозданной модели
+local function highlightModel(model)
+    if not model or not model.Parent then return end
+    local selectionBoxes = {}
+    
+    for _, desc in ipairs(model:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            local sb = Instance.new("SelectionBox")
+            sb.Name = "TempRecreateHighlight"
+            sb.Adornee = desc
+            sb.LineThickness = 0.06
+            sb.Color3 = Color3.fromRGB(50, 220, 120)
+            sb.SurfaceTransparency = 0.7
+            sb.Parent = desc
+            table.insert(selectionBoxes, sb)
+        end
+    end
+    
+    -- Надпись над моделью
+    local primary = model.PrimaryPart
+    if not primary then
+        for _, d in ipairs(model:GetDescendants()) do
+            if d:IsA("BasePart") then
+                primary = d; break
+            end
+        end
+    end
+    if primary then
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "TempRecreateBillboard"
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Adornee = primary
+        billboard.Parent = primary
+        
+        local label = Instance.new("TextLabel")
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.Text = model.Name .. " (RECREATED)"
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 14
+        label.TextColor3 = Color3.fromRGB(200, 255, 200)
+        label.Parent = billboard
+        
+        -- Автоудаление через 6 секунд
+        delay(6, function()
+            if billboard then billboard:Destroy() end
+        end)
+    end
+    
+    delay(6, function()
+        for _, sb in ipairs(selectionBoxes) do
+            if sb and sb.Parent then sb:Destroy() end
+        end
+    end)
+end
 
 print("🚀 Pet Structure Analyzer v4.0 - Запуск современного анализатора...")
 
@@ -114,7 +178,7 @@ local function findAndScanNearbyUUIDPets()
     
     logEvent("🎯 SEARCH_RESULT", "Found " .. #foundPets .. " UUID pets within " .. searchRadius .. " studs")
     
-    -- Сканируем найденных питомцев
+    -- Сканируем найденных питомцев (синхронно, чтобы база заполнилась до завершения функции)
     for i, petInfo in ipairs(foundPets) do
         if not scriptRunning then break end
         
@@ -123,29 +187,18 @@ local function findAndScanNearbyUUIDPets()
             Distance = string.format("%.1f studs", petInfo.distance)
         })
         
-        -- Отложенное сканирование через spawn (функция будет доступна позже)
-        spawn(function()
-            wait(2) -- Увеличенная задержка для полной загрузки всех функций
-            if scanUUIDPet then
-                local success, petData = pcall(scanUUIDPet, petInfo.model)
-                if success then
-                    logEvent("✅ SCAN_SUCCESS", "Pet scanned successfully", {
-                        PetName = petInfo.name
-                    })
-                else
-                    logEvent("❌ SCAN_ERROR", "Failed to scan pet: " .. tostring(petData), {
-                        PetName = petInfo.name
-                    })
-                end
+        if scanUUIDPet then
+            local success, err = pcall(scanUUIDPet, petInfo.model)
+            if success then
+                logEvent("✅ SCAN_SUCCESS", "Pet scanned successfully", { PetName = petInfo.name })
             else
-                logEvent("⚠️ SCAN_SKIP", "scanUUIDPet function not available yet", {
-                    PetName = petInfo.name
-                })
+                logEvent("❌ SCAN_ERROR", "Failed to scan pet: " .. tostring(err), { PetName = petInfo.name })
             end
-        end)
+        else
+            logEvent("⚠️ SCAN_SKIP", "scanUUIDPet function not available yet", { PetName = petInfo.name })
+        end
         
-        -- Небольшая пауза между сканированиями
-        wait(0.1)
+        wait(0.05)
     end
     
     -- Подсчитываем размер базы данных правильно
@@ -383,10 +436,9 @@ local function createModernGUI()
         logEvent("🔍 SCAN", "Starting pet structure scan...")
         scanButton.Text = "⏳ SCANNING..."
         
-        spawn(function()
-            findAndScanNearbyUUIDPets()
-            scanButton.Text = "🔍 SCAN PETS"
-        end)
+        findAndScanNearbyUUIDPets()
+        
+        scanButton.Text = "🔍 SCAN PETS"
     end)
     
     createButton.MouseButton1Click:Connect(function()
@@ -412,22 +464,85 @@ local function createModernGUI()
     end)
     
     copyButton.MouseButton1Click:Connect(function()
-        logEvent("📋 COPY", "Copying console to clipboard...")
-        copyButton.Text = "⏳ COPYING..."
+        logEvent("📋 COPY", "Preparing console text for manual copy...")
+        copyButton.Text = "⏳ PREPARING..."
         
-        spawn(function()
-            local consoleData = table.concat(consoleOutput, "\n")
-            -- В Roblox нет прямого доступа к clipboard, но можем показать данные
-            logEvent("📋 COPY", "Console data ready for manual copy:")
-            logEvent("📋 DATA", "=== CONSOLE EXPORT START ===")
-            for _, line in ipairs(consoleOutput) do
-                print(line) -- Выводим в консоль для копирования
-            end
-            logEvent("📋 DATA", "=== CONSOLE EXPORT END ===")
-            
-            wait(2)
+        local screenGui = gui or playerGui:FindFirstChild("PetStructureAnalyzerGUI")
+        if not screenGui then
             copyButton.Text = "📋 COPY CONSOLE"
-        end)
+            return
+        end
+        
+        -- Создаем/показываем окно копирования с TextBox
+        local copyFrame = screenGui:FindFirstChild("CopyDialog")
+        if not copyFrame then
+            copyFrame = Instance.new("Frame")
+            copyFrame.Name = "CopyDialog"
+            copyFrame.Size = UDim2.new(0.8, 0, 0.6, 0)
+            copyFrame.Position = UDim2.new(0.1, 0, 0.2, 0)
+            copyFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+            copyFrame.BorderSizePixel = 0
+            copyFrame.Parent = screenGui
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 10)
+            corner.Parent = copyFrame
+            
+            local title = Instance.new("TextLabel")
+            title.Name = "Title"
+            title.Size = UDim2.new(1, -10, 0, 30)
+            title.Position = UDim2.new(0, 5, 0, 5)
+            title.BackgroundTransparency = 1
+            title.Text = "📋 Console Export (Ctrl+A then Ctrl+C)"
+            title.TextColor3 = Color3.fromRGB(255, 255, 255)
+            title.Font = Enum.Font.GothamBold
+            title.TextSize = 16
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = copyFrame
+            
+            local textBox = Instance.new("TextBox")
+            textBox.Name = "CopyText"
+            textBox.Size = UDim2.new(1, -10, 1, -50)
+            textBox.Position = UDim2.new(0, 5, 0, 40)
+            textBox.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+            textBox.TextColor3 = Color3.fromRGB(200, 255, 200)
+            textBox.ClearTextOnFocus = false
+            textBox.MultiLine = true
+            textBox.TextXAlignment = Enum.TextXAlignment.Left
+            textBox.TextYAlignment = Enum.TextYAlignment.Top
+            textBox.TextWrapped = false
+            textBox.Font = Enum.Font.RobotoMono
+            textBox.TextSize = 12
+            textBox.Parent = copyFrame
+            
+            local closeBtn = Instance.new("TextButton")
+            closeBtn.Name = "Close"
+            closeBtn.Size = UDim2.new(0, 100, 0, 30)
+            closeBtn.Position = UDim2.new(1, -110, 1, -40)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            closeBtn.TextColor3 = Color3.new(1, 1, 1)
+            closeBtn.Text = "Close"
+            closeBtn.Font = Enum.Font.GothamBold
+            closeBtn.TextSize = 14
+            closeBtn.Parent = copyFrame
+            
+            closeBtn.MouseButton1Click:Connect(function()
+                copyFrame.Visible = false
+            end)
+        end
+        
+        -- Обновляем текст и фокус
+        local textBox = copyFrame:FindFirstChild("CopyText")
+        local data = table.concat(consoleOutput, "\n")
+        textBox.Text = data
+        copyFrame.Visible = true
+        
+        textBox:CaptureFocus()
+        textBox.SelectionStart = 1
+        textBox.CursorPosition = #data + 1
+        
+        copyButton.Text = "📋 COPY CONSOLE"
+        logEvent("✅ COPY_READY", "Text ready in CopyDialog; use Ctrl+A then Ctrl+C")
     end)
     
     clearButton.MouseButton1Click:Connect(function()
@@ -638,7 +753,7 @@ local function scanBaseParts(model)
 end
 
 -- Главная функция сканирования UUID питомца
-local function scanUUIDPet(petModel)
+function scanUUIDPet(petModel)
     logEvent("🔬 DEEP_SCAN", "Starting deep structure analysis", {
         PetName = petModel.Name,
         PetClass = petModel.ClassName
@@ -891,7 +1006,7 @@ local function createAttachmentFromData(attachmentData, parent)
 end
 
 -- ГЛАВНАЯ ФУНКЦИЯ ВОССОЗДАНИЯ ПИТОМЦА
-local function recreatePetFromDatabase(petName, position)
+function recreatePetFromDatabase(petName, position)
     if not petDatabase[petName] then
         logEvent("❌ RECREATE_ERROR", "Pet not found in database: " .. petName)
         return nil
@@ -988,7 +1103,14 @@ local function recreatePetFromDatabase(petName, position)
     end
     
     -- Размещаем в Workspace
-    model.Parent = Workspace
+    model.Parent = workspace
+    
+    -- Визуально подсветим и сообщим путь
+    highlightModel(model)
+    logEvent("👀 RECREATE_VISUAL", "Recreated model placed and highlighted", {
+        Model = model:GetFullName(),
+        Position = tostring(position)
+    })
     
     logEvent("✅ RECREATE_SUCCESS", "Pet recreated successfully!", {
         PartsCreated = partsCreated,
@@ -1006,7 +1128,7 @@ end
 -- === ИНИЦИАЛИЗАЦИЯ И АВТОЗАПУСК ===
 
 -- Функция автоматического мониторинга workspace
-local function startAutoMonitoring()
+function startAutoMonitoring()
     if not scriptRunning then return end
     
     logEvent("🔄 AUTO_MONITOR", "Starting automatic UUID pet monitoring...")
@@ -1084,19 +1206,16 @@ local function startSystem()
         return
     end
     
-    -- Запускаем автоматический мониторинг
-    startAutoMonitoring()
-    
-    -- Первоначальное сканирование
-    spawn(function()
-        wait(2) -- Даем время GUI загрузиться
-        logEvent("🔍 INITIAL_SCAN", "Auto-scan disabled by user request")
-        findAndScanNearbyUUIDPets()
-    end)
+    -- Автоскан при запуске отключен по запросу пользователя
+    if autoStartMonitoring then
+        startAutoMonitoring()
+    else
+        logEvent("🛑 AUTO_SCAN_DISABLED", "Auto-scan at startup is disabled")
+    end
     
     logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
         GUI = "Modern interface loaded",
-        AutoMonitoring = "Active",
+        AutoMonitoring = autoStartMonitoring and "Active" or "Disabled",
         Database = "Ready for pet data",
         Status = "ONLINE"
     })
