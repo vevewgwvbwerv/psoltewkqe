@@ -1,1059 +1,1160 @@
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-loadstring(game:HttpGet("https://gitlab.com/darkiedarkie/dark/-/raw/main/Spawner.lua"))()
+-- Pet Structure Analyzer v4.0 - СОВРЕМЕННЫЙ АНАЛИЗАТОР СТРУКТУРЫ ПИТОМЦЕВ
+-- Сканирует UUID питомцев рядом с игроком и сохраняет их полную структуру
+-- Motor6D, Meshes, Attachments, Animations, Parts - все данные для воссоздания
 
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
-function gradient(text, startColor, endColor)
-    local result = ""
-    local length = #text
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-    for i = 1, length do
-        local t = (i - 1) / math.max(length - 1, 1)
-        local r = math.floor((startColor.R + (endColor.R - startColor.R) * t) * 255)
-        local g = math.floor((startColor.G + (endColor.G - startColor.G) * t) * 255)
-        local b = math.floor((startColor.B + (endColor.B - startColor.B) * t) * 255)
+-- Глобальные переменные
+local gui = nil
+local consoleOutput = {}
+local petDatabase = {} -- База данных отсканированных питомцев
+local scriptRunning = true
+local connections = {}
 
-        local char = text:sub(i, i)
-        result = result .. '<font color="rgb(' .. r .. ", " .. g .. ", " .. b .. ')">' .. char .. "</font>"
-    end
+print("🚀 Pet Structure Analyzer v4.0 - Запуск современного анализатора...")
 
-    return result
+-- Функция проверки UUID имени
+local function isUUIDName(name)
+    if not name then return false end
+    return name:find("%{") and name:find("%}") and name:find("%-")
 end
 
--- Egg ESP Data
-local PetData = {
-    ["Common Egg"] = {
-        ["Golden Lab"] = 33.33,
-        ["Dog"] = 33.33,
-        ["Bunny"] = 33.33
-    },
-    ["Uncommon Egg"] = {
-        ["Black Bunny"] = 25,
-        ["Chicken"] = 25,
-        ["Cat"] = 25,
-        ["Deer"] = 25
-    },
-    ["Rare Egg"] = {
-        ["Orange Tabby"] = 33.33,
-        ["Spotted Deer"] = 25,
-        ["Pig"] = 16.67,
-        ["Rooster"] = 16.67,
-        ["Monkey"] = 8.33
-    },
-    ["Legendary Egg"] = {
-        ["Cow"] = 42.55,
-        ["Silver Monkey"] = 42.55,
-        ["Sea Otter"] = 10.64,
-        ["Turtle"] = 2.13,
-        ["Polar Bear"] = 2.13
-    },
-    ["Mythical Egg"] = {
-        ["Grey Mouse"] = 35.71,
-        ["Brown Mouse"] = 26.79,
-        ["Squirrel"] = 26.79,
-        ["Red Giant Ant"] = 8.93,
-        ["Red Fox"] = 1.79
-    },
-    ["Bug Egg"] = {
-        ["Snail"] = 40,
-        ["Giant Ant"] = 30,
-        ["Caterpillar"] = 25,
-        ["Praying Mantis"] = 4,
-        ["Dragonfly"] = 1
-    },
-    ["Night Egg"] = {
-        ["Hedgehog"] = 47,
-        ["Mole"] = 23.5,
-        ["Frog"] = 17.63,
-        ["Echo Frog"] = 8.23,
-        ["Night Owl"] = 3.53,
-        ["Raccoon"] = 0.12
-    },
-    ["Premium Night Egg"] = {
-        ["Hedgehog"] = 49,
-        ["Mole"] = 22,
-        ["Frog"] = 14,
-        ["Echo Frog"] = 10,
-        ["Night Owl"] = 4,
-        ["Raccoon"] = 1
-    },
-    ["Bee Egg"] = {
-        ["Bee"] = 65,
-        ["Honey Bee"] = 25,
-        ["Bear Bee"] = 5,
-        ["Petal Bee"] = 4,
-        ["Queen Bee (Pet)"] = 1
-    },
-    ["Anti Bee Egg"] = {
-        ["Wasp"] = 55,
-        ["Tarantula Hawk"] = 30,
-        ["Moth"] = 13.75,
-        ["Butterfly"] = 1,
-        ["Disco Bee"] = 0.25
-    },
-    ["Common Summer Egg"] = {
-        ["Starfish"] = 50,
-        ["Seagull"] = 25,
-        ["Crab"] = 25
-    },
-    ["Rare Summer Egg"] = {
-        ["Flamingo"] = 30,
-        ["Toucan"] = 25,
-        ["Sea Turtle"] = 20,
-        ["Orangutan"] = 15,
-        ["Seal"] = 10
-    },
-    ["Paradise Egg"] = {
-        ["Ostrich"] = 40,
-        ["Peacock"] = 30,
-        ["Capybara"] = 21,
-        ["Scarlet Macaw"] = 8,
-        ["Mimic Octopus"] = 1
-    },
-    ["Oasis Egg"] = {
-        ["Meerkat"] = 45,
-        ["Sand Snake"] = 34.5,
-        ["Axolotl"] = 15,
-        ["Hyacinth Macaw"] = 5,
-        ["Fennec Fox"] = 0.5
-    },
-    ["Premium Oasis Egg"] = {
-        ["Meerkat"] = 45,
-        ["Sand Snake"] = 34.5,
-        ["Axolotl"] = 15,
-        ["Hyacinth Macaw"] = 5,
-        ["Fennec Fox"] = 0.5
-    },
-    ["Dinosaur Egg"] = {
-        ["Raptor"] = 35,
-        ["Triceratops"] = 32.5,
-        ["Stegosaurus"] = 28,
-        ["Pterodactyl"] = 3,
-        ["Brontosaurus"] = 1,
-        ["T-Rex"] = 0.5
-    },
-    ["Primal Egg"] = {
-        ["Parasaurolophus"] = 35,
-        ["Iguanodon"] = 32.5,
-        ["Pachycephalosaurus"] = 28,
-        ["Dilophosaurus"] = 3,
-        ["Ankylosaurus"] = 1,
-        ["Spinosaurus"] = 0.5
-    },
-    ["Premium Primal Egg"] = {
-        ["Parasaurolophus"] = 35,
-        ["Iguanodon"] = 32.5,
-        ["Pachycephalosaurus"] = 28,
-        ["Dilophosaurus"] = 3,
-        ["Ankylosaurus"] = 1,
-        ["Spinosaurus"] = 0.5
-    },
-    ["Zen Egg"] = {
-        ["Shiba Inu"] = 40,
-        ["Nihonzaru"] = 31,
-        ["Tanuki"] = 20.82,
-        ["Tanchozuru"] = 4.6,
-        ["Kappa"] = 3.5,
-        ["Kitsune"] = 0.08
-    },
-    ["Gourmet Egg"] = {
-        ["Bagel Bunny"] = 50,
-        ["Pancake Mole"] = 38,
-        ["Sushi Bear"] = 7,
-        ["Spaghetti Sloth"] = 4,
-        ["French Fry Ferret"] = 1
-    }
-}
-
--- Egg ESP Variables
-local EggVisuals = {}
-local VisualsEnabled = false
-local AutoRerollEnabled = false
-local RerollSpeed = 0.5
-local SelectedPet = ""
-local AutoRerollConnection
-local PausedEggs = {}
-local SavedPredictions = {}
-
--- Egg ESP Functions
-local function getRandomPet(eggName)
-    local pets = PetData[eggName]
-    if not pets then return "Unknown Pet" end
-    local totalWeight = 0
-    local weightedPets = {}
-    for petName, chance in pairs(pets) do
-        totalWeight = totalWeight + chance
-        table.insert(weightedPets, {name = petName, weight = chance})
-    end
-    local randomValue = math.random() * totalWeight
-    local currentWeight = 0
-    for _, petData in pairs(weightedPets) do
-        currentWeight = currentWeight + petData.weight
-        if randomValue <= currentWeight then
-            return petData.name
+-- Функция логирования с современным форматированием
+local function logEvent(eventType, message, data)
+    local timestamp = os.date("%H:%M:%S")
+    local logMessage = string.format("[%s] %s: %s", timestamp, eventType, message or "")
+    
+    print(logMessage)
+    table.insert(consoleOutput, logMessage)
+    
+    if data then
+        for key, value in pairs(data) do
+            local detailMsg = string.format("  • %s: %s", key, tostring(value))
+            print(detailMsg)
+            table.insert(consoleOutput, detailMsg)
         end
-    end
-    return weightedPets[1].name
-end
-
-local function findPlayerFarm()
-    local player = game.Players.LocalPlayer
-    if not workspace:FindFirstChild("Farm") then return nil end
-    local playerName = player.Name
-    for _, farm in pairs(workspace.Farm:GetChildren()) do
-        if farm.Name == "Farm" and farm:FindFirstChild("Important") then
-            local important = farm.Important
-            local data = important:FindFirstChild("Data")
-            if data and data:FindFirstChild("Owner") then
-                local ownerValue = data.Owner.Value
-                if tostring(ownerValue) == playerName then
-                    return farm
-                end
-            end
-        end
-    end
-    return nil
-end
-
-local function createEggVisual(egg)
-    local eggName = egg:GetAttribute("EggName") or "Unknown Egg"
-    local highlight = Instance.new("Highlight")
-    highlight.FillColor = Color3.fromRGB(255, 0, 0)
-    highlight.FillTransparency = 0.5
-    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
-    highlight.OutlineTransparency = 0
-    highlight.Parent = egg
-
-    local billboard = Instance.new("BillboardGui")
-    billboard.Size = UDim2.new(0, 150, 0, 50)
-    billboard.Adornee = egg
-    billboard.AlwaysOnTop = true
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.Parent = workspace
-
-    local eggId = tostring(egg)
-    local petName
-    if SavedPredictions[eggId] then
-        petName = SavedPredictions[eggId]
-    else
-        petName = getRandomPet(eggName)
-        SavedPredictions[eggId] = petName
-    end
-
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, 0, 1, 0)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = petName
-    textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-    textLabel.TextStrokeTransparency = 0
-    textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    textLabel.Font = Enum.Font.GothamBold
-    textLabel.TextSize = 14
-    textLabel.TextScaled = false
-    textLabel.TextWrapped = true
-    textLabel.Visible = false
-    textLabel.Parent = billboard
-
-    return {
-        highlight = highlight,
-        billboard = billboard,
-        textLabel = textLabel,
-        eggName = eggName,
-        eggId = eggId
-    }
-end
-
-local function updateEggVisuals()
-    if not VisualsEnabled then return end
-    local playerFarm = findPlayerFarm()
-    if not playerFarm then
-        WindUI:Notify({
-            Title = "Farm Not Found",
-            Content = "Could not locate your farm",
-            Icon = "alert-triangle",
-            Duration = 3
-        })
-        return
     end
     
-    local important = playerFarm:FindFirstChild("Important")
-    if not important then return end
+    -- Ограничиваем размер лога (последние 200 строк)
+    if #consoleOutput > 200 then
+        table.remove(consoleOutput, 1)
+    end
     
-    local objectsPhysical = important:FindFirstChild("Objects_Physical")
-    if not objectsPhysical then return end
-
-    for _, visual in pairs(EggVisuals) do
-        if visual.highlight then visual.highlight:Destroy() end
-        if visual.billboard then visual.billboard:Destroy() end
-    end
-    EggVisuals = {}
-
-    local totalEggs = 0
-    local readyEggs = 0
-    local playerEggs = 0
-    local player = game.Players.LocalPlayer
-
-    for _, obj in pairs(objectsPhysical:GetChildren()) do
-        if obj.Name == "PetEgg" then
-            totalEggs = totalEggs + 1
-            local isReady = obj:GetAttribute("READY")
-            if isReady then
-                readyEggs = readyEggs + 1
+    -- Обновляем GUI если он существует
+    if gui and gui.Parent then
+        local success = pcall(function()
+            local consoleFrame = gui:FindFirstChild("ConsoleFrame", true)
+            local consoleText = gui:FindFirstChild("ConsoleText", true)
+            if consoleText and consoleFrame then
+                -- Показываем все сообщения
+                local displayText = table.concat(consoleOutput, "\n")
+                consoleText.Text = displayText
+                
+                -- Обновляем размер canvas для прокрутки
+                local textHeight = consoleText.TextBounds.Y
+                consoleFrame.CanvasSize = UDim2.new(0, 0, 0, math.max(textHeight + 100, 1000))
+                
+                -- Автоскролл вниз к последним сообщениям
+                consoleFrame.CanvasPosition = Vector2.new(0, math.max(0, textHeight - consoleFrame.AbsoluteSize.Y + 100))
             end
-            local owner = obj:GetAttribute("OWNER")
-            if owner == player.Name then
-                playerEggs = playerEggs + 1
-                EggVisuals[obj] = createEggVisual(obj)
-            end
-        end
-    end
-
-    WindUI:Notify({
-        Title = "Egg ESP Active",
-        Content = "Found " .. playerEggs .. " eggs | " .. readyEggs .. " ready",
-        Icon = "eye",
-        Duration = 3
-    })
-end
-
-local function rerollPredictions()
-    for egg, visual in pairs(EggVisuals) do
-        if not PausedEggs[egg] and visual.textLabel and visual.eggName and visual.eggId then
-            local newPet = getRandomPet(visual.eggName)
-            visual.textLabel.Text = newPet
-            visual.textLabel.Visible = true
-            SavedPredictions[visual.eggId] = newPet
-            if SelectedPet ~= "" and newPet == SelectedPet then
-                PausedEggs[egg] = true
-                WindUI:Notify({
-                    Title = "Target Pet Found!",
-                    Content = "Found " .. SelectedPet .. " prediction!",
-                    Icon = "target",
-                    Duration = 4
-                })
-            end
-        end
-    end
-end
-
-local function toggleVisuals(state)
-    VisualsEnabled = state
-    if state then
-        updateEggVisuals()
-    else
-        for _, visual in pairs(EggVisuals) do
-            if visual.highlight then visual.highlight:Destroy() end
-            if visual.billboard then visual.billboard:Destroy() end
-        end
-        EggVisuals = {}
-        PausedEggs = {}
-    end
-end
-
-local function handleAutoReroll()
-    if AutoRerollConnection then
-        AutoRerollConnection:Disconnect()
-    end
-    if AutoRerollEnabled and VisualsEnabled then
-        AutoRerollConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            wait(RerollSpeed)
-            rerollPredictions()
         end)
     end
 end
 
-local Confirmed = false
+-- === ПРЕДВАРИТЕЛЬНОЕ ОБЪЯВЛЕНИЕ ФУНКЦИЙ ДЛЯ GUI ===
 
-WindUI:Popup(
-    {
-        Title = "Loaded!!! Spawner & Egg ESP",
-        Icon = "sparkles",
-        IconThemed = true,
-        Content = "This is a " ..
-            gradient("Spawner Script", Color3.fromHex("#00FF87"), Color3.fromHex("#60EFFF")) ..
-                " with " .. gradient("Egg ESP / Preditor", Color3.fromHex("#FF6B6B"), Color3.fromHex("#4ECDC4")) .. " for GaG",
-        Buttons = {
-            {
-                Title = "Cancel",
-                Callback = function()
-                end,
-                Variant = "Secondary"
-            },
-            {
-                Title = "Continue",
-                Icon = "arrow-right",
-                Callback = function()
-                    Confirmed = true
-                end,
-                Variant = "Primary"
-            }
-        }
-    }
-)
-
-repeat
-    wait()
-until Confirmed
-
-local Window =
-    WindUI:CreateWindow(
-    {
-        Title = "Spawner Hub | Made by T2WLOCK",
-        Icon = "sparkles",
-        IconThemed = true,
-        Author = "Grow A Garden",
-        Folder = "VisualSpawner",
-        Size = UDim2.fromOffset(420, 350),
-        Transparent = false,
-        Theme = "Dark",
-        User = {
-            Enabled = true,
-            Callback = function()
-            end,
-            Anonymous = false
-        },
-        SideBarWidth = 150,
-        ScrollBarEnabled = true
-    }
-)
-
-Window:EditOpenButton(
-    {
-        Title = "Open Spawner",
-        Icon = "sparkles",
-        CornerRadius = UDim.new(0, 12),
-        StrokeThickness = 2,
-        Color = ColorSequence.new(Color3.fromHex("FF6B6B"), Color3.fromHex("4ECDC4")),
-        Draggable = true
-    }
-)
-
-local Tabs = {}
-
--- Create main sections
-do
-    Tabs.SpawnerSection =
-        Window:Section(
-        {
-            Title = "Spawner Tools",
-            Icon = "sparkles",
-            Opened = true
-        }
-    )
-
-    Tabs.ESPSection =
-        Window:Section(
-        {
-            Title = "Egg ESP Tools",
-            Icon = "eye",
-            Opened = false
-        }
-    )
-
-    -- Spawner tabs
-    Tabs.PetTab =
-        Tabs.SpawnerSection:Tab(
-        {
-            Title = "Pets",
-            Icon = "heart",
-            Desc = "Spawn pets with custom stats"
-        }
-    )
-
-    Tabs.SeedTab =
-        Tabs.SpawnerSection:Tab(
-        {
-            Title = "Seeds",
-            Icon = "leaf",
-            Desc = "Spawn seeds in your garden"
-        }
-    )
-
-    Tabs.EggTab =
-        Tabs.SpawnerSection:Tab(
-        {
-            Title = "Eggs",
-            Icon = "egg",
-            Desc = "Spawn eggs for rare pets"
-        }
-    )
-
-    -- ESP Tab
-    Tabs.EggESPTab =
-        Tabs.ESPSection:Tab(
-        {
-            Title = "Egg ESP",
-            Icon = "eye",
-            Desc = "Predicts ur egg u can even change them"
-        }
-    )
-
-    Tabs.UITab =
-        Tabs.SpawnerSection:Tab(
-        {
-            Title = "UI Color",
-            Icon = "palette",
-            Desc = "Customize UI colors and theme"
-        }
-    )
-end
-
-Window:SelectTab(1)
-
--- Pet Tab Implementation
-local petName = "Raccoon"
-local petWeight = 1
-local petAge = 2
-
-Tabs.PetTab:Paragraph(
-    {
-        Title = "Pet Spawner",
-        Desc = "Enter the pet name and customize its stats before spawning",
-        Image = "heart",
-        Color = "Blue"
-    }
-)
-
-Tabs.PetTab:Input(
-    {
-        Title = "Pet Name",
-        Value = "Raccoon",
-        InputIcon = "search",
-        Placeholder = "Enter pet name (e.g., Raccoon, Cat, Dog)",
-        Callback = function(input)
-            petName = input
-        end
-    }
-)
-
-Tabs.PetTab:Input(
-    {
-        Title = "Pet Weight (KG)",
-        Value = tostring(petWeight),
-        InputIcon = "weight",
-        Placeholder = "Enter pet weight in KG",
-        Callback = function(input)
-            local num = tonumber(input)
-            if num then
-                petWeight = num
-            else
-                WindUI:Notify({
-                    Title = "Invalid Weight",
-                    Content = "Please enter a valid number for weight.",
-                    Icon = "alert-triangle",
-                    Duration = 3
-                })
-            end
-        end
-    }
-)
-
-Tabs.PetTab:Input(
-    {
-        Title = "Pet Age",
-        Value = tostring(petAge),
-        InputIcon = "clock",
-        Placeholder = "Enter pet age",
-        Callback = function(input)
-            local num = tonumber(input)
-            if num then
-                petAge = num
-            else
-                WindUI:Notify({
-                    Title = "Invalid Age",
-                    Content = "Please enter a valid number for age.",
-                    Icon = "alert-triangle",
-                    Duration = 3
-                })
-            end
-        end
-    }
-)
-
-Tabs.PetTab:Button(
-    {
-        Title = "Spawn Pet",
-        Icon = "plus-circle",
-        Callback = function()
-            if petName and petName ~= "" then
-                local success, error =
-                    pcall(
-                    function()
-                        Spawner.SpawnPet(petName, petWeight, petAge)
-                    end
-                )
-
-                if success then
-                    WindUI:Notify(
-                        {
-                            Title = "Pet Spawned!",
-                            Content = petName .. " spawned with " .. petWeight .. "KG and age " .. petAge,
-                            Icon = "heart",
-                            Duration = 4
-                        }
-                    )
-                else
-                    WindUI:Notify(
-                        {
-                            Title = "Spawn Failed",
-                            Content = "Failed to spawn " .. petName .. ". Check if the name is correct.",
-                            Icon = "alert-circle",
-                            Duration = 4
-                        }
-                    )
-                end
-            else
-                WindUI:Notify(
-                    {
-                        Title = "Error",
-                        Content = "Please enter a pet name!",
-                        Icon = "alert-triangle",
-                        Duration = 3
-                    }
-                )
-            end
-        end
-    }
-)
-
--- Seed Tab Implementation
-local seedName = "Candy Blossom"
-
-Tabs.SeedTab:Paragraph(
-    {
-        Title = "Seed Spawner",
-        Desc = "Enter the seed name to spawn",
-        Image = "leaf",
-        Color = "Green"
-    }
-)
-
-Tabs.SeedTab:Input(
-    {
-        Title = "Seed Name",
-        Value = "Candy Blossom",
-        InputIcon = "sprout",
-        Placeholder = "Enter seed name (e.g., Candy Blossom, Sunflower)",
-        Callback = function(input)
-            seedName = input
-        end
-    }
-)
-
-Tabs.SeedTab:Button(
-    {
-        Title = "Spawn Seed",
-        Icon = "sprout",
-        Callback = function()
-            if seedName and seedName ~= "" then
-                local success, error =
-                    pcall(
-                    function()
-                        Spawner.SpawnSeed(seedName)
-                    end
-                )
-
-                if success then
-                    WindUI:Notify(
-                        {
-                            Title = "Seed Spawned!",
-                            Content = seedName .. " has been spawned Check your backpack",
-                            Icon = "leaf",
-                            Duration = 4
-                        }
-                    )
-                else
-                    WindUI:Notify(
-                        {
-                            Title = "Spawn Failed",
-                            Content = "Failed to spawn " .. seedName .. ". Check if the name is correct.",
-                            Icon = "alert-circle",
-                            Duration = 4
-                        }
-                    )
-                end
-            else
-                WindUI:Notify(
-                    {
-                        Title = "Error",
-                        Content = "Please enter a seed name!",
-                        Icon = "alert-triangle",
-                        Duration = 3
-                    }
-                )
-            end
-        end
-    }
-)
-
--- Egg Tab Implementation
-local eggName = "Night Egg"
-
-Tabs.EggTab:Paragraph(
-    {
-        Title = "Egg Spawner",
-        Desc = "Enter the egg name to spawn",
-        Image = "egg",
-        Color = "Orange"
-    }
-)
-
-Tabs.EggTab:Input(
-    {
-        Title = "Egg Name",
-        Value = "Night Egg",
-        InputIcon = "gift",
-        Placeholder = "Enter egg name (e.g., Night Egg, Bug Egg)",
-        Callback = function(input)
-            eggName = input
-        end
-    }
-)
-
-Tabs.EggTab:Button(
-    {
-        Title = "Spawn Egg",
-        Icon = "gift",
-        Callback = function()
-            if eggName and eggName ~= "" then
-                local success, error =
-                    pcall(
-                    function()
-                        Spawner.SpawnEgg(eggName)
-                    end
-                )
-
-                if success then
-                    WindUI:Notify(
-                        {
-                            Title = "Egg Spawned!",
-                            Content = eggName .. " has been spawned successfully",
-                            Icon = "egg",
-                            Duration = 4
-                        }
-                    )
-                else
-                    WindUI:Notify(
-                        {
-            Title = "Spawn Failed",
-                            Content = "Failed to spawn " .. eggName .. ". Check if the name is correct.",
-                            Icon = "alert-circle",
-                            Duration = 4
-                        }
-                    )
-                end
-            else
-                WindUI:Notify(
-                    {
-                        Title = "Error",
-                        Content = "Please enter an egg name!",
-                        Icon = "alert-triangle",
-                        Duration = 3
-                    }
-                )
-            end
-        end
-    }
-)
-
--- Egg ESP Tab Implementation
-Tabs.EggESPTab:Paragraph(
-    {
-        Title = "Egg ESP System",
-        Desc = "Pet Prediction | Made by T2WLOCK",
-        Image = "eye",
-        Color = "Red"
-    }
-)
-
-Tabs.EggESPTab:Toggle(
-    {
-        Title = "Enable Egg ESP",
-        Value = false,
-        Callback = function(enabled)
-            toggleVisuals(enabled)
-            if enabled then
-                WindUI:Notify({
-                    Title = "Egg ESP Enabled",
-                    Content = "Red highlights and predictions active",
-                    Icon = "eye",
-                    Duration = 3
-                })
-            else
-                WindUI:Notify({
-                    Title = "Egg ESP Disabled",
-                    Content = "All visuals have been removed",
-                    Icon = "eye-off",
-                    Duration = 3
-                })
-            end
-        end
-    }
-)
-
-Tabs.EggESPTab:Button(
-    {
-        Title = "Reroll Predictions",
-        Icon = "refresh-cw",
-        Callback = function()
-            if VisualsEnabled then
-                PausedEggs = {}
-                rerollPredictions()
-                WindUI:Notify({
-                    Title = "Predictions Rerolled",
-                    Content = "All egg predictions have been updated",
-                    Icon = "refresh-cw",
-                    Duration = 3
-                })
-            else
-                WindUI:Notify({
-                    Title = "ESP Not Active",
-                    Content = "Please enable Egg ESP first!",
-                    Icon = "alert-triangle",
-                    Duration = 3
-                })
-            end
-        end
-    }
-)
-
-Tabs.EggESPTab:Toggle(
-    {
-        Title = "Auto Reroll",
-        Value = false,
-        Callback = function(enabled)
-            AutoRerollEnabled = enabled
-            handleAutoReroll()
-            WindUI:Notify({
-                Title = "Auto Reroll " .. (enabled and "Enabled" or "Disabled"),
-                Content = "Predictions will " .. (enabled and "auto-update" or "stop updating"),
-                Icon = enabled and "play" or "pause",
-                Duration = 3
-            })
-        end
-    }
-)
-
-Tabs.EggESPTab:Slider(
-    {
-        Title = "Reroll Speed",
-        Value = {
-            Min = 1,
-            Max = 10,
-            Default = 1
-        },
-        Callback = function(value)
-            RerollSpeed = value * 0.5
-            if value == 1 then RerollSpeed = 0.25 end
-            if AutoRerollEnabled then handleAutoReroll() end
-        end
-    }
-)
-
-Tabs.EggESPTab:Input(
-    {
-        Title = "Target Pet (Case Sensitive)",
-        Value = "",
-        InputIcon = "target",
-        Placeholder = "Enter pet name to pause on (e.g., Kitsune, T-Rex)",
-        Callback = function(input)
-            SelectedPet = input
-            PausedEggs = {}
-            WindUI:Notify({
-                Title = "Target Set",
-                Content = "Will pause when " .. (input ~= "" and input or "any pet") .. " is found",
-                Icon = "target",
-                Duration = 3
-            })
-        end
-    }
-)
-
-Tabs.EggESPTab:Divider()
-
-Tabs.EggESPTab:Paragraph(
-    {
-        Title = "How to Use Egg ESP",
-        Desc = "1. Enable Egg ESP to see red highlights\n2. Use Reroll to change predictions\n3. Set Target Pet to auto-pause\n4. Auto Reroll continuously updates predictions",
-        Image = "info",
-        Color = "Blue"
-    }
-)
-
--- UI Color Tab Implementation
-local currentThemeName = WindUI:GetCurrentTheme()
-local themes = WindUI:GetThemes()
-
-local ThemeAccent = themes[currentThemeName].Accent
-local ThemeOutline = themes[currentThemeName].Outline
-local ThemeText = themes[currentThemeName].Text
-local ThemePlaceholderText = themes[currentThemeName].Placeholder
-
-function updateTheme()
-    WindUI:AddTheme(
-        {
-            Name = currentThemeName,
-            Accent = ThemeAccent,
-            Outline = ThemeOutline,
-            Text = ThemeText,
-            Placeholder = ThemePlaceholderText
-        }
-    )
-    WindUI:SetTheme(currentThemeName)
-end
-
-Tabs.UITab:Paragraph(
-    {
-        Title = "UI Customization",
-        Desc = "Change colors and theme of the interface",
-        Image = "palette",
-        Color = "Blue"
-    }
-)
-
--- Theme selector
-local themeValues = {}
-for name, _ in pairs(WindUI:GetThemes()) do
-    table.insert(themeValues, name)
-end
-
-local themeDropdown =
-    Tabs.UITab:Dropdown(
-    {
-        Title = "Select Theme",
-        Values = themeValues,
-        Value = WindUI:GetCurrentTheme(),
-        Callback = function(theme)
-            WindUI:SetTheme(theme)
-            WindUI:Notify(
-                {
-                    Title = "Theme Changed",
-                    Content = "Theme changed to " .. theme,
-                    Icon = "palette",
-                    Duration = 3
-                }
-            )
-        end
-    }
-)
-
--- Transparency toggle
-Tabs.UITab:Toggle(
-    {
-        Title = "Window Transparency",
-        Value = false,
-        Callback = function(enabled)
-            Window:ToggleTransparency(enabled)
-            WindUI:Notify(
-                {
-                    Title = "Transparency " .. (enabled and "Enabled" or "Disabled"),
-                    Content = "Window transparency has been " .. (enabled and "enabled" or "disabled"),
-                    Icon = enabled and "eye" or "eye-off",
-                    Duration = 3
-                }
-            )
-        end
-    }
-)
-
-Tabs.UITab:Divider()
-
--- Custom theme creation
-Tabs.UITab:Input(
-    {
-        Title = "Custom Theme Name",
-        Value = currentThemeName,
-        Placeholder = "Enter theme name",
-        Callback = function(name)
-            currentThemeName = name
-        end
-    }
-)
-
-Tabs.UITab:Colorpicker(
-    {
-        Title = "Accent Color",
-        Default = Color3.fromHex(ThemeAccent),
-        Callback = function(color)
-            ThemeAccent = color:ToHex()
-        end
-    }
-)
-
-Tabs.UITab:Colorpicker(
-    {
-        Title = "Outline Color",
-        Default = Color3.fromHex(ThemeOutline),
-        Callback = function(color)
-            ThemeOutline = color:ToHex()
-        end
-    }
-)
-
-Tabs.UITab:Colorpicker(
-    {
-        Title = "Text Color",
-        Default = Color3.fromHex(ThemeText),
-        Callback = function(color)
-            ThemeText = color:ToHex()
-        end
-    }
-)
-
-Tabs.UITab:Colorpicker(
-    {
-        Title = "Placeholder Text Color",
-        Default = Color3.fromHex(ThemePlaceholderText),
-        Callback = function(color)
-            ThemePlaceholderText = color:ToHex()
-        end
-    }
-)
-
-Tabs.UITab:Button(
-    {
-        Title = "Apply Custom Theme",
-        Icon = "check",
-        Callback = function()
-            updateTheme()
-            WindUI:Notify(
-                {
-                    Title = "Custom Theme Applied",
-                    Content = "Theme '" .. currentThemeName .. "' has been applied",
-                    Icon = "palette",
-                    Duration = 4
-                }
-            )
-        end
-    }
-)
-
--- Credits section
-Tabs.UITab:Divider()
-
-Tabs.UITab:Paragraph(
-    {
-        Title = "Credits",
-        Desc = "T2WLOCK",
-        Image = "users",
-        Color = "Purple"
-    }
-)
-
--- Window close handler
-Window:OnClose(
-    function()
-        -- Clean up ESP visuals on close
-        if AutoRerollConnection then
-            AutoRerollConnection:Disconnect()
-        end
-        
-        for _, visual in pairs(EggVisuals) do
-            if visual.highlight then visual.highlight:Destroy() end
-            if visual.billboard then visual.billboard:Destroy() end
-        end
-        
-        EggVisuals = {}
-        PausedEggs = {}
-        SavedPredictions = {}
+-- Функция поиска и сканирования UUID питомцев рядом с игроком (ПЕРЕНЕСЕНА СЮДА)
+local function findAndScanNearbyUUIDPets()
+    if not scriptRunning then return end
+    
+    logEvent("🔍 SEARCH", "Searching for UUID pets near player...")
+    
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ ERROR", "Player character or HumanoidRootPart not found")
+        return
     end
-)
+    
+    local playerPosition = playerChar.HumanoidRootPart.Position
+    local foundPets = {}
+    local searchRadius = 100 -- 100 стадов радиус поиска
+    
+    -- Ищем UUID модели в Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if not scriptRunning then break end
+        
+        if obj:IsA("Model") and isUUIDName(obj.Name) then
+            local success, modelCFrame = pcall(function() 
+                return obj:GetModelCFrame() 
+            end)
+            
+            if success then
+                local distance = (modelCFrame.Position - playerPosition).Magnitude
+                
+                if distance <= searchRadius then
+                    table.insert(foundPets, {
+                        model = obj,
+                        distance = distance,
+                        name = obj.Name
+                    })
+                end
+            end
+        end
+    end
+    
+    -- Сортируем по расстоянию
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    
+    logEvent("🎯 SEARCH_RESULT", "Found " .. #foundPets .. " UUID pets within " .. searchRadius .. " studs")
+    
+    -- Сканируем найденных питомцев
+    for i, petInfo in ipairs(foundPets) do
+        if not scriptRunning then break end
+        
+        logEvent("🔬 SCANNING", "Pet " .. i .. "/" .. #foundPets, {
+            Name = petInfo.name,
+            Distance = string.format("%.1f studs", petInfo.distance)
+        })
+        
+        -- Вызываем функцию сканирования через spawn для избежания проблем с порядком
+        spawn(function()
+            local success, petData = pcall(scanUUIDPet, petInfo.model)
+            if not success then
+                logEvent("❌ SCAN_ERROR", "Failed to scan pet: " .. tostring(petData), {
+                    PetName = petInfo.name
+                })
+            end
+        end)
+        
+        -- Небольшая пауза между сканированиями
+        wait(0.1)
+    end
+    
+    -- Подсчитываем размер базы данных правильно
+    local databaseSize = 0
+    for _ in pairs(petDatabase) do
+        databaseSize = databaseSize + 1
+    end
+    
+    logEvent("✅ SCAN_COMPLETE", "All nearby UUID pets scanned successfully", {
+        TotalScanned = #foundPets,
+        DatabaseSize = databaseSize
+    })
+end
+
+-- Функция воссоздания ближайшего питомца из базы (ПЕРЕНЕСЕНА СЮДА)
+local function recreateNearestPet()
+    if not scriptRunning then return end
+    
+    -- Подсчитываем размер базы данных правильно
+    local databaseSize = 0
+    for _ in pairs(petDatabase) do
+        databaseSize = databaseSize + 1
+    end
+    
+    if databaseSize == 0 then
+        logEvent("⚠️ RECREATE_WARNING", "Pet database is empty! Scan some pets first.", {
+            DatabaseSize = databaseSize
+        })
+        return
+    end
+    
+    logEvent("📊 DATABASE_STATUS", "Database contains pets", {
+        DatabaseSize = databaseSize
+    })
+    
+    -- Находим первого питомца в базе
+    local petName = next(petDatabase)
+    
+    -- Позиция рядом с игроком
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ RECREATE_ERROR", "Player character not found")
+        return
+    end
+    
+    local playerPos = playerChar.HumanoidRootPart.Position
+    local spawnPos = playerPos + Vector3.new(5, 0, 5) -- 5 стадов от игрока
+    
+    logEvent("🚀 RECREATE_ATTEMPT", "Attempting to recreate pet", {
+        PetName = petName,
+        SpawnPosition = tostring(spawnPos)
+    })
+    
+    -- Вызываем функцию воссоздания (будет объявлена позже)
+    if recreatePetFromDatabase then
+        local recreatedPet = recreatePetFromDatabase(petName, spawnPos)
+        
+        if recreatedPet then
+            logEvent("🎉 RECREATE_COMPLETE", "Pet successfully recreated from database!")
+            return recreatedPet
+        else
+            logEvent("❌ RECREATE_FAILED", "Failed to recreate pet from database")
+            return nil
+        end
+    else
+        logEvent("❌ RECREATE_ERROR", "Recreation function not available yet")
+        return nil
+    end
+end
+
+-- Создание современного GUI
+local function createModernGUI()
+    print("🎨 Создание современного GUI...")
+    
+    -- Удаляем старый GUI
+    local oldGui = playerGui:FindFirstChild("PetStructureAnalyzerGUI")
+    if oldGui then
+        oldGui:Destroy()
+    end
+    
+    -- Создаем новый GUI
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PetStructureAnalyzerGUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Главное окно (МОБИЛЬНО-АДАПТИВНОЕ)
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0.9, 0, 0.8, 0) -- 90% ширины, 80% высоты экрана
+    mainFrame.Position = UDim2.new(0.05, 0, 0.1, 0) -- Центрируем с отступами
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35) -- Темно-серый фон
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
+    
+    -- Современная рамка с градиентом
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, 12)
+    uiCorner.Parent = mainFrame
+    
+    local uiStroke = Instance.new("UIStroke")
+    uiStroke.Color = Color3.fromRGB(0, 150, 255)
+    uiStroke.Thickness = 2
+    uiStroke.Parent = mainFrame
+    
+    -- Заголовок с современным дизайном (КОМПАКТНЫЙ)
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, 0, 0, 35) -- Уменьшен с 50 до 35
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+    titleLabel.BorderSizePixel = 0
+    titleLabel.Text = "🔬 Pet Analyzer v4.0" -- Короче для мобильного
+    titleLabel.TextColor3 = Color3.new(1, 1, 1)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.Parent = mainFrame
+    
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.Parent = titleLabel
+    
+    -- Консоль с современным дизайном (МОБИЛЬНО-АДАПТИВНАЯ)
+    local consoleFrame = Instance.new("ScrollingFrame")
+    consoleFrame.Name = "ConsoleFrame"
+    consoleFrame.Size = UDim2.new(1, -10, 1, -80) -- Компактнее для мобильного
+    consoleFrame.Position = UDim2.new(0, 5, 0, 40) -- Ближе к заголовку
+    consoleFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20) -- Очень темный фон
+    consoleFrame.BorderSizePixel = 0
+    consoleFrame.ScrollBarThickness = 8 -- Тоньше для мобильного
+    consoleFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
+    consoleFrame.CanvasSize = UDim2.new(0, 0, 0, 2000)
+    consoleFrame.Parent = mainFrame
+    
+    local consoleCorner = Instance.new("UICorner")
+    consoleCorner.CornerRadius = UDim.new(0, 8)
+    consoleCorner.Parent = consoleFrame
+    
+    local consoleStroke = Instance.new("UIStroke")
+    consoleStroke.Color = Color3.fromRGB(50, 50, 60)
+    consoleStroke.Thickness = 1
+    consoleStroke.Parent = consoleFrame
+    
+    local consoleText = Instance.new("TextLabel")
+    consoleText.Name = "ConsoleText"
+    consoleText.Size = UDim2.new(1, -15, 0, 2000)
+    consoleText.Position = UDim2.new(0, 8, 0, 5)
+    consoleText.BackgroundTransparency = 1
+    consoleText.Text = "🔬 Pet Analyzer Console Ready...\n⚡ Waiting for UUID pets to analyze..."
+    consoleText.TextColor3 = Color3.fromRGB(0, 255, 150) -- Яркий зеленый
+    consoleText.TextScaled = false
+    consoleText.TextSize = 12 -- Меньше для мобильного
+    consoleText.Font = Enum.Font.RobotoMono -- Моноширинный шрифт для кода
+    consoleText.TextXAlignment = Enum.TextXAlignment.Left
+    consoleText.TextYAlignment = Enum.TextYAlignment.Top
+    consoleText.TextWrapped = true
+    consoleText.Parent = consoleFrame
+    
+    -- Панель кнопок (МОБИЛЬНО-АДАПТИВНАЯ)
+    local buttonPanel = Instance.new("Frame")
+    buttonPanel.Name = "ButtonPanel"
+    buttonPanel.Size = UDim2.new(1, -10, 0, 35) -- Компактнее: высота 35 вместо 50
+    buttonPanel.Position = UDim2.new(0, 5, 1, -40) -- Ближе к краю
+    buttonPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    buttonPanel.BorderSizePixel = 0
+    buttonPanel.Parent = mainFrame
+    
+    local panelCorner = Instance.new("UICorner")
+    panelCorner.CornerRadius = UDim.new(0, 8)
+    panelCorner.Parent = buttonPanel
+    
+    -- Создание современной кнопки
+    local function createModernButton(name, text, color, position, size)
+        local button = Instance.new("TextButton")
+        button.Name = name
+        button.Size = size
+        button.Position = position
+        button.BackgroundColor3 = color
+        button.BorderSizePixel = 0
+        button.Text = text
+        button.TextColor3 = Color3.new(1, 1, 1)
+        button.TextScaled = true
+        button.Font = Enum.Font.GothamBold
+        button.Parent = buttonPanel
+        
+        local buttonCorner = Instance.new("UICorner")
+        buttonCorner.CornerRadius = UDim.new(0, 6)
+        buttonCorner.Parent = button
+        
+        local buttonStroke = Instance.new("UIStroke")
+        buttonStroke.Color = Color3.fromRGB(255, 255, 255)
+        buttonStroke.Thickness = 1
+        buttonStroke.Transparency = 0.8
+        buttonStroke.Parent = button
+        
+        -- Эффект наведения
+        button.MouseEnter:Connect(function()
+            button.BackgroundColor3 = Color3.new(
+                math.min(color.R + 0.1, 1),
+                math.min(color.G + 0.1, 1),
+                math.min(color.B + 0.1, 1)
+            )
+            buttonStroke.Transparency = 0.5
+        end)
+        
+        button.MouseLeave:Connect(function()
+            button.BackgroundColor3 = color
+            buttonStroke.Transparency = 0.8
+        end)
+        
+        return button
+    end
+    
+    -- Кнопки с современным дизайном (6 кнопок)
+    local scanButton = createModernButton("ScanButton", "🔍 SCAN PETS", 
+        Color3.fromRGB(0, 150, 255), UDim2.new(0, 2, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local createButton = createModernButton("CreateButton", "🚀 CREATE PET", 
+        Color3.fromRGB(255, 0, 150), UDim2.new(0.16, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local copyButton = createModernButton("CopyButton", "📋 COPY CONSOLE", 
+        Color3.fromRGB(255, 150, 0), UDim2.new(0.32, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local clearButton = createModernButton("ClearButton", "🗑️ CLEAR LOG", 
+        Color3.fromRGB(255, 100, 100), UDim2.new(0.48, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local exportButton = createModernButton("ExportButton", "💾 EXPORT DATA", 
+        Color3.fromRGB(100, 255, 100), UDim2.new(0.64, 0, 0, 5), UDim2.new(0.15, 0, 1, -10))
+    
+    local closeButton = createModernButton("CloseButton", "❌ CLOSE", 
+        Color3.fromRGB(200, 50, 50), UDim2.new(0.8, 0, 0, 5), UDim2.new(0.18, 0, 1, -10))
+    
+    -- События кнопок (ПОДКЛЮЧЕНЫ К РЕАЛЬНЫМ ФУНКЦИЯМ)
+    scanButton.MouseButton1Click:Connect(function()
+        logEvent("🔍 SCAN", "Starting pet structure scan...")
+        scanButton.Text = "⏳ SCANNING..."
+        
+        spawn(function()
+            findAndScanNearbyUUIDPets()
+            scanButton.Text = "🔍 SCAN PETS"
+        end)
+    end)
+    
+    createButton.MouseButton1Click:Connect(function()
+        logEvent("🚀 CREATE", "Attempting to create pet from database...")
+        createButton.Text = "⏳ CREATING..."
+        
+        spawn(function()
+            local createdPet = recreateNearestPet()
+            if createdPet then
+                createButton.Text = "✅ CREATED!"
+                spawn(function()
+                    wait(2)
+                    createButton.Text = "🚀 CREATE PET"
+                end)
+            else
+                createButton.Text = "❌ FAILED!"
+                spawn(function()
+                    wait(2)
+                    createButton.Text = "🚀 CREATE PET"
+                end)
+            end
+        end)
+    end)
+    
+    copyButton.MouseButton1Click:Connect(function()
+        logEvent("📋 COPY", "Copying console to clipboard...")
+        copyButton.Text = "⏳ COPYING..."
+        
+        spawn(function()
+            local consoleData = table.concat(consoleOutput, "\n")
+            -- В Roblox нет прямого доступа к clipboard, но можем показать данные
+            logEvent("📋 COPY", "Console data ready for manual copy:")
+            logEvent("📋 DATA", "=== CONSOLE EXPORT START ===")
+            for _, line in ipairs(consoleOutput) do
+                print(line) -- Выводим в консоль для копирования
+            end
+            logEvent("📋 DATA", "=== CONSOLE EXPORT END ===")
+            
+            wait(2)
+            copyButton.Text = "📋 COPY CONSOLE"
+        end)
+    end)
+    
+    clearButton.MouseButton1Click:Connect(function()
+        logEvent("🗑️ CLEAR", "Clearing console log...")
+        consoleOutput = {}
+        consoleText.Text = "🔬 Console cleared!\n⚡ Ready for new analysis..."
+        clearButton.Text = "✅ CLEARED"
+        
+        spawn(function()
+            wait(1)
+            clearButton.Text = "🗑️ CLEAR LOG"
+        end)
+    end)
+    
+    exportButton.MouseButton1Click:Connect(function()
+        logEvent("💾 EXPORT", "Exporting pet database...")
+        exportButton.Text = "⏳ EXPORTING..."
+        
+        spawn(function()
+            exportPetDatabase()
+            exportButton.Text = "💾 EXPORT DATA"
+        end)
+    end)
+    
+    closeButton.MouseButton1Click:Connect(function()
+        logEvent("❌ SYSTEM", "COMPLETE SHUTDOWN - Pet Structure Analyzer terminating...")
+        
+        -- Отключаем скрипт
+        scriptRunning = false
+        
+        -- Отключаем все соединения
+        for i, connection in ipairs(connections) do
+            if connection then
+                pcall(function() connection:Disconnect() end)
+            end
+        end
+        connections = {}
+        
+        -- Закрываем GUI
+        pcall(function() screenGui:Destroy() end)
+        gui = nil
+        
+        print("🔴 Pet Structure Analyzer ПОЛНОСТЬЮ ВЫКЛЮЧЕН!")
+        print("🔌 Все соединения отключены")
+        print("💀 Скрипт УБИТ навсегда")
+        
+        -- ПРИНУДИТЕЛЬНАЯ ОСТАНОВКА СКРИПТА
+        spawn(function()
+            wait(0.1)
+            error("🔴 PET STRUCTURE ANALYZER TERMINATED BY USER - COMPLETE SHUTDOWN 💀")
+        end)
+    end)
+    
+    -- Добавляем в PlayerGui
+    screenGui.Parent = playerGui
+    gui = screenGui
+    
+    print("✅ Современный GUI создан успешно!")
+    logEvent("🎨 SYSTEM", "Modern GUI created with enhanced console and buttons")
+    
+    return screenGui
+end
+
+-- === СИСТЕМА СКАНИРОВАНИЯ СТРУКТУРЫ ПИТОМЦЕВ ===
+
+-- Функция глубокого сканирования Motor6D
+local function scanMotor6D(model)
+    local motors = {}
+    local motorCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            motorCount = motorCount + 1
+            local motorData = {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "nil",
+                part1 = obj.Part1 and obj.Part1.Name or "nil",
+                c0 = obj.C0,
+                c1 = obj.C1,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(motors, motorData)
+        end
+    end
+    
+    return motors, motorCount
+end
+
+-- Функция сканирования Mesh данных
+local function scanMeshData(model)
+    local meshes = {}
+    local meshCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") then
+            meshCount = meshCount + 1
+            local meshData = {
+                type = "MeshPart",
+                name = obj.Name,
+                meshId = obj.MeshId,
+                textureId = obj.TextureID,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(meshes, meshData)
+        elseif obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
+            local meshData = {
+                type = "SpecialMesh",
+                name = obj.Name,
+                meshId = obj.MeshId,
+                textureId = obj.TextureId,
+                meshType = obj.MeshType.Name,
+                scale = obj.Scale,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(meshes, meshData)
+        end
+    end
+    
+    return meshes, meshCount
+end
+
+-- Функция сканирования Attachments
+local function scanAttachments(model)
+    local attachments = {}
+    local attachmentCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Attachment") then
+            attachmentCount = attachmentCount + 1
+            local attachmentData = {
+                name = obj.Name,
+                cframe = obj.CFrame,
+                worldCFrame = obj.WorldCFrame,
+                parent = obj.Parent and obj.Parent.Name or "nil",
+                visible = obj.Visible
+            }
+            table.insert(attachments, attachmentData)
+        end
+    end
+    
+    return attachments, attachmentCount
+end
+
+-- Функция поиска Animation ID в скриптах
+local function scanAnimations(model)
+    local animations = {}
+    local animationCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Animation") then
+            animationCount = animationCount + 1
+            local animData = {
+                name = obj.Name,
+                animationId = obj.AnimationId,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(animations, animData)
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            -- Ищем Animation ID в коде скриптов
+            local success, source = pcall(function() return obj.Source end)
+            if success and source then
+                for animId in source:gmatch("rbxassetid://(%d+)") do
+                    animationCount = animationCount + 1
+                    local animData = {
+                        name = "Found in " .. obj.Name,
+                        animationId = "rbxassetid://" .. animId,
+                        parent = obj.Name,
+                        source = "script"
+                    }
+                    table.insert(animations, animData)
+                end
+            end
+        end
+    end
+    
+    return animations, animationCount
+end
+
+-- Функция сканирования базовых частей модели
+local function scanBaseParts(model)
+    local parts = {}
+    local partCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            partCount = partCount + 1
+            local partData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                transparency = obj.Transparency,
+                canCollide = obj.CanCollide,
+                anchored = obj.Anchored,
+                cframe = obj.CFrame,
+                parent = obj.Parent and obj.Parent.Name or "nil"
+            }
+            table.insert(parts, partData)
+        end
+    end
+    
+    return parts, partCount
+end
+
+-- Главная функция сканирования UUID питомца
+local function scanUUIDPet(petModel)
+    logEvent("🔬 DEEP_SCAN", "Starting deep structure analysis", {
+        PetName = petModel.Name,
+        PetClass = petModel.ClassName
+    })
+    
+    local petData = {
+        name = petModel.Name,
+        className = petModel.ClassName,
+        primaryPart = petModel.PrimaryPart and petModel.PrimaryPart.Name or "nil",
+        scanTime = os.date("%Y-%m-%d %H:%M:%S"),
+        position = petModel:GetModelCFrame().Position
+    }
+    
+    -- Сканируем Motor6D
+    logEvent("🔧 MOTOR6D_SCAN", "Scanning Motor6D joints...")
+    petData.motors, petData.motorCount = scanMotor6D(petModel)
+    logEvent("🔧 MOTOR6D_RESULT", "Found " .. petData.motorCount .. " Motor6D joints")
+    
+    -- Сканируем Meshes
+    logEvent("🎨 MESH_SCAN", "Scanning mesh data...")
+    petData.meshes, petData.meshCount = scanMeshData(petModel)
+    logEvent("🎨 MESH_RESULT", "Found " .. petData.meshCount .. " mesh components")
+    
+    -- Сканируем Attachments
+    logEvent("📎 ATTACHMENT_SCAN", "Scanning attachments...")
+    petData.attachments, petData.attachmentCount = scanAttachments(petModel)
+    logEvent("📎 ATTACHMENT_RESULT", "Found " .. petData.attachmentCount .. " attachments")
+    
+    -- Сканируем Animations
+    logEvent("🎭 ANIMATION_SCAN", "Scanning animations...")
+    petData.animations, petData.animationCount = scanAnimations(petModel)
+    logEvent("🎭 ANIMATION_RESULT", "Found " .. petData.animationCount .. " animation references")
+    
+    -- Сканируем BaseParts
+    logEvent("🧱 PARTS_SCAN", "Scanning base parts...")
+    petData.parts, petData.partCount = scanBaseParts(petModel)
+    logEvent("🧱 PARTS_RESULT", "Found " .. petData.partCount .. " base parts")
+    
+    -- Сохраняем в базу данных
+    petDatabase[petModel.Name] = petData
+    
+    logEvent("💾 SAVE_COMPLETE", "Pet structure saved to database", {
+        TotalMotors = petData.motorCount,
+        TotalMeshes = petData.meshCount,
+        TotalAttachments = petData.attachmentCount,
+        TotalAnimations = petData.animationCount,
+        TotalParts = petData.partCount
+    })
+    
+    return petData
+end
+
+
+
+-- Функция экспорта базы данных питомцев
+local function exportPetDatabase()
+    if not scriptRunning then return end
+    
+    logEvent("💾 EXPORT_START", "Starting pet database export...")
+    
+    if next(petDatabase) == nil then
+        logEvent("⚠️ EXPORT_WARNING", "Pet database is empty! Scan some pets first.")
+        return
+    end
+    
+    local exportData = {
+        exportTime = os.date("%Y-%m-%d %H:%M:%S"),
+        totalPets = 0,
+        pets = {}
+    }
+    
+    -- Подсчитываем и экспортируем каждого питомца
+    for petName, petData in pairs(petDatabase) do
+        exportData.totalPets = exportData.totalPets + 1
+        exportData.pets[petName] = petData
+        
+        logEvent("📦 EXPORTING", "Pet: " .. petName, {
+            Motors = petData.motorCount or 0,
+            Meshes = petData.meshCount or 0,
+            Parts = petData.partCount or 0,
+            Attachments = petData.attachmentCount or 0,
+            Animations = petData.animationCount or 0
+        })
+    end
+    
+    -- Выводим полный экспорт в консоль
+    logEvent("💾 EXPORT_DATA", "=== PET DATABASE EXPORT START ===")
+    logEvent("📊 EXPORT_SUMMARY", "Total pets in database: " .. exportData.totalPets)
+    logEvent("📅 EXPORT_TIME", "Export time: " .. exportData.exportTime)
+    
+    -- Детальный экспорт каждого питомца
+    for petName, petData in pairs(exportData.pets) do
+        logEvent("🐾 PET_EXPORT", "=== " .. petName .. " ===")
+        logEvent("📋 PET_INFO", "Class: " .. (petData.className or "Unknown"))
+        logEvent("📍 PET_POSITION", "Position: " .. tostring(petData.position or "Unknown"))
+        logEvent("🕒 PET_SCAN_TIME", "Scanned: " .. (petData.scanTime or "Unknown"))
+        
+        -- Motor6D данные
+        if petData.motors and #petData.motors > 0 then
+            logEvent("🔧 MOTORS", "Motor6D joints (" .. #petData.motors .. "):")
+            for i, motor in ipairs(petData.motors) do
+                logEvent("🔧 MOTOR_" .. i, motor.name .. " [" .. motor.part0 .. " -> " .. motor.part1 .. "]")
+            end
+        end
+        
+        -- Mesh данные
+        if petData.meshes and #petData.meshes > 0 then
+            logEvent("🎨 MESHES", "Mesh components (" .. #petData.meshes .. "):")
+            for i, mesh in ipairs(petData.meshes) do
+                logEvent("🎨 MESH_" .. i, mesh.name .. " [" .. mesh.type .. "] ID: " .. (mesh.meshId or "none"))
+            end
+        end
+        
+        -- Attachment данные
+        if petData.attachments and #petData.attachments > 0 then
+            logEvent("📎 ATTACHMENTS", "Attachments (" .. #petData.attachments .. "):")
+            for i, att in ipairs(petData.attachments) do
+                logEvent("📎 ATT_" .. i, att.name .. " [" .. att.parent .. "]")
+            end
+        end
+        
+        -- Animation данные
+        if petData.animations and #petData.animations > 0 then
+            logEvent("🎭 ANIMATIONS", "Animations (" .. #petData.animations .. "):")
+            for i, anim in ipairs(petData.animations) do
+                logEvent("🎭 ANIM_" .. i, anim.name .. " ID: " .. (anim.animationId or "none"))
+            end
+        end
+        
+        logEvent("🐾 PET_END", "=== END " .. petName .. " ===")
+    end
+    
+    logEvent("💾 EXPORT_DATA", "=== PET DATABASE EXPORT END ===")
+    logEvent("✅ EXPORT_COMPLETE", "Database export completed successfully!", {
+        TotalPetsExported = exportData.totalPets,
+        ExportTime = exportData.exportTime
+    })
+    
+    -- Также выводим в print для удобного копирования
+    print("=== PET STRUCTURE DATABASE EXPORT ===")
+    print("Export Time: " .. exportData.exportTime)
+    print("Total Pets: " .. exportData.totalPets)
+    print("")
+    
+    for petName, petData in pairs(exportData.pets) do
+        print("PET: " .. petName)
+        print("  Class: " .. (petData.className or "Unknown"))
+        print("  Motors: " .. (petData.motorCount or 0))
+        print("  Meshes: " .. (petData.meshCount or 0))
+        print("  Parts: " .. (petData.partCount or 0))
+        print("  Attachments: " .. (petData.attachmentCount or 0))
+        print("  Animations: " .. (petData.animationCount or 0))
+        print("")
+    end
+    
+    print("=== END EXPORT ===")
+end
+
+-- === СИСТЕМА ВОССОЗДАНИЯ ПИТОМЦЕВ ИЗ БАЗЫ ДАННЫХ ===
+
+-- Функция создания BasePart из данных
+local function createPartFromData(partData)
+    local part = Instance.new(partData.className or "Part")
+    part.Name = partData.name
+    part.Size = partData.size
+    part.CFrame = partData.cframe
+    part.Color = partData.color
+    part.Transparency = partData.transparency or 0
+    part.CanCollide = partData.canCollide
+    part.Anchored = partData.anchored
+    
+    -- Устанавливаем материал
+    local success = pcall(function()
+        part.Material = Enum.Material[partData.material]
+    end)
+    if not success then
+        part.Material = Enum.Material.Plastic
+    end
+    
+    return part
+end
+
+-- Функция создания Mesh из данных
+local function createMeshFromData(meshData, parent)
+    if meshData.type == "MeshPart" then
+        -- Для MeshPart устанавливаем MeshId и TextureId
+        if parent:IsA("MeshPart") then
+            parent.MeshId = meshData.meshId or ""
+            parent.TextureID = meshData.textureId or ""
+        end
+    elseif meshData.type == "SpecialMesh" then
+        local mesh = Instance.new("SpecialMesh")
+        mesh.Name = meshData.name
+        mesh.MeshId = meshData.meshId or ""
+        mesh.TextureId = meshData.textureId or ""
+        mesh.Scale = meshData.scale or Vector3.new(1, 1, 1)
+        
+        -- Устанавливаем тип меша
+        local success = pcall(function()
+            mesh.MeshType = Enum.MeshType[meshData.meshType]
+        end)
+        if not success then
+            mesh.MeshType = Enum.MeshType.FileMesh
+        end
+        
+        mesh.Parent = parent
+        return mesh
+    end
+end
+
+-- Функция создания Motor6D из данных
+local function createMotorFromData(motorData, model)
+    local motor = Instance.new("Motor6D")
+    motor.Name = motorData.name
+    motor.C0 = motorData.c0
+    motor.C1 = motorData.c1
+    
+    -- Находим части для соединения
+    local part0 = model:FindFirstChild(motorData.part0)
+    local part1 = model:FindFirstChild(motorData.part1)
+    
+    if part0 and part1 then
+        motor.Part0 = part0
+        motor.Part1 = part1
+        motor.Parent = part0
+        return motor
+    else
+        motor:Destroy()
+        return nil
+    end
+end
+
+-- Функция создания Attachment из данных
+local function createAttachmentFromData(attachmentData, parent)
+    local attachment = Instance.new("Attachment")
+    attachment.Name = attachmentData.name
+    attachment.CFrame = attachmentData.cframe
+    attachment.Visible = attachmentData.visible or false
+    attachment.Parent = parent
+    return attachment
+end
+
+-- ГЛАВНАЯ ФУНКЦИЯ ВОССОЗДАНИЯ ПИТОМЦА
+local function recreatePetFromDatabase(petName, position)
+    if not petDatabase[petName] then
+        logEvent("❌ RECREATE_ERROR", "Pet not found in database: " .. petName)
+        return nil
+    end
+    
+    local petData = petDatabase[petName]
+    logEvent("🔧 RECREATE_START", "Recreating pet from database", {
+        PetName = petName,
+        TotalParts = petData.partCount or 0,
+        TotalMotors = petData.motorCount or 0,
+        TotalMeshes = petData.meshCount or 0
+    })
+    
+    -- Создаем основную модель
+    local model = Instance.new("Model")
+    model.Name = petName .. "_RECREATED"
+    
+    local partsCreated = 0
+    local motorsCreated = 0
+    local meshesCreated = 0
+    local attachmentsCreated = 0
+    
+    -- Создаем все части
+    if petData.parts then
+        for _, partData in ipairs(petData.parts) do
+            local success, part = pcall(function()
+                return createPartFromData(partData)
+            end)
+            
+            if success and part then
+                part.Parent = model
+                partsCreated = partsCreated + 1
+                
+                -- Устанавливаем PrimaryPart если это первая часть или указанная
+                if not model.PrimaryPart or partData.name == petData.primaryPart then
+                    model.PrimaryPart = part
+                end
+            end
+        end
+    end
+    
+    -- Создаем Meshes
+    if petData.meshes then
+        for _, meshData in ipairs(petData.meshes) do
+            local parentPart = model:FindFirstChild(meshData.parent)
+            if parentPart then
+                local success = pcall(function()
+                    createMeshFromData(meshData, parentPart)
+                end)
+                if success then
+                    meshesCreated = meshesCreated + 1
+                end
+            end
+        end
+    end
+    
+    -- Создаем Attachments
+    if petData.attachments then
+        for _, attachmentData in ipairs(petData.attachments) do
+            local parentPart = model:FindFirstChild(attachmentData.parent)
+            if parentPart then
+                local success = pcall(function()
+                    createAttachmentFromData(attachmentData, parentPart)
+                end)
+                if success then
+                    attachmentsCreated = attachmentsCreated + 1
+                end
+            end
+        end
+    end
+    
+    -- Создаем Motor6D соединения (САМОЕ ВАЖНОЕ ДЛЯ АНИМАЦИЙ!)
+    if petData.motors then
+        for _, motorData in ipairs(petData.motors) do
+            local success, motor = pcall(function()
+                return createMotorFromData(motorData, model)
+            end)
+            
+            if success and motor then
+                motorsCreated = motorsCreated + 1
+            end
+        end
+    end
+    
+    -- Позиционируем модель
+    if position and model.PrimaryPart then
+        model:SetPrimaryPartCFrame(CFrame.new(position))
+    end
+    
+    -- Размещаем в Workspace
+    model.Parent = Workspace
+    
+    logEvent("✅ RECREATE_SUCCESS", "Pet recreated successfully!", {
+        PartsCreated = partsCreated,
+        MotorsCreated = motorsCreated,
+        MeshesCreated = meshesCreated,
+        AttachmentsCreated = attachmentsCreated,
+        ModelName = model.Name
+    })
+    
+    return model
+end
+
+-- Функция воссоздания ближайшего питомца из базы
+local function recreateNearestPet()
+    if not scriptRunning then return end
+    
+    if next(petDatabase) == nil then
+        logEvent("⚠️ RECREATE_WARNING", "Pet database is empty! Scan some pets first.")
+        return
+    end
+    
+    -- Находим первого питомца в базе
+    local petName = next(petDatabase)
+    
+    -- Позиция рядом с игроком
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ RECREATE_ERROR", "Player character not found")
+        return
+    end
+    
+    local playerPos = playerChar.HumanoidRootPart.Position
+    local spawnPos = playerPos + Vector3.new(5, 0, 5) -- 5 стадов от игрока
+    
+    logEvent("🚀 RECREATE_ATTEMPT", "Attempting to recreate pet", {
+        PetName = petName,
+        SpawnPosition = tostring(spawnPos)
+    })
+    
+    local recreatedPet = recreatePetFromDatabase(petName, spawnPos)
+    
+    if recreatedPet then
+        logEvent("🎉 RECREATE_COMPLETE", "Pet successfully recreated from database!")
+        return recreatedPet
+    else
+        logEvent("❌ RECREATE_FAILED", "Failed to recreate pet from database")
+        return nil
+    end
+end
+
+-- === ИНИЦИАЛИЗАЦИЯ И АВТОЗАПУСК ===
+
+-- Функция автоматического мониторинга workspace
+local function startAutoMonitoring()
+    if not scriptRunning then return end
+    
+    logEvent("🔄 AUTO_MONITOR", "Starting automatic UUID pet monitoring...")
+    
+    -- Мониторинг появления новых моделей в workspace
+    local workspaceConnection = Workspace.ChildAdded:Connect(function(child)
+        if not scriptRunning then return end
+        
+        if child:IsA("Model") and isUUIDName(child.Name) then
+            logEvent("🆕 NEW_UUID_PET", "New UUID pet detected: " .. child.Name)
+            
+            -- Небольшая задержка для полной загрузки модели
+            spawn(function()
+                wait(0.5)
+                if child.Parent and scriptRunning then
+                    local playerChar = player.Character
+                    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                        local success, modelCFrame = pcall(function() return child:GetModelCFrame() end)
+                        if success then
+                            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                            if distance <= 100 then
+                                logEvent("🔬 AUTO_SCAN", "Auto-scanning new UUID pet within range", {
+                                    Name = child.Name,
+                                    Distance = string.format("%.1f studs", distance)
+                                })
+                                scanUUIDPet(child)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+    
+    table.insert(connections, workspaceConnection)
+    
+    -- Периодическое сканирование (каждые 30 секунд)
+    local periodicConnection = spawn(function()
+        while scriptRunning do
+            wait(30)
+            if scriptRunning then
+                logEvent("🔄 PERIODIC_SCAN", "Periodic UUID pet scan...")
+                findAndScanNearbyUUIDPets()
+            end
+        end
+    end)
+    
+    table.insert(connections, periodicConnection)
+    
+    logEvent("✅ AUTO_MONITOR_STARTED", "Automatic monitoring activated", {
+        WorkspaceMonitoring = "ON",
+        PeriodicScanning = "30 seconds",
+        AutoScanRadius = "100 studs"
+    })
+end
+
+-- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
+local function startSystem()
+    print("🚀 Запуск Pet Structure Analyzer v4.0...")
+    
+    -- Создаем GUI
+    gui = createModernGUI()
+    
+    if not gui then
+        print("❌ Ошибка создания GUI!")
+        return
+    end
+    
+    -- Запускаем автоматический мониторинг
+    startAutoMonitoring()
+    
+    -- Первоначальное сканирование
+    spawn(function()
+        wait(2) -- Даем время GUI загрузиться
+        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
+        findAndScanNearbyUUIDPets()
+    end)
+    
+    logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
+        GUI = "Modern interface loaded",
+        AutoMonitoring = "Active",
+        Database = "Ready for pet data",
+        Status = "ONLINE"
+    })
+    
+    print("✅ Pet Structure Analyzer v4.0 READY!")
+    print("🔬 Modern GUI loaded with enhanced scanning capabilities")
+    print("🤖 Automatic monitoring: ON")
+    print("📊 Database system: READY")
+    print("🎯 Scan radius: 100 studs")
+    print("⚡ Ready to analyze UUID pet structures!")
+end
+
+-- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
+local function startSystem()
+    print("🚀 Запуск Pet Structure Analyzer v4.0...")
+    
+    -- Создаем GUI
+    gui = createModernGUI()
+    
+    if not gui then
+        print("❌ Ошибка создания GUI!")
+        return
+    end
+    
+    -- Запускаем автоматический мониторинг
+    startAutoMonitoring()
+    
+    -- Первоначальное сканирование
+    spawn(function()
+        wait(2) -- Даем время GUI загрузиться
+        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
+        findAndScanNearbyUUIDPets()
+    end)
+    
+    logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
+        GUI = "Modern interface loaded",
+        AutoMonitoring = "Active",
+        Database = "Ready for pet data",
+        Status = "ONLINE"
+    })
+    
+    print("✅ Pet Structure Analyzer v4.0 READY!")
+    print("🔬 Modern GUI loaded with enhanced scanning capabilities")
+    print("🤖 Automatic monitoring: ON")
+    print("📊 Database system: READY")
+    print("🎯 Scan radius: 100 studs")
+    print("⚡ Ready to analyze UUID pet structures!")
+end
+
+-- === АВТОЗАПУСК СИСТЕМЫ ===
+print("🌟 Pet Structure Analyzer v4.0 - MODERN EDITION")
+print("🔬 Advanced UUID Pet Structure Scanner")
+print("💫 Developed for deep pet analysis and recreation")
+print("")
+
+-- Запускаем систему (КАК В РАБОЧЕМ СКРИПТЕ)
+startSystem()
+
+print("📝 Часть 5 завершена: Инициализация и автозапуск")
+print("🎉 PET STRUCTURE ANALYZER v4.0 ПОЛНОСТЬЮ ГОТОВ!")
