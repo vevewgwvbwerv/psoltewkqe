@@ -1,678 +1,1797 @@
--- 🐾 PET VISUAL COPY SYSTEM
--- Создание визуальных копий питомцев с полным сохранением всех компонентов
+-- 🔥 PET SCALER v2.0 - Масштабирование с анимацией + АВТОЗАМЕНА
+-- Объединяет оригинальный PetScaler + SmartMotorCopier + EggPetReplacer
+-- Создает масштабированную копию И сразу включает анимацию
+-- НОВОЕ: Автоматически заменяет питомцев из workspace.visuals на анимированные копии
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local backpack = player:WaitForChild("Backpack")
 
--- Глобальные переменные
-local gui = nil
-local petDatabase = {} -- База данных доступных питомцев
-local selectedPet = nil
+print("🔥 === PET SCALER v2.0 - С АНИМАЦИЕЙ ===")
+print("=" .. string.rep("=", 60))
 
-print("🚀 Pet Visual Copy System - Запуск системы...")
+-- Конфигурация (ОСНОВАНА НА ДИАГНОСТИКЕ ОРИГИНАЛЬНОЙ ИГРЫ)
+local CONFIG = {
+    SEARCH_RADIUS = 100,
+    SCALE_FACTOR = 1.184,   -- Точный коэффициент из диагностики!
+    TWEEN_TIME = 3.2,       -- Время как в оригинале (3.22 сек)
+    EASING_STYLE = Enum.EasingStyle.Quad,
+    EASING_DIRECTION = Enum.EasingDirection.Out
+}
 
--- === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
-
--- Генерация UUID имени
-local function generateUUIDName(baseName)
-    local uuid = HttpService:GenerateGUID(false)
-    return baseName .. "_" .. uuid
+-- Получаем позицию игрока
+local playerChar = player.Character
+if not playerChar then
+    print("❌ Персонаж игрока не найден!")
+    return
 end
 
--- Поиск питомцев с визуальными компонентами
+local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+if not hrp then
+    print("❌ HumanoidRootPart не найден!")
+    return
+end
+
+local playerPos = hrp.Position
+print("📍 Позиция игрока:", playerPos)
+print("🎯 Радиус поиска:", CONFIG.SEARCH_RADIUS)
+print("📐 Масштабирование:", CONFIG.SCALE_FACTOR .. "x (как в оригинальной игре)")
+print("⏱️ Время анимации:", CONFIG.TWEEN_TIME .. " сек")
+print()
+
+-- === ФУНКЦИИ ИЗ ОРИГИНАЛЬНОГО PETSCALER ===
+
+-- Функция проверки визуальных элементов питомца (УЛУЧШЕННАЯ ВЕРСИЯ)
 local function hasPetVisuals(model)
-    local meshCount = 0
+    local visualCount = 0
+    local petVisuals = {}
     
     for _, obj in pairs(model:GetDescendants()) do
-        if obj:IsA("MeshPart") and obj.MeshId ~= "" then
-            meshCount = meshCount + 1
-        elseif obj:IsA("SpecialMesh") and (obj.MeshId ~= "" or obj.TextureId ~= "") then
-            meshCount = meshCount + 1
+        local visualData = nil
+        
+        -- Проверяем MeshPart (оригинальная логика)
+        if obj:IsA("MeshPart") then
+            visualCount = visualCount + 1
+            visualData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                type = "MeshPart"
+            }
+        
+        -- Проверяем SpecialMesh (оригинальная логика)
+        elseif obj:IsA("SpecialMesh") then
+            visualCount = visualCount + 1
+            visualData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                meshId = obj.MeshId or "",
+                textureId = obj.TextureId or "",
+                type = "SpecialMesh"
+            }
+        
+        -- НОВОЕ: Проверяем обычные Part с текстурами/декалями
+        elseif obj:IsA("Part") then
+            -- Ищем Decal или Texture на Part
+            local hasDecal = obj:FindFirstChildOfClass("Decal")
+            local hasTexture = obj:FindFirstChildOfClass("Texture")
+            
+            if hasDecal or hasTexture or obj.Material ~= Enum.Material.Plastic then
+                visualCount = visualCount + 1
+                visualData = {
+                    name = obj.Name,
+                    className = obj.ClassName,
+                    material = obj.Material.Name,
+                    hasDecal = hasDecal ~= nil,
+                    hasTexture = hasTexture ~= nil,
+                    type = "Part"
+                }
+            end
+        
+        -- НОВОЕ: Проверяем UnionOperation (объединенные части)
+        elseif obj:IsA("UnionOperation") then
+            visualCount = visualCount + 1
+            visualData = {
+                name = obj.Name,
+                className = obj.ClassName,
+                type = "UnionOperation"
+            }
+        
+        -- НОВОЕ: Проверяем Attachment с эффектами
+        elseif obj:IsA("Attachment") then
+            local hasEffect = #obj:GetChildren() > 0
+            if hasEffect then
+                visualCount = visualCount + 1
+                visualData = {
+                    name = obj.Name,
+                    className = obj.ClassName,
+                    effectCount = #obj:GetChildren(),
+                    type = "Attachment"
+                }
+            end
+        end
+        
+        -- Добавляем найденные визуальные элементы
+        if visualData then
+            table.insert(petVisuals, visualData)
         end
     end
     
-    return meshCount > 0
-end
-
--- Поиск доступных питомцев в Workspace
-local function findAvailablePets()
-    print("🔍 Поиск доступных питомцев в Workspace...")
-    
-    local foundPets = {}
-    local SEARCH_RADIUS = 100
-    
-    -- Получаем позицию игрока
-    local playerChar = player.Character
-    local playerPos = Vector3.new(0, 0, 0)
-    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-        playerPos = playerChar.HumanoidRootPart.Position
+    -- Дополнительная проверка: если модель содержит BasePart'ы, считаем её потенциальным питомцем
+    if visualCount == 0 then
+        local partCount = 0
+        for _, obj in pairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                partCount = partCount + 1
+            end
+        end
+        
+        -- Если есть несколько частей, вероятно это питомец
+        if partCount >= 2 then
+            visualCount = partCount
+            table.insert(petVisuals, {
+                name = "BaseParts",
+                className = "Multiple",
+                partCount = partCount,
+                type = "BasePart"
+            })
+            print("  🔍 Найден потенциальный питомец с " .. partCount .. " частями: " .. model.Name)
+        end
     end
     
-    -- Поиск моделей с UUID именами
+    return visualCount > 0, petVisuals
+end
+
+-- Функция глубокого копирования модели (ОРИГИНАЛЬНАЯ ВЕРСИЯ + ЗАЩИТА)
+local function deepCopyModel(originalModel)
+    -- Проверяем входные параметры
+    if not originalModel then
+        print("❌ deepCopyModel: Оригинальная модель = nil!")
+        return nil
+    end
+    
+    if not originalModel.Parent then
+        print("❌ deepCopyModel: Оригинальная модель не в Workspace!")
+        return nil
+    end
+    
+    print("📋 Создаю глубокую копию модели:", originalModel.Name)
+    
+    local copy = nil
+    local success, errorMsg = pcall(function()
+        copy = originalModel:Clone()
+    end)
+    
+    if not success or not copy then
+        print("❌ Ошибка при клонировании:", errorMsg or "Неизвестная ошибка")
+        return nil
+    end
+    
+    copy.Name = originalModel.Name .. "_SCALED_COPY"
+    copy.Parent = Workspace
+    
+    -- Позиционирование копии (оригинальная логика)
+    if copy.PrimaryPart and originalModel.PrimaryPart then
+        local originalCFrame = originalModel.PrimaryPart.CFrame
+        local offset = Vector3.new(15, 0, 0)
+        
+        local targetPosition = originalCFrame.Position + offset
+        
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {copy, originalModel}
+        
+        local rayOrigin = Vector3.new(targetPosition.X, targetPosition.Y + 100, targetPosition.Z)
+        local rayDirection = Vector3.new(0, -200, 0)
+        
+        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        
+        if raycastResult then
+            local groundY = raycastResult.Position.Y
+            local finalPosition = Vector3.new(targetPosition.X, groundY, targetPosition.Z)
+            local newCFrame = CFrame.new(finalPosition, originalCFrame.LookVector)
+            copy:PivotTo(newCFrame)
+            print("📍 Копия размещена на земле")
+        else
+            local newCFrame = originalCFrame + offset
+            copy:PivotTo(newCFrame)
+            print("📍 Копия размещена на уровне оригинала")
+        end
+    elseif copy:FindFirstChild("RootPart") and originalModel:FindFirstChild("RootPart") then
+        local originalPos = originalModel.RootPart.Position
+        local offset = Vector3.new(15, 0, 0)
+        copy.RootPart.Position = originalPos + offset
+        print("📍 Копия размещена через RootPart")
+    else
+        print("⚠️ Не удалось точно позиционировать копию")
+    end
+    
+    -- ВАЖНО: НЕ устанавливаем Anchored здесь - это сделает SmartAnchoredManagement
+    
+    print("✅ Копия создана:", copy.Name)
+    return copy
+end
+
+-- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
+
+-- Функция получения всех BasePart из модели
+local function getAllParts(model)
+    local parts = {}
+    
+    if not model then
+        print("⚠️ getAllParts: модель = nil")
+        return parts
+    end
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
+        end
+    end
+    
+    return parts
+end
+
+-- Функция умного управления Anchored (из SmartMotorCopier)
+local function smartAnchoredManagement(copyParts)
+    if not copyParts or #copyParts == 0 then
+        print("⚠️ smartAnchoredManagement: нет частей")
+        return nil
+    end
+    
+    print("🧠 Умное управление Anchored...")
+    
+    -- Находим "корневую" часть
+    local rootPart = nil
+    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    
+    for _, candidate in ipairs(rootCandidates) do
+        for _, part in ipairs(copyParts) do
+            if part.Name == candidate then
+                rootPart = part
+                break
+            end
+        end
+        if rootPart then break end
+    end
+    
+    if not rootPart then
+        rootPart = copyParts[1]
+        print("  ⚠️ Корневая часть не найдена, использую:", rootPart.Name)
+    else
+        print("  ✅ Корневая часть:", rootPart.Name)
+    end
+    
+    -- Применяем умный Anchored (КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ДЛЯ ПРЕДОТВРАЩЕНИЯ ПАДЕНИЯ!)
+    for _, part in ipairs(copyParts) do
+        if part == rootPart then
+            part.Anchored = true -- Только корень заякорен - это предотвращает падение!
+        else
+            part.Anchored = false -- Остальные могут двигаться
+        end
+    end
+    
+    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
+    return rootPart
+end
+
+-- Функция получения всех Motor6D из модели
+local function getMotor6Ds(model)
+    local motors = {}
+    
+    if not model then
+        print("⚠️ getMotor6Ds: модель = nil")
+        return motors
+    end
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motors, obj)
+        end
+    end
+    
+    return motors
+end
+
+-- Функция создания карты Motor6D
+local function createMotorMap(motors)
+    local map = {}
+    
+    for _, motor in ipairs(motors) do
+        local key = motor.Name
+        if motor.Part0 then
+            key = key .. "_" .. motor.Part0.Name
+        end
+        if motor.Part1 then
+            key = key .. "_" .. motor.Part1.Name
+        end
+        
+        map[key] = motor
+    end
+    
+    return map
+end
+
+-- Функция копирования состояния Motor6D
+local function copyMotorState(originalMotor, copyMotor)
+    if not originalMotor or not copyMotor then
+        return false
+    end
+    
+    copyMotor.Transform = originalMotor.Transform
+    copyMotor.C0 = originalMotor.C0
+    copyMotor.C1 = originalMotor.C1
+    
+    return true
+end
+
+-- Функция запуска живого копирования Motor6D
+local function startLiveMotorCopying(original, copy)
+    if not original or not copy then
+        print("⚠️ startLiveMotorCopying: одна из моделей = nil")
+        return nil
+    end
+    
+    print("🔄 Запуск живого копирования Motor6D...")
+    
+    local originalMotors = getMotor6Ds(original)
+    local copyMotors = getMotor6Ds(copy)
+    
+    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
+    
+    if #originalMotors == 0 or #copyMotors == 0 then
+        print("❌ Недостаточно Motor6D для копирования")
+        return nil
+    end
+    
+    local originalMap = createMotorMap(originalMotors)
+    local copyMap = createMotorMap(copyMotors)
+    
+    local connection = nil
+    local isRunning = true
+    local frameCount = 0
+    
+    connection = RunService.Heartbeat:Connect(function()
+        if not isRunning then
+            connection:Disconnect()
+            return
+        end
+        
+        frameCount = frameCount + 1
+        
+        -- Проверяем существование моделей
+        if not original.Parent or not copy.Parent then
+            print("⚠️ Модель удалена, останавливаю копирование")
+            isRunning = false
+            return
+        end
+        
+        -- Копируем состояния Motor6D
+        for key, originalMotor in pairs(originalMap) do
+            local copyMotor = copyMap[key]
+            if copyMotor and originalMotor.Parent then
+                copyMotorState(originalMotor, copyMotor)
+            end
+        end
+        
+        -- Статус каждые 3 секунды
+        if frameCount % 180 == 0 then
+            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
+        end
+    end)
+    
+    print("✅ Живое копирование Motor6D запущено!")
+    print("💡 Копия будет повторять движения оригинала")
+    
+    return connection
+end
+
+-- === ФУНКЦИИ ИЗ SMARTMOTORCOPIER ===
+
+-- Функция получения всех BasePart из модели
+local function getAllParts(model)
+    local parts = {}
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(parts, obj)
+        end
+    end
+    
+    return parts
+end
+
+-- Функция получения всех Motor6D из модели
+local function getMotor6Ds(model)
+    local motors = {}
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            table.insert(motors, obj)
+        end
+    end
+    
+    return motors
+end
+
+-- Функция создания карты Motor6D
+local function createMotorMap(motors)
+    local map = {}
+    
+    for _, motor in ipairs(motors) do
+        local key = motor.Name
+        if motor.Part0 then
+            key = key .. "_" .. motor.Part0.Name
+        end
+        if motor.Part1 then
+            key = key .. "_" .. motor.Part1.Name
+        end
+        
+        map[key] = motor
+    end
+    
+    return map
+end
+
+-- Функция умного управления Anchored (из SmartMotorCopier)
+local function smartAnchoredManagement(copyParts)
+    print("🧠 Умное управление Anchored...")
+    
+    -- Находим "корневую" часть
+    local rootPart = nil
+    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    
+    for _, candidate in ipairs(rootCandidates) do
+        for _, part in ipairs(copyParts) do
+            if part.Name == candidate then
+                rootPart = part
+                break
+            end
+        end
+        if rootPart then break end
+    end
+    
+    if not rootPart then
+        rootPart = copyParts[1]
+        print("  ⚠️ Корневая часть не найдена, использую:", rootPart.Name)
+    else
+        print("  ✅ Корневая часть:", rootPart.Name)
+    end
+    
+    -- Применяем умный Anchored
+    for _, part in ipairs(copyParts) do
+        if part == rootPart then
+            part.Anchored = true -- Только корень заякорен
+        else
+            part.Anchored = false -- Остальные могут двигаться
+        end
+    end
+    
+    print("  ✅ Anchored настроен: корень заякорен, остальные свободны")
+    return rootPart
+end
+
+-- Функция копирования состояния Motor6D
+local function copyMotorState(originalMotor, copyMotor)
+    if not originalMotor or not copyMotor then
+        return false
+    end
+    
+    copyMotor.Transform = originalMotor.Transform
+    copyMotor.C0 = originalMotor.C0
+    copyMotor.C1 = originalMotor.C1
+    
+    return true
+end
+
+-- === ФУНКЦИИ МАСШТАБИРОВАНИЯ (ОРИГИНАЛЬНЫЕ) ===
+
+-- Функция плавного масштабирования модели (ИЗ РАБОЧЕГО СКРИПТА)
+local function scaleModelSmoothly(model, scaleFactor, tweenTime)
+    print("🔥 Начинаю плавное масштабирование модели:", model.Name)
+    
+    local parts = getAllParts(model)
+    print("🧩 Найдено частей для масштабирования:", #parts)
+    
+    if #parts == 0 then
+        print("❌ Нет частей для масштабирования!")
+        return false
+    end
+    
+    -- Определяем центр масштабирования
+    local centerCFrame
+    if model.PrimaryPart then
+        centerCFrame = model.PrimaryPart.CFrame
+        print("🎯 Центр масштабирования: PrimaryPart (" .. model.PrimaryPart.Name .. ")")
+    else
+        local success, modelCFrame = pcall(function() return model:GetPivot() end)
+        if success then
+            centerCFrame = modelCFrame
+            print("🎯 Центр масштабирования: Центр модели")
+        else
+            print("❌ Не удалось определить центр масштабирования!")
+            return false
+        end
+    end
+    
+    -- Сохраняем исходные данные всех частей
+    local originalData = {}
+    for _, part in ipairs(parts) do
+        originalData[part] = {
+            size = part.Size,
+            cframe = part.CFrame
+        }
+    end
+    
+    -- Создаем TweenInfo
+    local tweenInfo = TweenInfo.new(
+        tweenTime,
+        CONFIG.EASING_STYLE,
+        CONFIG.EASING_DIRECTION,
+        0, -- Повторений
+        false, -- Обратная анимация
+        0 -- Задержка
+    )
+    
+    -- Масштабирование через CFrame (оригинальная логика)
+    local tweens = {}
+    local completedTweens = 0
+    
+    for _, part in ipairs(parts) do
+        local originalSize = originalData[part].size
+        local originalCFrame = originalData[part].cframe
+        
+        -- Вычисляем новый размер
+        local newSize = originalSize * scaleFactor
+        
+        -- Вычисляем новый CFrame относительно центра
+        local relativeCFrame = centerCFrame:Inverse() * originalCFrame
+        local scaledRelativeCFrame = CFrame.new(relativeCFrame.Position * scaleFactor) * (relativeCFrame - relativeCFrame.Position)
+        local newCFrame = centerCFrame * scaledRelativeCFrame
+        
+        -- Создаем твин для размера и CFrame
+        local tween = TweenService:Create(part, tweenInfo, {
+            Size = newSize,
+            CFrame = newCFrame
+        })
+        
+        -- Обработчик завершения твина
+        tween.Completed:Connect(function()
+            completedTweens = completedTweens + 1
+            if completedTweens == #parts then
+                print("✅ Масштабирование завершено!")
+                print("🎉 Все", #parts, "частей масштабированы на", scaleFactor .. "x")
+            end
+        end)
+        
+        table.insert(tweens, tween)
+        tween:Play()
+    end
+    
+    return true
+end
+
+-- === ФУНКЦИЯ ЗАПУСКА ЖИВОГО КОПИРОВАНИЯ ===
+
+local function startLiveMotorCopying(original, copy)
+    print("🔄 Запуск живого копирования Motor6D...")
+    
+    local originalMotors = getMotor6Ds(original)
+    local copyMotors = getMotor6Ds(copy)
+    
+    print("  Motor6D - Оригинал:", #originalMotors, "Копия:", #copyMotors)
+    
+    if #originalMotors == 0 or #copyMotors == 0 then
+        print("❌ Недостаточно Motor6D для копирования")
+        return nil
+    end
+    
+    local originalMap = createMotorMap(originalMotors)
+    local copyMap = createMotorMap(copyMotors)
+    
+    local connection = nil
+    local isRunning = true
+    local frameCount = 0
+    
+    connection = RunService.Heartbeat:Connect(function()
+        if not isRunning then
+            connection:Disconnect()
+            return
+        end
+        
+        frameCount = frameCount + 1
+        
+        -- Проверяем существование моделей
+        if not original.Parent or not copy.Parent then
+            print("⚠️ Модель удалена, останавливаю копирование")
+            isRunning = false
+            return
+        end
+        
+        -- Копируем состояния Motor6D
+        for key, originalMotor in pairs(originalMap) do
+            local copyMotor = copyMap[key]
+            if copyMotor and originalMotor.Parent then
+                copyMotorState(originalMotor, copyMotor)
+            end
+        end
+        
+        -- Статус каждые 3 секунды
+        if frameCount % 180 == 0 then
+            print("📊 Живое копирование активно (кадр " .. frameCount .. ")")
+        end
+    end)
+    
+    print("✅ Живое копирование Motor6D запущено!")
+    print("💡 Копия будет повторять движения оригинала")
+    
+    return connection
+end
+
+-- === ОСНОВНЫЕ ФУНКЦИИ ===
+
+-- Функция поиска и масштабирования (из оригинального PetScaler)
+local function findAndScalePet()
+    print("🔍 Поиск UUID моделей питомцев...")
+    
+    local foundPets = {}
+    
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            local success, modelCFrame = pcall(function() return obj:GetPivot() end)
             if success then
                 local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= SEARCH_RADIUS then
-                    local hasVisuals = hasPetVisuals(obj)
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    local hasVisuals, meshes = hasPetVisuals(obj)
                     if hasVisuals then
                         table.insert(foundPets, {
                             model = obj,
                             distance = distance,
-                            name = obj.Name
+                            meshes = meshes
                         })
-                        print("🐾 Найден питомец: " .. obj.Name .. " (" .. math.floor(distance) .. " studs)")
                     end
                 end
             end
         end
     end
     
-    -- Сортировка по расстоянию
-    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    if #foundPets == 0 then
+        print("❌ Питомцы не найдены!")
+        return nil
+    end
     
-    print("📊 Найдено питомцев: " .. #foundPets)
-    return foundPets
+    local targetPet = foundPets[1]
+    print("🎯 Выбран питомец:", targetPet.model.Name)
+    
+    return targetPet.model
 end
 
--- Копирование всех компонентов питомца
-local function copyPetComponents(originalPet)
-    print("📋 Копирование компонентов питомца: " .. originalPet.Name)
+-- Главная функция v2.0 (ОБНОВЛЕННАЯ ЛОГИКА)
+local function main()
+    print("🚀 PetScaler v2.0 запущен!")
     
-    -- Клонируем модель
-    local petClone = originalPet:Clone()
-    petClone.Name = generateUUIDName("VisualCopy")
+    -- Шаг 1: Найти питомца
+    local petModel = findAndScalePet()
+    if not petModel then
+        return
+    end
     
-    -- Убедимся что все важные компоненты сохранены
-    local components = {
-        Motor6D = 0,
-        MeshParts = 0,
-        SpecialMeshes = 0,
-        Animations = 0,
-        Humanoids = 0,
-        BaseParts = 0
-    }
+    -- Шаг 2: Создать копию (ОБНОВЛЕННАЯ ЛОГИКА)
+    print("\n📋 === СОЗДАНИЕ КОПИИ ===")
+    local petCopy = deepCopyModel(petModel)
+    if not petCopy then
+        print("❌ Не удалось создать копию!")
+        return
+    end
     
-    -- Подсчет и проверка компонентов
-    for _, obj in pairs(petClone:GetDescendants()) do
-        if obj:IsA("Motor6D") then
-            components.Motor6D = components.Motor6D + 1
-        elseif obj:IsA("MeshPart") then
-            components.MeshParts = components.MeshParts + 1
-        elseif obj:IsA("SpecialMesh") then
-            components.SpecialMeshes = components.SpecialMeshes + 1
-        elseif obj:IsA("Animation") then
-            components.Animations = components.Animations + 1
-        elseif obj:IsA("Humanoid") then
-            components.Humanoids = components.Humanoids + 1
-        elseif obj:IsA("BasePart") then
-            components.BaseParts = components.BaseParts + 1
+    -- Настраиваем умный Anchored (как в рабочем скрипте)
+    print("🧠 === НАСТРОЙКА ANCHORED ===")
+    local copyParts = getAllParts(petCopy)
+    if copyParts and #copyParts > 0 then
+        local rootPart = smartAnchoredManagement(copyParts)
+        print("✅ Умный Anchored настроен - корень закреплен, остальные свободны")
+    else
+        print("⚠️ Не удалось получить части копии")
+    end
+    
+    -- Проверяем, что копия существует и находится в Workspace
+    if not petCopy or not petCopy.Parent then
+        print("❌ Копия недоступна!")
+        return
+    end
+    
+    -- Шаг 3: Запуск живого копирования Motor6D СРАЗУ (КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!)
+    print("\n🎭 === ЗАПУСК АНИМАЦИИ СРАЗУ ===")
+    local animationConnection = startLiveMotorCopying(petModel, petCopy)
+    
+    if animationConnection then
+        print("✅ Живая анимация запущена! Копия уже двигается!")
+    else
+        print("⚠️ Живая анимация не запустилась, но продолжаем...")
+    end
+    
+    -- Шаг 4: Масштабирование АНИМИРОВАННОЙ копии
+    task.wait(0.5)
+    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    
+    if not scaleSuccess then
+        print("❌ Масштабирование анимированной копии не удалось!")
+        return
+    end
+    
+    -- Финальное сообщение
+    print("\n🎉 === УСПЕХ! ===")
+    print("✅ Анимированная копия создана и масштабирована")
+    print("✅ Копия двигается С САМОГО НАЧАЛА")
+    print("💡 Никаких статичных копий - только живая анимация!")
+end
+
+-- === НОВАЯ ФУНКЦИЯ: АВТОЗАМЕНА ПИТОМЦЕВ ИЗ WORKSPACE.VISUALS ===
+
+-- Функция создания анимированной копии на месте оригинала
+local function createAnimatedCopyAtPosition(originalPet, targetPosition)
+    print("\n🔄 === СОЗДАНИЕ АНИМИРОВАННОЙ КОПИИ НА МЕСТЕ ОРИГИНАЛА ===")
+    print("🎯 Оригинальный питомец:", originalPet.Name)
+    print("📍 Целевая позиция:", targetPosition)
+    
+    -- Шаг 1: Создать копию
+    local petCopy = deepCopyModel(originalPet)
+    if not petCopy then
+        print("❌ Не удалось создать копию!")
+        return nil
+    end
+    
+    -- Шаг 2: Позиционировать копию точно на месте оригинала
+    if petCopy.PrimaryPart then
+        petCopy:PivotTo(CFrame.new(targetPosition))
+        print("📍 Копия размещена на месте оригинала (PrimaryPart)")
+    elseif petCopy:FindFirstChild("RootPart") then
+        petCopy.RootPart.Position = targetPosition
+        print("📍 Копия размещена на месте оригинала (RootPart)")
+    else
+        -- Находим первую BasePart и позиционируем её
+        local firstPart = petCopy:FindFirstChildOfClass("BasePart")
+        if firstPart then
+            firstPart.Position = targetPosition
+            print("📍 Копия размещена на месте оригинала (первая часть)")
         end
     end
     
-    print("📊 Компоненты клона:")
-    for componentName, count in pairs(components) do
-        print("  " .. componentName .. ": " .. count)
+    -- Шаг 3: Настроить умный Anchored
+    local copyParts = getAllParts(petCopy)
+    if copyParts and #copyParts > 0 then
+        local rootPart = smartAnchoredManagement(copyParts)
+        print("✅ Умный Anchored настроен для замещающей копии")
     end
     
-    return petClone, components
+    -- Шаг 4: Запустить анимацию СРАЗУ
+    local animationConnection = startLiveMotorCopying(originalPet, petCopy)
+    if animationConnection then
+        print("✅ Живая анимация запущена для замещающей копии!")
+    else
+        print("⚠️ Анимация не запустилась, но копия создана")
+    end
+    
+    -- Шаг 5: Масштабировать анимированную копию
+    task.wait(0.2)
+    local scaleSuccess = scaleModelSmoothly(petCopy, CONFIG.SCALE_FACTOR, CONFIG.TWEEN_TIME)
+    
+    if scaleSuccess then
+        print("✅ Замещающая копия масштабирована и анимирована!")
+        return petCopy
+    else
+        print("⚠️ Масштабирование не удалось, но копия создана")
+        return petCopy
+    end
 end
 
--- Настройка анимаций для клона
-local function setupCloneAnimations(petClone)
-    print("🎭 Настройка анимаций для клона...")
+-- === НОВАЯ ФУНКЦИЯ: ЗАМЕНА ПИТОМЦА В РУКЕ (ТОЧНО КАК PetScaler_v3.226.lua) ===
+local function replaceHandPetWithAnimation()
+    print("\n✋ === ЗАМЕНА ПИТОМЦА В РУКЕ НА АНИМИРОВАННУЮ КОПИЮ ===")
+    print("🔍 Ищу питомца в руке и создаю копию В РУКЕ...")
     
-    -- Поиск AnimationController и Animator
-    local animationController = nil
-    local animator = nil
+    -- Шаг 1: НАЙТИ TOOL В РУКЕ
+    local playerChar = Players.LocalPlayer.Character
+    if not playerChar then
+        print("❌ Персонаж не найден!")
+        return false
+    end
     
-    for _, obj in pairs(petClone:GetDescendants()) do
-        if obj:IsA("AnimationController") then
-            animationController = obj
-        elseif obj:IsA("Animator") then
-            animator = obj
+    local handTool = playerChar:FindFirstChildOfClass("Tool")
+    if not handTool then
+        print("❌ Tool в руке не найден!")
+        return false
+    end
+    
+    print("🎯 Найден Tool в руке:", handTool.Name)
+    
+    -- Шаг 2: НАЙТИ UUID ПИТОМЦА НА ЗЕМЛЕ ДЛЯ КОПИРОВАНИЯ АНИМАЦИЙ
+    local petModel = findAndScalePet()
+    if not petModel then
+        print("❌ UUID питомец на земле не найден!")
+        return false
+    end
+    
+    print("✅ Найден UUID питомец на земле:", petModel.Name)
+    
+    -- Шаг 3: СОЗДАТЬ КОПИЮ UUID ПИТОМЦА В РУКЕ (НЕ удаляя оригинала!)
+    print("📋 Создаю копию UUID питомца В РУКЕ...")
+    
+    -- Создаем копию БЕЗ автоматического размещения в Workspace
+    local petCopy = petModel:Clone()
+    petCopy.Name = petModel.Name .. "_HAND_COPY"
+    
+    -- РАЗМЕЩАЕМ КОПИЮ В РУКЕ (в Tool) и фиксируем относительный оффсет к Handle
+    petCopy.Parent = handTool
+    print("✅ Копия размещена В РУКЕ (в Tool)!")
+    -- Помечаем копию специальным тегом, чтобы не скрыть её по ошибке
+    local copyTag = Instance.new("BoolValue")
+    copyTag.Name = "HandPetCopyTag"
+    copyTag.Value = true
+    copyTag.Parent = petCopy
+    
+    -- Настройки физики копии (без коллизий, без массы)
+    for _, p in ipairs(petCopy:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.CanCollide = false
+            p.Massless = true
         end
     end
     
-    if animationController and animator then
-        print("✅ Найдены AnimationController и Animator")
-        
-        -- Запуск всех анимаций в цикле
-        local success, tracks = pcall(function()
-            return animator:GetPlayingAnimationTracks()
-        end)
-        
-        if success and tracks then
-            for _, track in pairs(tracks) do
+    -- Ищем Handle
+    local handle = handTool:FindFirstChild("Handle")
+    -- Оригинал в руке будет сохранён для скрытия позже (объявляем заранее, чтобы не потерять область видимости)
+    local originalHandPet = nil
+    if not handle or not handle:IsA("BasePart") then
+        print("⚠️ Handle не найден или не BasePart — позиционирую по PrimaryPart копии как fallback")
+        if petCopy.PrimaryPart then
+            petCopy:PivotTo(petCopy.PrimaryPart.CFrame)
+        end
+    else
+        -- Ищем оригинального питомца в Tool для снятия точного относительного оффсета
+        print("🔍 Ищу оригинального питомца в Tool для копирования ПОЗЫ В РУКЕ...")
+        for _, obj in pairs(handTool:GetDescendants()) do
+            if obj:IsA("Model") and obj ~= petCopy then
+                originalHandPet = obj
+                print("✅ Найден оригинальный питомец в руке:", obj.Name)
+                break
+            end
+        end
+
+        -- Убеждаемся, что у копии есть PrimaryPart
+        if not petCopy.PrimaryPart then
+            local firstPart = petCopy:FindFirstChildOfClass("BasePart")
+            if firstPart then
                 pcall(function()
-                    track.Looped = true
-                    track:Play()
+                    petCopy.PrimaryPart = firstPart
                 end)
             end
-            print("✅ Анимации запущены в цикле")
         end
+
+        -- Вычисляем относительный оффсет rel к Handle
+        local DEFAULT_HAND_REL = CFrame.new(0, 0.2, -0.6) * CFrame.Angles(0, math.rad(10), 0)
+        local rel = DEFAULT_HAND_REL
+        if originalHandPet and originalHandPet.PrimaryPart and petCopy.PrimaryPart then
+            local ok, computed = pcall(function()
+                return handle.CFrame:ToObjectSpace(originalHandPet.PrimaryPart.CFrame)
+            end)
+            if ok and typeof(computed) == "CFrame" then
+                rel = computed
+            else
+                print("⚠️ Не удалось вычислить rel, используем дефолтный оффсет")
+            end
+        else
+            print("⚠️ Нет оригинала/PrimaryPart — используем дефолтный оффсет")
+        end
+
+        -- Ставим копию в точную позу в руке и привариваем к Handle
+        if petCopy.PrimaryPart then
+            petCopy:PivotTo(handle.CFrame * rel)
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = handle
+            weld.Part1 = petCopy.PrimaryPart
+            weld.Parent = petCopy.PrimaryPart
+            print("🧲 Копия приварена к Handle по снятому оффсету")
+        else
+            print("⚠️ Нет PrimaryPart у копии — позиционирование ограничено")
+        end
+    end
+    
+    -- ПРОСТОЕ СКРЫТИЕ ОРИГИНАЛЬНОГО ПИТОМЦА (НЕ ТРОГАЯ КОПИЮ!)
+    -- Надёжное скрытие всех визуалов оригинала в Tool (если найден originalHandPet — ок; если нет — скрываем всё, кроме копии и Handle)
+    print("👻 Скрываю оригинальные визуалы питомца в руке...")
+    local function isDescendantOfCopy(inst)
+        return inst:IsDescendantOf(petCopy)
+    end
+    for _, obj in pairs(handTool:GetDescendants()) do
+        if isDescendantOfCopy(obj) then
+            -- пропускаем нашу копию
+        else
+            if obj.Name == "Handle" and obj:IsA("BasePart") then
+                -- Handle не трогаем
+            elseif obj:IsA("BasePart") then
+                obj.Transparency = 1
+                obj.CanCollide = false
+            elseif obj:IsA("Decal") then
+                obj.Transparency = 1
+            elseif obj:IsA("Beam") or obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+                obj.Enabled = false
+            end
+        end
+    end
+    print("✅ Оригинальные визуалы скрыты! Видна только копия!")
+    
+    -- Шаг 4: ИСПРАВЛЯЕМ ATTACHMENT СВЯЗИ ДЛЯ КОПИИ В РУКЕ
+    print("🔧 Исправляю Attachment связи для копии в руке...")
+    local attachments = {}
+    local fixedCount = 0
+    
+    for _, obj in pairs(petCopy:GetDescendants()) do
+        if obj:IsA("Attachment") then
+            table.insert(attachments, obj)
+        end
+    end
+    
+    for _, attachment in pairs(attachments) do
+        if attachment.Parent and not attachment.Parent:IsA("BasePart") then
+            local parent = attachment.Parent
+            while parent and not parent:IsA("BasePart") do
+                parent = parent.Parent
+            end
+            
+            if parent and parent:IsA("BasePart") then
+                attachment.Parent = parent
+                fixedCount = fixedCount + 1
+            else
+                print("⚠️ Удаляю проблемный Attachment:", attachment.Name)
+                attachment:Destroy()
+            end
+        end
+    end
+    
+    print("✅ Исправлено Attachment связей:", fixedCount)
+    
+    -- Шаг 5: УМНОЕ УПРАВЛЕНИЕ ANCHORED ДЛЯ КОПИИ В РУКЕ (КАК В PetScaler_v3.226.lua)
+    print("🧠 Настройка Anchored для копии в руке...")
+    local copyParts = getAllParts(petCopy)
+    
+    -- Находим корневую часть для якорения (точно как в PetScaler_v3.226.lua)
+    local rootPart = nil
+    local rootCandidates = {"RootPart", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    
+    for _, candidate in ipairs(rootCandidates) do
+        for _, part in ipairs(copyParts) do
+            if part.Name == candidate then
+                rootPart = part
+                break
+            end
+        end
+        if rootPart then break end
+    end
+    
+    if not rootPart then
+        rootPart = copyParts[1]
+        print("  ⚠️ Корневая часть не найдена, использую:", rootPart and rootPart.Name or "nil")
+    else
+        print("  ✅ Корневая часть:", rootPart.Name)
+    end
+    
+    -- КРИТИЧНО: Все части свободны для анимации И следования за рукой
+    for _, part in ipairs(copyParts) do
+        part.Anchored = false -- Все части свободны для движения с рукой
+    end
+    
+    print("✅ Anchored настроен: все части свободны для следования за рукой")
+    
+    -- Шаг 6: ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ОТ ОРИГИНАЛА НА ЗЕМЛЕ К КОПИИ В РУКЕ
+    print("\n🎭 === ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ===")
+    print("🔄 Передаю Motor6D анимации от оригинала на земле к копии в руке...")
+    
+    -- Находим Motor6D в оригинале и копии
+    local originalMotors = {}
+    local copyMotors = {}
+    
+    for _, obj in pairs(petModel:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            originalMotors[obj.Name] = obj
+        end
+    end
+    
+    for _, obj in pairs(petCopy:GetDescendants()) do
+        if obj:IsA("Motor6D") then
+            copyMotors[obj.Name] = obj
+        end
+    end
+    
+    print("🔧 Motor6D в оригинале:", table.getn and table.getn(originalMotors) or "много")
+    print("🔧 Motor6D в копии:", table.getn and table.getn(copyMotors) or "много")
+    
+    -- ПРЯМОЕ КОПИРОВАНИЕ MOTOR6D TRANSFORM ОТ ОРИГИНАЛА К КОПИИ + СЛЕДОВАНИЕ ЗА РУКОЙ
+    if next(originalMotors) and next(copyMotors) then
+        local directConnection = RunService.Heartbeat:Connect(function()
+            -- 1. ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ
+            for motorName, originalMotor in pairs(originalMotors) do
+                local copyMotor = copyMotors[motorName]
+                if copyMotor and originalMotor.Parent and copyMotor.Parent then
+                    -- Прямое копирование Transform от оригинала на земле к копии в руке
+                    copyMotor.Transform = originalMotor.Transform
+                end
+            end
+            
+            -- 2. ПОСТОЯННОЕ ОБНОВЛЕНИЕ ПОЗИЦИИ КОПИИ ОТНОСИТЕЛЬНО ОРИГИНАЛЬНОГО ПИТОМЦА В РУКЕ
+            if originalHandPet and originalHandPet.PrimaryPart and petCopy.PrimaryPart then
+                -- Копируем текущую позицию оригинального питомца в руке
+                local currentOriginalCFrame = originalHandPet.PrimaryPart.CFrame
+                petCopy:PivotTo(currentOriginalCFrame)
+            end
+        end)
+        
+        print("✅ Motor6D анимации передаются от оригинала на земле к копии в руке!")
+        print("✅ Копия постоянно следует за позицией оригинального питомца в руке!")
+        print("🎭 Копия в руке получает живые анимации от оригинала!")
+        print("🔥 Два питомца: оригинал на земле + анимированная копия в руке!")
         
         return true
     else
-        print("❌ AnimationController или Animator не найдены")
+        print("⚠️ Motor6D не найдены для передачи анимаций")
         return false
     end
 end
 
--- === ФУНКЦИИ GUI ===
-
--- Создание современного GUI
-local function createModernGUI()
-    print("🎨 Создание современного GUI...")
+-- Функция строгой проверки модели питомца (ИСПРАВЛЕНО)
+local function isPetModel(model)
+    -- 1. Должна быть Model
+    if not model:IsA("Model") then return false end
     
-    -- Удаление предыдущего GUI если есть
-    if player:FindFirstChild("PlayerGui"):FindFirstChild("PetVisualCopyGUI") then
-        player:FindFirstChild("PlayerGui").PetVisualCopyGUI:Destroy()
+    -- 2. КРИТИЧНО: Исключаем ВСЕ КОПИИ (с _COPY, _SCALED, UUID, фигурными скобками)
+    local modelName = model.Name
+    if modelName:find("_COPY") or modelName:find("_SCALED") or modelName:find("SCALED_COPY") or 
+       modelName:find("ANIMATED_COPY") or modelName:find("{") or modelName:find("}") or
+       modelName:find("-") and #modelName > 10 then -- UUID обычно длинные с тире
+        return false
     end
     
-    -- Создание нового GUI
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetVisualCopyGUI"
-    screenGui.Parent = player:FindFirstChild("PlayerGui")
-    screenGui.ResetOnSpawn = false
-    
-    -- Основной фрейм
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 400, 0, 500)
-    mainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
-    
-    -- Закругленные углы
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 15)
-    corner.Parent = mainFrame
-    
-    -- Тень
-    local shadow = Instance.new("Frame")
-    shadow.Size = UDim2.new(1, 10, 1, 10)
-    shadow.Position = UDim2.new(0, -5, 0, -5)
-    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.BackgroundTransparency = 0.7
-    shadow.BorderSizePixel = 0
-    shadow.Parent = mainFrame
-    
-    local shadowCorner = Instance.new("UICorner")
-    shadowCorner.CornerRadius = UDim.new(0, 15)
-    shadowCorner.Parent = shadow
-    
-    -- Заголовок
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.Position = UDim2.new(0, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "🐾 PET VISUAL COPY SYSTEM"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 20
-    title.Font = Enum.Font.GothamBold
-    title.Parent = mainFrame
-    
-    -- Разделитель
-    local separator = Instance.new("Frame")
-    separator.Size = UDim2.new(1, 0, 0, 2)
-    separator.Position = UDim2.new(0, 0, 0, 45)
-    separator.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
-    separator.Parent = mainFrame
-    
-    -- Список питомцев
-    local listLabel = Instance.new("TextLabel")
-    listLabel.Size = UDim2.new(1, 0, 0, 30)
-    listLabel.Position = UDim2.new(0, 0, 0, 55)
-    listLabel.BackgroundTransparency = 1
-    listLabel.Text = "Доступные питомцы рядом:"
-    listLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    listLabel.TextSize = 16
-    listLabel.Font = Enum.Font.Gotham
-    listLabel.TextXAlignment = Enum.TextXAlignment.Left
-    listLabel.Parent = mainFrame
-    
-    -- Фрейм для списка
-    local listFrame = Instance.new("Frame")
-    listFrame.Size = UDim2.new(1, -20, 0, 200)
-    listFrame.Position = UDim2.new(0, 10, 0, 90)
-    listFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-    listFrame.BorderSizePixel = 0
-    listFrame.Parent = mainFrame
-    
-    local listCorner = Instance.new("UICorner")
-    listCorner.CornerRadius = UDim.new(0, 10)
-    listCorner.Parent = listFrame
-    
-    -- Скроллбар для списка
-    local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, -10, 1, -10)
-    scrollFrame.Position = UDim2.new(0, 5, 0, 5)
-    scrollFrame.BackgroundTransparency = 1
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.ScrollBarThickness = 6
-    scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 90)
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scrollFrame.Parent = listFrame
-    
-    local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0, 5)
-    listLayout.Parent = scrollFrame
-    
-    -- Кнопка обновления списка
-    local refreshButton = Instance.new("TextButton")
-    refreshButton.Size = UDim2.new(0, 180, 0, 40)
-    refreshButton.Position = UDim2.new(0, 10, 0, 300)
-    refreshButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-    refreshButton.Text = "🔄 Обновить список"
-    refreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    refreshButton.TextSize = 16
-    refreshButton.Font = Enum.Font.Gotham
-    refreshButton.Parent = mainFrame
-    
-    local refreshCorner = Instance.new("UICorner")
-    refreshCorner.CornerRadius = UDim.new(0, 8)
-    refreshCorner.Parent = refreshButton
-    
-    -- Кнопка "Взять питомца"
-    local takeButton = Instance.new("TextButton")
-    takeButton.Size = UDim2.new(0, 180, 0, 40)
-    takeButton.Position = UDim2.new(0, 210, 0, 300)
-    takeButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-    takeButton.Text = "🐾 Взять питомца"
-    takeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    takeButton.TextSize = 16
-    takeButton.Font = Enum.Font.Gotham
-    takeButton.Parent = mainFrame
-    
-    local takeCorner = Instance.new("UICorner")
-    takeCorner.CornerRadius = UDim.new(0, 8)
-    takeCorner.Parent = takeButton
-    
-    -- Информация о выбранном питомце
-    local infoFrame = Instance.new("Frame")
-    infoFrame.Size = UDim2.new(1, -20, 0, 120)
-    infoFrame.Position = UDim2.new(0, 10, 0, 350)
-    infoFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-    infoFrame.BorderSizePixel = 0
-    infoFrame.Parent = mainFrame
-    
-    local infoCorner = Instance.new("UICorner")
-    infoCorner.CornerRadius = UDim.new(0, 10)
-    infoCorner.Parent = infoFrame
-    
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Size = UDim2.new(1, 0, 0, 30)
-    infoLabel.Position = UDim2.new(0, 0, 0, 5)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = "Информация о выбранном питомце:"
-    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLabel.TextSize = 16
-    infoLabel.Font = Enum.Font.Gotham
-    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-    infoLabel.Parent = infoFrame
-    
-    local petInfo = Instance.new("TextLabel")
-    petInfo.Size = UDim2.new(1, -10, 0, 80)
-    petInfo.Position = UDim2.new(0, 5, 0, 35)
-    petInfo.BackgroundTransparency = 1
-    petInfo.Text = "Питомец не выбран"
-    petInfo.TextColor3 = Color3.fromRGB(180, 180, 180)
-    petInfo.TextSize = 14
-    petInfo.Font = Enum.Font.Gotham
-    petInfo.TextWrapped = true
-    petInfo.TextXAlignment = Enum.TextXAlignment.Left
-    petInfo.TextYAlignment = Enum.TextYAlignment.Top
-    petInfo.Parent = infoFrame
-    
-    -- Закрытие GUI
-    local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(0, 30, 0, 30)
-    closeButton.Position = UDim2.new(1, -35, 0, 5)
-    closeButton.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
-    closeButton.Text = "✕"
-    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextSize = 18
-    closeButton.Font = Enum.Font.GothamBold
-    closeButton.Parent = mainFrame
-    
-    local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(0, 8)
-    closeCorner.Parent = closeButton
-    
-    -- Drag functionality
-    local dragging
-    local dragInput
-    local dragStart
-    local startPos
-    
-    local function update(input)
-        local delta = input.Position - dragStart
-        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-    
-    mainFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = mainFrame.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    
-    mainFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-    
-    RunService.RenderStepped:Connect(function()
-        if dragging and dragInput then
-            update(dragInput)
-        end
-    end)
-    
-    -- Функциональность кнопок
-    closeButton.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
-    end)
-    
-    refreshButton.MouseButton1Click:Connect(function()
-        refreshPetList(scrollFrame, petInfo)
-    end)
-    
-    takeButton.MouseButton1Click:Connect(function()
-        if selectedPet then
-            takePetCopy(selectedPet)
-        else
-            print("❌ Питомец не выбран!")
-        end
-    end)
-    
-    -- Инициализация списка
-    refreshPetList(scrollFrame, petInfo)
-    
-    return screenGui, scrollFrame, petInfo
-end
-
--- Обновление списка питомцев
-local function refreshPetList(scrollFrame, petInfo)
-    print("🔄 Обновление списка питомцев...")
-    
-    -- Очистка списка
-    for _, child in pairs(scrollFrame:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
+    -- 3. КРИТИЧНО: Исключаем игроков (включая меня)
+    for _, p in pairs(Players:GetPlayers()) do
+        if modelName == p.Name or modelName:find(p.Name) then
+            return false
         end
     end
     
-    -- Поиск питомцев
-    petDatabase = findAvailablePets()
+    -- 4. Исключаем обычные объекты
+    local EXCLUDED_NAMES = {
+        "EggExplode", "CraftingTables", "EventCraftingWorkBench", "Fruit", "Tree", 
+        "Bush", "Platform", "Stand", "Bench", "Table", "Chair", "Decoration",
+        "Egg", "Tool", "Handle", "Part", "Union", "Accessory", "Hat"
+    }
     
-    -- Обновление размера канваса
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, #petDatabase * 35)
-    
-    -- Создание кнопок для каждого питомца
-    for i, petData in ipairs(petDatabase) do
-        local petButton = Instance.new("TextButton")
-        petButton.Size = UDim2.new(1, -10, 0, 30)
-        petButton.Position = UDim2.new(0, 5, 0, (i-1) * 35)
-        petButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-        petButton.Text = petData.name .. " (" .. math.floor(petData.distance) .. " studs)"
-        petButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        petButton.TextSize = 14
-        petButton.Font = Enum.Font.Gotham
-        petButton.Parent = scrollFrame
-        
-        local buttonCorner = Instance.new("UICorner")
-        buttonCorner.CornerRadius = UDim.new(0, 6)
-        buttonCorner.Parent = petButton
-        
-        -- Обработчик выбора питомца
-        petButton.MouseButton1Click:Connect(function()
-            selectedPet = petData.model
-            
-            -- Обновление информации
-            local infoText = "Имя: " .. petData.name .. "\n"
-            infoText = infoText .. "Расстояние: " .. math.floor(petData.distance) .. " studs\n"
-            infoText = infoText .. "Статус: Готов к копированию"
-            petInfo.Text = infoText
-            
-            -- Подсветка выбранной кнопки
-            for _, child in pairs(scrollFrame:GetChildren()) do
-                if child:IsA("TextButton") then
-                    child.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-                end
-            end
-            petButton.BackgroundColor3 = Color3.fromRGB(100, 150, 200)
-        end)
+    for _, excluded in pairs(EXCLUDED_NAMES) do
+        if modelName:find(excluded) then return false end
     end
     
-    print("✅ Список обновлен. Найдено питомцев: " .. #petDatabase)
-end
-
--- Создание копии питомца и помещение в backpack
-local function takePetCopy(originalPet)
-    print("🐾 Создание копии питомца: " .. originalPet.Name)
+    -- 5. Исключаем модели инвентаря игроков
+    if modelName:find("%[") and modelName:find("KG") and modelName:find("Age") then
+        return false
+    end
     
-    -- Копирование компонентов
-    local petClone, components = copyPetComponents(originalPet)
+    -- 6. КРИТИЧНО: Проверяем, что это НАСТОЯЩИЙ питомец (только короткие имена)
+    if #modelName > 15 then return false end -- Питомцы обычно имеют короткие имена
     
-    -- Настройка анимаций
-    setupCloneAnimations(petClone)
-    
-    -- Создание инструмента для backpack
-    local petTool = Instance.new("Tool")
-    petTool.Name = "Visual Pet Copy"
-    petTool.RequiresHandle = false
-    
-    -- Добавление клона как потомка инструмента
-    petClone.Parent = petTool
-    
-    -- Скрытие клона до активации
-    petClone.Enabled = false
-    
-    -- Обработчик активации инструмента
-    petTool.Equipped:Connect(function()
-        print("🔧 Инструмент активирован. Показ питомца...")
-        petClone.Enabled = true
-        
-        -- Позиционирование питомца в руке
-        local character = player.Character
-        if character and character:FindFirstChild("RightHand") then
-            petClone:SetPrimaryPartCFrame(character.RightHand.CFrame)
-        elseif character and character:FindFirstChild("HumanoidRootPart") then
-            petClone:SetPrimaryPartCFrame(character.HumanoidRootPart.CFrame * CFrame.new(2, 0, 0))
+    -- 7. Проверяем наличие мешей
+    local meshCount = 0
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            meshCount = meshCount + 1
         end
-    end)
+    end
     
-    -- Обработчик деактивации инструмента
-    petTool.Unequipped:Connect(function()
-        print("🔧 Инструмент деактивирован. Скрытие питомца...")
-        petClone.Enabled = false
-    end)
+    if meshCount < 1 then return false end
     
-    -- Обработчик использования инструмента (спавн питомца)
-    petTool.Activated:Connect(function()
-        print("🚀 Спаун питомца в Workspace...")
-        spawnPetInWorkspace(petClone, components)
-        
-        -- Удаление инструмента после спавна
-        petTool:Destroy()
-    end)
+    -- 8. Проверяем количество детей
+    if #model:GetChildren() < 5 then return false end
     
-    -- Помещение инструмента в backpack
-    petTool.Parent = backpack
-    
-    print("✅ Копия питомца создана и помещена в backpack!")
-    print("💡 Активируйте инструмент, чтобы увидеть питомца в руке")
-    print("💡 Нажмите ЛКМ, чтобы заспавнить питомца в мире")
-end
-
--- Спаун питомца в Workspace
-local function spawnPetInWorkspace(originalClone, components)
-    print("🌍 Спаун питомца в Workspace...")
-    
-    -- Создание новой копии для спавна
-    local spawnClone = originalClone:Clone()
-    spawnClone.Name = generateUUIDName("SpawnedPet")
-    spawnClone.Enabled = true
-    
-    -- Получение позиции игрока
+    -- 9. Проверяем расстояние до игрока
     local playerChar = player.Character
-    local spawnPosition = Vector3.new(0, 5, 0)
-    
     if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-        spawnPosition = playerChar.HumanoidRootPart.Position + Vector3.new(3, 0, 0)
-    end
-    
-    -- Установка позиции
-    spawnClone:PivotTo(CFrame.new(spawnPosition))
-    
-    -- Настройка анимаций для спавн-копии
-    setupCloneAnimations(spawnClone)
-    
-    -- Помещение в Workspace
-    spawnClone.Parent = Workspace
-    
-    -- Запуск плавного появления
-    spawnClone.Transparency = 1
-    
-    for _, part in pairs(spawnClone:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Transparency = 1
+        local success, modelCFrame = pcall(function() return model:GetPivot() end)
+        if success then
+            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+            if distance > CONFIG.SEARCH_RADIUS then return false end
         end
     end
     
-    -- Анимация появления
-    spawn(function()
-        for i = 1, 10 do
-            local transparency = 1 - (i / 10)
-            
-            for _, part in pairs(spawnClone:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.Transparency = transparency
-                end
-            end
-            
-            wait(0.05)
-        end
-        
-        -- Установка полной видимости
-        for _, part in pairs(spawnClone:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Transparency = 0
-            end
-        end
-        
-        print("🎉 Питомец успешно заспавнен в Workspace!")
-        print("🆔 Уникальное имя: " .. spawnClone.Name)
-        
-        -- Запуск поведения питомца
-        setupPetBehavior(spawnClone)
-    end)
+    return true
 end
 
--- Настройка поведения питомца
-local function setupPetBehavior(petModel)
-    print("🤖 Настройка поведения питомца...")
+-- Функция автозамены питомцев (СОБЫТИЙНАЯ СИСТЕМА - БЕЗ МОНИТОРИНГА!)
+local function startWorkspaceScanning()
+    print("\n🔍 === ЗАПУСК СОБЫТИЙНОЙ АВТОЗАМЕНЫ ПИТОМЦЕВ ===")
+    print("⚡ Используем ChildAdded события вместо постоянного мониторинга!")
+    print("💡 Теперь ищем питомца В ФИГУРНЫХ СКОБКАХ, как при ручном создании!")
     
-    -- Поиск Humanoid
-    local humanoid = petModel:FindFirstChildOfClass("Humanoid")
-    if not humanoid then
-        print("❌ Humanoid не найден. Создание нового...")
-        humanoid = Instance.new("Humanoid")
-        humanoid.Parent = petModel
+    local processedModels = {}
+    local foundPetModels = {}
+    local createdCopiesCount = 0 -- Счетчик созданных копий
+    local MAX_COPIES = 3 -- Максимум копий за сессию
+    local processedPetNames = {} -- Отслеживание по именам
+    local scanStartTime = tick()
+    
+    -- Список всех питомцев из яиц
+    local eggPets = {
+        -- Anti Bee Egg
+        "wasp", "tarantula hawk", "moth", "butterfly", "disco bee (divine)",
+        -- Bee Egg  
+        "bee", "honey bee", "bear bee", "petal bee", "queen bee",
+        -- Bug Egg
+        "snail", "giant ant", "caterpillar", "praying mantis", "dragonfly (divine)",
+        -- Common Egg
+        "dog", "bunny", "golden lab",
+        -- Common Summer Egg
+        "starfish", "seagull", "crab",
+        -- Dinosaur Egg
+        "raptor", "triceratops", "stegosaurus", "pterodactyl", "brontosaurus", "t-rex (divine)",
+        -- Legendary Egg
+        "cow", "silver monkey", "sea otter", "turtle", "polar bear",
+        -- Mythical Egg
+        "grey mouse", "brown mouse", "squirrel", "red giant ant", "red fox",
+        -- Night Egg
+        "hedgehog", "mole", "frog", "echo frog", "night owl", "raccoon",
+        -- Oasis Egg
+        "meerkat", "sand snake", "axolotl", "hyacinth macaw", "fennec fox",
+        -- Paradise Egg
+        "ostrich", "peacock", "capybara", "scarlet macaw", "mimic octopus",
+        -- Primal Egg
+        "parasaurolophus", "iguanodon", "pachycephalosaurus", "dilophosaurus", "ankylosaurus", "spinosaurus (divine)",
+        -- Rare Egg
+        "orange tabby", "spotted deer", "pig", "rooster", "monkey",
+        -- Rare Summer Egg
+        "flamingo", "toucan", "sea turtle", "orangutan", "seal",
+        -- Uncommon Egg
+        "black bunny", "chicken", "cat", "deer",
+        -- Zen Egg
+        "shiba inu", "nihonzaru", "tanuki", "tanchozuru", "kappa", "kitsune"
+    }
+    
+    -- Функция проверки является ли модель питомцем из яйца
+    local function isPetFromEgg(model)
+        if not model:IsA("Model") then return false end
+        local modelName = model.Name:lower()
+        
+        for _, petName in pairs(eggPets) do
+            if modelName == petName then
+                return true
+            end
+        end
+        return false
     end
     
-    -- Поиск PrimaryPart
-    if not petModel.PrimaryPart then
-        for _, part in pairs(petModel:GetDescendants()) do
-            if part:IsA("BasePart") then
-                petModel.PrimaryPart = part
+    -- Функция обработки нового питомца
+    local function processPetFromEgg(newPet)
+        -- Проверяем лимит копий
+        if createdCopiesCount >= MAX_COPIES then
+            print("⚠️ Достигнут лимит копий (" .. MAX_COPIES .. "). Игнорирую питомца:", newPet.Name)
+            return
+        end
+        
+        -- Используем уникальный ID вместо имени для отслеживания обработанных питомцев
+        local petId = tostring(newPet)  -- Уникальный адрес объекта
+        if processedModels[petId] then
+            return
+        end
+        
+        print("🎭 СОБЫТИЕ: Новый питомец появился в Visuals:", newPet.Name)
+        processedModels[petId] = true
+        
+        -- Ищем UUID питомца рядом с новым питомцем
+        print("🔍 Ищем UUID питомца рядом с новым питомцем:", newPet.Name)
+        
+        local foundPet = nil
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+                local success, modelCFrame = pcall(function() return obj:GetPivot() end)
+                if success then
+                    local playerChar = player.Character
+                    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                        local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                        if distance <= CONFIG.SEARCH_RADIUS then
+                            -- Проверяем меши (как в ручной копии)
+                            local meshes = 0
+                            for _, part in pairs(obj:GetDescendants()) do
+                                if part:IsA("MeshPart") or part:IsA("SpecialMesh") then
+                                    meshes = meshes + 1
+                                end
+                            end
+                            
+                            foundPet = obj
+                            print("🔑 НАЙДЕН UUID питомец по расстоянию:", obj.Name, "(Расстояние:", math.floor(distance), ", Мешей:", meshes, ")")
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Шаг 2: ИЩЕМ UUID ПИТОМЦА ПО РАССТОЯНИЮ (КАК В РУЧНОЙ КОПИИ!)
+        if foundVisualsPet then
+            print("🔍 Ищем UUID питомца рядом с игроком (как в findAndScalePet)...")
+            
+            -- ТОЧНО КОПИРУЕМ ЛОГИКУ ИЗ findAndScalePet()!
+            for _, obj in pairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+                    local success, modelCFrame = pcall(function() return obj:GetPivot() end)
+                    if success then
+                        local playerChar = player.Character
+                        if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+                            local distance = (modelCFrame.Position - playerChar.HumanoidRootPart.Position).Magnitude
+                            if distance <= CONFIG.SEARCH_RADIUS then
+                                -- Проверяем меши (как в ручной копии)
+                                local meshes = 0
+                                for _, part in pairs(obj:GetDescendants()) do
+                                    if part:IsA("MeshPart") or part:IsA("SpecialMesh") then
+                                        meshes = meshes + 1
+                                    end
+                                end
+                                
+                                foundPet = obj
+                                print("🔑 НАЙДЕН UUID питомец по расстоянию:", obj.Name, "(Расстояние:", math.floor(distance), ", Мешей:", meshes, ")")
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Если найден UUID питомец, обрабатываем замену
+        if foundPet then
+            print("\n🎉 === НАЙДЕНА ПАРА ПИТОМЦЕВ ДЛЯ АВТОЗАМЕНЫ ===")
+            print("🔑 UUID питомец:", foundPet.Name)
+            print("🎭 Визуальный питомец:", newPet.Name)
+            
+            -- Получаем позицию визуального питомца
+            local visualPosition = nil
+            local success, visualCFrame = pcall(function() return newPet:GetPivot() end)
+            if success then
+                visualPosition = visualCFrame.Position
+            elseif newPet.PrimaryPart then
+                visualPosition = newPet.PrimaryPart.Position
+            end
+            
+            if visualPosition then
+                print("📍 Позиция для замены:", visualPosition)
+                
+                -- Питомец уже скрыт в событии ChildAdded, не нужно скрывать повторно
+                print("✅ Питомец уже скрыт, создаю анимированную копию")
+                
+                -- Создаем копию UUID питомца на месте визуального
+                local animatedCopy = createAnimatedCopyAtPosition(foundPet, visualPosition)
+                    
+                if animatedCopy then
+                    -- Увеличиваем счетчик копий
+                    createdCopiesCount = createdCopiesCount + 1
+                    
+                    -- СИНХРОНИЗИРУЕМ ВРЕМЯ ЖИЗНИ КОПИИ С ОРИГИНАЛОМ
+                    print("⏰ Настраиваю синхронизацию времени жизни...")
+                    
+                    -- Отслеживаем удаление визуального питомца и заменяем питомца в handle
+                    task.spawn(function()
+                        while newPet and newPet.Parent do
+                            task.wait(0.2) -- Проверяем каждые 0.2 секунды (оптимизация)
+                        end
+                        
+                        -- Когда визуальный питомец исчез, удаляем копию
+                        if animatedCopy and animatedCopy.Parent then
+                            print("✨ Оригинал исчез - удаляю копию")
+                            animatedCopy:Destroy()
+                        end
+                        
+                        -- НОВОЕ: Заменяем питомца в handle на Dragonfly из инвентаря
+                        task.wait(2) -- Ждем немного после исчезновения анимации
+                        print("🔄 Ищу питомца в handle для замены...")
+                        
+                        local playerChar = player.Character
+                        if playerChar then
+                            local handle = playerChar:FindFirstChild("Handle")
+                            if handle then
+                                print("📍 Handle найден, содержит:")
+                                for _, obj in pairs(handle:GetChildren()) do
+                                    print("  - " .. obj.Name .. " (" .. obj.ClassName .. ")")
+                                end
+                                
+                                -- Ищем текущего питомца в handle (НЕ Dragonfly)
+                                for _, obj in pairs(handle:GetChildren()) do
+                                    if obj:IsA("Model") and obj.Name:lower() ~= "dragonfly" then
+                                        print("🗑️ Убираю временного питомца из handle:", obj.Name)
+                                        obj:Destroy() -- Удаляем временного питомца
+                                        break
+                                    end
+                                end
+                                
+                                -- Ищем Dragonfly в WORKSPACE (где обычно хранятся питомцы)
+                                print("🔍 Ищу Dragonfly в Workspace...")
+                                
+                                for _, obj in pairs(Workspace:GetDescendants()) do
+                                    if obj:IsA("Model") and obj.Name:lower():find("dragonfly") and obj ~= playerChar then
+                                        print("🐉 Найден Dragonfly в Workspace - перемещаю в handle")
+                                        
+                                        -- Перемещаем (не клонируем) Dragonfly в handle
+                                        obj.Parent = handle
+                                        
+                                        -- Позиционируем в руке
+                                        if obj.PrimaryPart then
+                                            obj.PrimaryPart.CFrame = handle.CFrame
+                                        elseif obj:FindFirstChild("RootPart") then
+                                            obj.RootPart.CFrame = handle.CFrame
+                                        end
+                                        
+                                        print("✅ Dragonfly успешно помещен в handle!")
+                                        return
+                                    end
+                                end
+                                
+                                -- Если не найден в Workspace, ищем в других местах
+                                print("🔍 Ищу Dragonfly в других локациях...")
+                                local searchLocations = {
+                                    player,
+                                    playerChar,
+                                    game.ReplicatedStorage
+                                }
+                                
+                                for _, location in pairs(searchLocations) do
+                                    if location then
+                                        for _, item in pairs(location:GetDescendants()) do
+                                            if item:IsA("Model") and item.Name:lower():find("dragonfly") then
+                                                print("🐉 Найден Dragonfly в", location.Name, "- клонирую в handle")
+                                                
+                                                local dragonflyClone = item:Clone()
+                                                dragonflyClone.Parent = handle
+                                                
+                                                if dragonflyClone.PrimaryPart then
+                                                    dragonflyClone.PrimaryPart.CFrame = handle.CFrame
+                                                end
+                                                
+                                                print("✅ Dragonfly успешно помещен в handle!")
+                                                return
+                                            end
+                                        end
+                                    end
+                                end
+                                
+                                print("⚠️ Dragonfly не найден нигде")
+                            else
+                                print("⚠️ Handle не найден у игрока")
+                            end
+                        end
+                    end)
+                        
+                        -- Перемещаем визуального питомца под землю
+                        if foundVisualsPet.PrimaryPart then
+                            foundVisualsPet:PivotTo(foundVisualsPet.PrimaryPart.CFrame - Vector3.new(0, 1000, 0))
+                        end
+                        
+                        print("✅ Визуальный питомец скрыт!")
+                        print("🎉 Автозамена завершена - UUID питомец скопирован на место визуального!")
+                        print("📊 Создано копий: " .. createdCopiesCount .. "/" .. MAX_COPIES)
+                        
+                        -- Добавляем в список найденных
+                        table.insert(foundPetModels, {
+                            name = foundPet.Name .. " -> " .. newPet.Name,
+                            foundTime = tick() - scanStartTime,
+                            animatedCopy = animatedCopy
+                        })
+                    else
+                        print("❌ Не удалось создать анимированную копию UUID питомца")
+                    end
+                else
+                    print("❌ Не удалось определить позицию визуального питомца")
+                end
+            else
+                print("⚠️ Не найден соответствующий UUID питомец для замены")
+            end
+    end
+    
+    -- СОБЫТИЙНАЯ СИСТЕМА: Отслеживаем появление новых питомцев в Workspace.Visuals
+    local visualsFolder = Workspace:FindFirstChild("Visuals")
+    if visualsFolder then
+        print("✅ Найдена папка Visuals - подключаю событийную систему")
+        
+        local childAddedConnection = visualsFolder.ChildAdded:Connect(function(child)
+            if child:IsA("Model") and isPetFromEgg(child) then
+                print("⚡ СОБЫТИЕ: Новый питомец появился в Visuals:", child.Name)
+                
+                -- МГНОВЕННО скрываем питомца ДО обработки!
+                print("⚡ МГНОВЕННО скрываю питомца:", child.Name)
+                for _, part in pairs(child:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.Transparency = 1
+                        part.CanCollide = false
+                    elseif part:IsA("Decal") or part:IsA("Texture") then
+                        part.Transparency = 1
+                    end
+                end
+                
+                -- Используем task.spawn, чтобы не блокировать событие
+                task.spawn(function()
+                    task.wait(0.05) -- Минимальная задержка для загрузки модели
+                    processPetFromEgg(child)
+                end)
+            end
+        end)
+        
+        -- Также проверяем уже существующих питомцев в Visuals
+        for _, child in pairs(visualsFolder:GetChildren()) do
+            if child:IsA("Model") and isPetFromEgg(child) then
+                local petId = tostring(child)
+                if not processedModels[petId] then
+                    print("🔍 НАЧАЛЬНАЯ ПРОВЕРКА: Найден питомец в Visuals:", child.Name)
+                    processPetFromEgg(child)
+                end
+            end
+        end
+        
+        print("🔄 Событийная система активна!")
+        print("💡 Все новые питомцы в Visuals будут автоматически заменены")
+        print("🎯 Откройте яйцо для автоматической замены!")
+        
+        return childAddedConnection
+    else
+        print("❌ Папка Workspace.Visuals не найдена!")
+        return nil
+    end
+end
+
+-- Создание GUI (С ЗАЩИТОЙ ОТ ОШИБОК)
+local function createGUI()
+    local success, errorMsg = pcall(function()
+        local playerGui = player:WaitForChild("PlayerGui")
+        
+        local oldGui = playerGui:FindFirstChild("PetScalerV2GUI")
+        if oldGui then
+            oldGui:Destroy()
+            task.wait(0.1) -- Небольшая пауза после удаления
+        end
+        
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "PetScalerV2GUI"
+        screenGui.Parent = playerGui
+    
+    local frame = Instance.new("Frame")
+    frame.Name = "MainFrame"
+    frame.Size = UDim2.new(0, 250, 0, 120) -- Увеличиваем высоту для третьей кнопки
+    frame.Position = UDim2.new(0, 50, 0, 150) -- Под оригинальным PetScaler
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(0, 255, 0) -- Зеленая рамка
+    frame.Parent = screenGui
+    
+    -- Кнопка ручного создания копии
+    local manualButton = Instance.new("TextButton")
+    manualButton.Name = "ManualScaleButton"
+    manualButton.Size = UDim2.new(0, 230, 0, 30)
+    manualButton.Position = UDim2.new(0, 10, 0, 10)
+    manualButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    manualButton.BorderSizePixel = 0
+    manualButton.Text = "🔥 Ручное создание копии"
+    manualButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    manualButton.TextSize = 12
+    manualButton.Font = Enum.Font.SourceSansBold
+    manualButton.Parent = frame
+    
+    -- Кнопка автозамены
+    local autoButton = Instance.new("TextButton")
+    autoButton.Name = "AutoReplaceButton"
+    autoButton.Size = UDim2.new(0, 230, 0, 30)
+    autoButton.Position = UDim2.new(0, 10, 0, 45)
+    autoButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    autoButton.BorderSizePixel = 0
+    autoButton.Text = "🥚 Автозамена питомцев (ОФФ)"
+    autoButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    autoButton.TextSize = 12
+    autoButton.Font = Enum.Font.SourceSansBold
+    autoButton.Parent = frame
+    
+    -- НОВАЯ КНОПКА: Замена питомца в руке (как PetScaler_v3.226.lua)
+    local handButton = Instance.new("TextButton")
+    handButton.Name = "HandReplaceButton"
+    handButton.Size = UDim2.new(0, 230, 0, 30)
+    handButton.Position = UDim2.new(0, 10, 0, 80) -- Третья кнопка
+    handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255) -- Фиолетовая
+    handButton.BorderSizePixel = 0
+    handButton.Text = "✋ Заменить питомца в руке"
+    handButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    handButton.TextSize = 12
+    handButton.Font = Enum.Font.SourceSansBold
+    handButton.Parent = frame
+    
+    -- Переменная для отслеживания состояния автозамены
+    local autoReplaceActive = false
+    local visualsConnection = nil
+    
+    -- Обработчик ручной кнопки
+    manualButton.MouseButton1Click:Connect(function()
+        manualButton.Text = "⏳ Создаю с анимацией..."
+        manualButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        
+        task.spawn(function()
+            local success, errorMsg = pcall(function()
+                main()
+            end)
+            
+            if success then
+                task.wait(3)
+                manualButton.Text = "🔥 Ручное создание копии"
+                manualButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            else
+                print("❌ Ошибка в main():", errorMsg)
+                manualButton.Text = "❌ Ошибка! Попробуйте снова"
+                manualButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            end
+        end)
+    end)
+    
+    -- Обработчик НОВОЙ кнопки замены в руке
+    handButton.MouseButton1Click:Connect(function()
+        handButton.Text = "⏳ Заменяю питомца в руке..."
+        handButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+        
+        task.spawn(function()
+            local success = replaceHandPetWithAnimation()
+            
+            if success then
+                handButton.Text = "✅ Питомец заменен!"
+                handButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                task.wait(2)
+                handButton.Text = "✋ Заменить питомца в руке"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+            else
+                handButton.Text = "❌ Ошибка замены!"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                task.wait(2)
+                handButton.Text = "✋ Заменить питомца в руке"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+            end
+        end)
+    end)
+    
+    -- Обработчик кнопки автозамены
+    autoButton.MouseButton1Click:Connect(function()
+        if not autoReplaceActive then
+            -- Включаем автозамену
+            autoButton.Text = "⏳ Запускаю мониторинг..."
+            autoButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+            
+            task.spawn(function()
+                visualsConnection = startWorkspaceScanning()
+                autoReplaceActive = true
+                
+                autoButton.Text = "🔄 Автозамена питомцев (ОН)"
+                autoButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            end)
+        else
+            -- Отключаем автозамену
+            if visualsConnection then
+                visualsConnection:Disconnect()
+                visualsConnection = nil
+            end
+            
+            autoReplaceActive = false
+            autoButton.Text = "🥚 Автозамена питомцев (ОФФ)"
+            autoButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+            
+            print("❌ Мониторинг workspace.visuals остановлен")
+        end
+    end)
+    
+    -- Hover эффекты для ручной кнопки
+    manualButton.MouseEnter:Connect(function()
+        if manualButton.BackgroundColor3 == Color3.fromRGB(0, 255, 0) then
+            manualButton.BackgroundColor3 = Color3.fromRGB(0, 220, 0)
+        end
+    end)
+    
+    manualButton.MouseLeave:Connect(function()
+        if manualButton.BackgroundColor3 == Color3.fromRGB(0, 220, 0) then
+            manualButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        end
+    end)
+    
+    -- Hover эффекты для кнопки автозамены
+    autoButton.MouseEnter:Connect(function()
+        if autoButton.BackgroundColor3 == Color3.fromRGB(255, 165, 0) then
+            autoButton.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+        elseif autoButton.BackgroundColor3 == Color3.fromRGB(0, 255, 0) then
+            autoButton.BackgroundColor3 = Color3.fromRGB(0, 220, 0)
+        end
+    end)
+    
+    autoButton.MouseLeave:Connect(function()
+        if autoButton.BackgroundColor3 == Color3.fromRGB(255, 140, 0) then
+            autoButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        elseif autoButton.BackgroundColor3 == Color3.fromRGB(0, 220, 0) then
+            autoButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        end
+    end)
+    
+        print("💻 PetScaler v2.0 GUI с автозаменой создан!")
+    end)
+    
+    if not success then
+        print("❌ Ошибка при создании GUI:", errorMsg)
+        print("📝 Попробуйте перезапустить скрипт")
+        return false
+    end
+    
+    return true
+end
+
+-- Событийная модель автозамены питомца в руке (без постоянного опроса)
+local processedTools = {}
+local autoConns = {}
+
+-- Проверка готовности питомца в Tool (есть модель с частями и корректный Pivot)
+local function isPetReady(tool)
+    if not tool or not tool.Parent then return false end
+    if not tool:IsA("Tool") then return false end
+
+    local foundModel = nil
+    for _, obj in pairs(tool:GetDescendants()) do
+        if obj:IsA("Model") then
+            -- Ищем хотя бы одну BasePart внутри модели
+            local hasPart = false
+            for _, d in pairs(obj:GetDescendants()) do
+                if d:IsA("BasePart") then
+                    hasPart = true
+                    break
+                end
+            end
+            if hasPart then
+                foundModel = obj
                 break
             end
         end
     end
-    
-    -- Плавающее поведение
-    spawn(function()
-        local floatOffset = 0
-        local rootPart = petModel.PrimaryPart
-        
-        if rootPart then
-            local originalPosition = rootPart.Position
-            
-            while petModel and petModel.Parent do
-                floatOffset = floatOffset + 0.1
-                local yOffset = math.sin(floatOffset) * 0.5
-                
-                rootPart.Position = originalPosition + Vector3.new(0, yOffset, 0)
-                
-                wait(0.1)
-            end
-        end
+
+    if not foundModel then return false end
+
+    -- Проверяем, что можем получить Pivot (модель загружена)
+    local ok = pcall(function()
+        return foundModel:GetPivot()
     end)
-    
-    -- Поворот к игроку
-    spawn(function()
-        local rootPart = petModel.PrimaryPart
-        
-        if rootPart then
-            while petModel and petModel.Parent do
-                local playerChar = player.Character
-                if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-                    local lookAtPos = playerChar.HumanoidRootPart.Position
-                    local currentPos = rootPart.Position
-                    
-                    local lookCFrame = CFrame.lookAt(currentPos, Vector3.new(lookAtPos.X, currentPos.Y, lookAtPos.Z))
-                    rootPart.CFrame = lookCFrame
-                end
-                
-                wait(0.5)
-            end
-        end
-    end)
-    
-    print("✅ Поведение питомца настроено!")
+    return ok == true
 end
 
--- === ОСНОВНАЯ ФУНКЦИЯ ===
-
--- Запуск системы
-local function init()
-    print("\n🚀 === ЗАПУСК PET VISUAL COPY SYSTEM ===")
-    print("🎯 Цель: Создание визуальных копий питомцев с полным сохранением компонентов")
-    print("💡 Компоненты: MeshId, Motor6D, CFrame, Animation, Humanoid, Parts")
-    print("💡 Функции: GUI выбор, копирование, backpack, спавн с UUID именем")
-    
-    -- Создание GUI
-    local screenGui, scrollFrame, petInfo = createModernGUI()
-    gui = screenGui
-    
-    print("✅ Система готова к использованию!")
-    print("💡 Нажмите 'Обновить список' для поиска питомцев")
-    print("💡 Выберите питомца и нажмите 'Взять питомца'")
+local function disconnectAll()
+    for _, c in ipairs(autoConns) do
+        if c and c.Disconnect then c:Disconnect() end
+    end
+    table.clear(autoConns)
 end
 
--- Автозапуск
-spawn(function()
-    wait(2) -- Ожидание загрузки персонажа
-    init()
+local function onEquipped(tool)
+    if processedTools[tool] then return end
+    task.spawn(function()
+        -- Ждем стабилизации (до 2 сек, шаг 0.05)
+        local ready = false
+        local t0 = os.clock()
+        while os.clock() - t0 < 2 do
+            if isPetReady(tool) then
+                ready = true
+                break
+            end
+            task.wait(0.05)
+        end
+        if not ready then return end
+
+        print("\n✋ Обнаружен питомец в руке! Запускаю замену по событию...")
+        processedTools[tool] = true
+
+        -- Обновление GUI и запуск замены
+        local playerGui = player:WaitForChild("PlayerGui")
+        local gui = playerGui:FindFirstChild("PetScalerV2GUI")
+        local handButton = gui and gui:FindFirstChild("HandButton")
+        if handButton then
+            handButton.Text = "⏳ Заменяю питомца в руке..."
+            handButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+        end
+
+        local success = replaceHandPetWithAnimation()
+
+        if handButton then
+            if success then
+                handButton.Text = "✅ Питомец заменен!"
+                handButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                task.wait(2)
+                handButton.Text = "✋ Заменить питомца в руке"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+            else
+                handButton.Text = "❌ Ошибка замены!"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                task.wait(2)
+                handButton.Text = "✋ Заменить питомца в руке"
+                handButton.BackgroundColor3 = Color3.fromRGB(255, 0, 255)
+            end
+        end
+
+        print("✅ Автоматическая замена завершена (событие)!")
+    end)
+end
+
+local function hookTool(tool)
+    table.insert(autoConns, tool.Equipped:Connect(function()
+        onEquipped(tool)
+    end))
+    table.insert(autoConns, tool.Unequipped:Connect(function()
+        processedTools[tool] = nil
+    end))
+    table.insert(autoConns, tool.Destroying:Connect(function()
+        processedTools[tool] = nil
+    end))
+end
+
+local function bindCharacter(char)
+    -- Подхватываем уже надетый Tool
+    local currentTool = char:FindFirstChildOfClass("Tool")
+    if currentTool then hookTool(currentTool) end
+    -- Новые инструменты
+    table.insert(autoConns, char.ChildAdded:Connect(function(obj)
+        if obj:IsA("Tool") then
+            hookTool(obj)
+        end
+    end))
+end
+
+if player and player.Character then
+    bindCharacter(player.Character)
+end
+table.insert(autoConns, player.CharacterAdded:Connect(function(char)
+    disconnectAll()
+    bindCharacter(char)
+end))
+
+-- Очистка при уничтожении GUI
+if screenGui then
+    table.insert(autoConns, screenGui.Destroying:Connect(function()
+        disconnectAll()
+    end))
+end
+
+print("✅ Автозамена по событиям инициализирована!")
+print("💡 Возьмите питомца в руку — замена произойдет автоматически")
+
+-- Запуск с защитой от ошибок
+local initSuccess, initError = pcall(function()
+    local guiSuccess = createGUI()
+    if not guiSuccess then
+        error("Не удалось создать GUI")
+    end
 end)
 
--- Команда для ручного запуска
-print("\n💡 Для ручного запуска используйте: init()")
+if initSuccess then
+    print("=" .. string.rep("=", 70))
+    print("💡 PETSCALER v2.0 + АВТОЗАМЕНА - ПОЛНОЕ РЕШЕНИЕ:")
+    print("   🔥 РУЧНОЕ СОЗДАНИЕ:")
+    print("     1. Создает масштабированную копию")
+    print("     2. Настраивает правильные Anchored состояния")
+    print("     3. Автоматически запускает живое копирование анимации")
+    print("")
+    print("   🥚 НОВОЕ! АВТОЗАМЕНА ПИТОМЦЕВ:")
+    print("     1. Ищет питомца В ФИГУРНЫХ СКОБКАХ (как ручная копия)")
+    print("     2. Автоматически скрывает визуального питомца")
+    print("     3. Создает анимированные копии на том же месте")
+    print("     4. Никаких статичных копий - только живая анимация!")
+    print("")
+    print("🎯 ИСПОЛЬЗОВАНИЕ:")
+    print("   🔥 Зеленая кнопка - Ручное создание копии")
+    print("   🥚 Оранжевая кнопка - Вкл/Откл автозамену питомцев")
+    print("=" .. string.rep("=", 70))
+    print("✅ PetScaler v2.0 успешно запущен!")
+    
+else
+    print("❌ КРИТИЧЕСКАЯ ОШИБКА при запуске PetScaler v2.0:")
+    print("📝 Ошибка:", initError)
+    print("🔄 Попробуйте перезапустить скрипт")
+    print("💡 Если проблема повторяется, проверьте права доступа к GUI")
+end
