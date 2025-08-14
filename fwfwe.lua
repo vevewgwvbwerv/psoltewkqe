@@ -123,10 +123,26 @@ local function findAndScanNearbyUUIDPets()
             Distance = string.format("%.1f studs", petInfo.distance)
         })
         
-        -- Вызываем функцию сканирования (будет объявлена позже)
-        if scanUUIDPet then
-            local petData = scanUUIDPet(petInfo.model)
-        end
+        -- Отложенное сканирование через spawn (функция будет доступна позже)
+        spawn(function()
+            wait(2) -- Увеличенная задержка для полной загрузки всех функций
+            if scanUUIDPet then
+                local success, petData = pcall(scanUUIDPet, petInfo.model)
+                if success then
+                    logEvent("✅ SCAN_SUCCESS", "Pet scanned successfully", {
+                        PetName = petInfo.name
+                    })
+                else
+                    logEvent("❌ SCAN_ERROR", "Failed to scan pet: " .. tostring(petData), {
+                        PetName = petInfo.name
+                    })
+                end
+            else
+                logEvent("⚠️ SCAN_SKIP", "scanUUIDPet function not available yet", {
+                    PetName = petInfo.name
+                })
+            end
+        end)
         
         -- Небольшая пауза между сканированиями
         wait(0.1)
@@ -633,7 +649,16 @@ local function scanUUIDPet(petModel)
         className = petModel.ClassName,
         primaryPart = petModel.PrimaryPart and petModel.PrimaryPart.Name or "nil",
         scanTime = os.date("%Y-%m-%d %H:%M:%S"),
-        position = petModel:GetModelCFrame().Position
+        position = (function()
+            local ok, cf = pcall(function()
+                return petModel:GetModelCFrame()
+            end)
+            if ok and cf then
+                return cf.Position
+            end
+            local pp = petModel.PrimaryPart
+            return pp and pp.Position or Vector3.new()
+        end)()
     }
     
     -- Сканируем Motor6D
@@ -953,7 +978,13 @@ local function recreatePetFromDatabase(petName, position)
     
     -- Позиционируем модель
     if position and model.PrimaryPart then
-        model:SetPrimaryPartCFrame(CFrame.new(position))
+        pcall(function()
+            if model.PivotTo then
+                model:PivotTo(CFrame.new(position))
+            else
+                model:SetPrimaryPartCFrame(CFrame.new(position))
+            end
+        end)
     end
     
     -- Размещаем в Workspace
@@ -970,43 +1001,7 @@ local function recreatePetFromDatabase(petName, position)
     return model
 end
 
--- Функция воссоздания ближайшего питомца из базы
-local function recreateNearestPet()
-    if not scriptRunning then return end
-    
-    if next(petDatabase) == nil then
-        logEvent("⚠️ RECREATE_WARNING", "Pet database is empty! Scan some pets first.")
-        return
-    end
-    
-    -- Находим первого питомца в базе
-    local petName = next(petDatabase)
-    
-    -- Позиция рядом с игроком
-    local playerChar = player.Character
-    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
-        logEvent("❌ RECREATE_ERROR", "Player character not found")
-        return
-    end
-    
-    local playerPos = playerChar.HumanoidRootPart.Position
-    local spawnPos = playerPos + Vector3.new(5, 0, 5) -- 5 стадов от игрока
-    
-    logEvent("🚀 RECREATE_ATTEMPT", "Attempting to recreate pet", {
-        PetName = petName,
-        SpawnPosition = tostring(spawnPos)
-    })
-    
-    local recreatedPet = recreatePetFromDatabase(petName, spawnPos)
-    
-    if recreatedPet then
-        logEvent("🎉 RECREATE_COMPLETE", "Pet successfully recreated from database!")
-        return recreatedPet
-    else
-        logEvent("❌ RECREATE_FAILED", "Failed to recreate pet from database")
-        return nil
-    end
-end
+-- (удалено дублирующееся определение recreateNearestPet)
 
 -- === ИНИЦИАЛИЗАЦИЯ И АВТОЗАПУСК ===
 
@@ -1037,8 +1032,15 @@ local function startAutoMonitoring()
                                     Name = child.Name,
                                     Distance = string.format("%.1f studs", distance)
                                 })
-                                scanUUIDPet(child)
+                                local ok, err = pcall(function()
+                                    scanUUIDPet(child)
+                                end)
+                                if not ok then
+                                    logEvent("❌ AUTO_SCAN_ERROR", tostring(err) or "unknown error")
+                                end
                             end
+                        else
+                            logEvent("❌ MODEL_CFRAME_ERROR", tostring(modelCFrame) or "unknown error")
                         end
                     end
                 end
@@ -1068,42 +1070,7 @@ local function startAutoMonitoring()
     })
 end
 
--- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
-local function startSystem()
-    print("🚀 Запуск Pet Structure Analyzer v4.0...")
-    
-    -- Создаем GUI
-    gui = createModernGUI()
-    
-    if not gui then
-        print("❌ Ошибка создания GUI!")
-        return
-    end
-    
-    -- Запускаем автоматический мониторинг
-    startAutoMonitoring()
-    
-    -- Первоначальное сканирование
-    spawn(function()
-        wait(2) -- Даем время GUI загрузиться
-        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
-        findAndScanNearbyUUIDPets()
-    end)
-    
-    logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
-        GUI = "Modern interface loaded",
-        AutoMonitoring = "Active",
-        Database = "Ready for pet data",
-        Status = "ONLINE"
-    })
-    
-    print("✅ Pet Structure Analyzer v4.0 READY!")
-    print("🔬 Modern GUI loaded with enhanced scanning capabilities")
-    print("🤖 Automatic monitoring: ON")
-    print("📊 Database system: READY")
-    print("🎯 Scan radius: 100 studs")
-    print("⚡ Ready to analyze UUID pet structures!")
-end
+-- (удалено дублирующееся определение startSystem)
 
 -- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
 local function startSystem()
@@ -1123,7 +1090,7 @@ local function startSystem()
     -- Первоначальное сканирование
     spawn(function()
         wait(2) -- Даем время GUI загрузиться
-        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
+        logEvent("🔍 INITIAL_SCAN", "Auto-scan disabled by user request")
         findAndScanNearbyUUIDPets()
     end)
     
