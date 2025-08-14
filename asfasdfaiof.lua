@@ -29,6 +29,29 @@ if not playerChar then
     return
 end
 
+-- Удаляет все связи Handle со старыми объектами, кроме сварки с копией
+local function cleanHandleConstraintsExceptCopy(handle, copyPrimaryPart, originalModel)
+    if not handle then return end
+    for _, obj in ipairs(handle:GetDescendants()) do
+        if obj:IsA("Constraint") or obj:IsA("Weld") or obj:IsA("WeldConstraint") or obj:IsA("Motor6D") then
+            local p0 = obj.Part0 or obj.Attachment0 and obj.Attachment0.Parent
+            local p1 = obj.Part1 or obj.Attachment1 and obj.Attachment1.Parent
+            local keep = (copyPrimaryPart and (p0 == copyPrimaryPart or p1 == copyPrimaryPart))
+            -- Удаляем только те связи, которые соединяют Handle с частями originalModel
+            local remove = false
+            if not keep and originalModel then
+                local other = (p0 == handle) and p1 or ((p1 == handle) and p0 or nil)
+                if other and other:IsDescendantOf(originalModel) then
+                    remove = true
+                end
+            end
+            if remove then
+                obj:Destroy()
+            end
+        end
+    end
+end
+
 local hrp = playerChar:FindFirstChild("HumanoidRootPart")
 if not hrp then
     print("❌ HumanoidRootPart не найден!")
@@ -788,6 +811,13 @@ local function createAnimatedCopyAtPosition(originalPet, targetPosition)
     end
 end
 
+-- Forward declarations for helpers used below (they are defined later in file)
+local removePriorCopies
+local findModelBoundToHandle
+local pickOriginalHandPet
+local waitStableRel
+local detachModelFromHandle
+
 -- === НОВАЯ ФУНКЦИЯ: ЗАМЕНА ПИТОМЦА В РУКЕ (ТОЧНО КАК PetScaler_v3.226.lua) ===
 local function replaceHandPetWithAnimation()
     print("\n✋ === ЗАМЕНА ПИТОМЦА В РУКЕ НА АНИМИРОВАННУЮ КОПИЮ ===")
@@ -807,6 +837,8 @@ local function replaceHandPetWithAnimation()
     end
     
     print("🎯 Найден Tool в руке:", handTool.Name)
+    -- Удаляем предыдущие копии из Tool, чтобы не накапливать weld и массы
+    removePriorCopies(handTool)
     
     -- Шаг 2: НАЙТИ UUID ПИТОМЦА НА ЗЕМЛЕ ДЛЯ КОПИРОВАНИЯ АНИМАЦИЙ
     local petModel = findAndScalePet()
@@ -832,6 +864,12 @@ local function replaceHandPetWithAnimation()
     copyTag.Name = "HandPetCopyTag"
     copyTag.Value = true
     copyTag.Parent = petCopy
+    -- Гарантируем PrimaryPart у копии
+    if not petCopy.PrimaryPart then
+        for _, d in ipairs(petCopy:GetDescendants()) do
+            if d:IsA("BasePart") then petCopy.PrimaryPart = d break end
+        end
+    end
     
     -- Настройки физики копии (без коллизий, без массы)
     for _, p in ipairs(petCopy:GetDescendants()) do
@@ -851,13 +889,16 @@ local function replaceHandPetWithAnimation()
             petCopy:PivotTo(petCopy.PrimaryPart.CFrame)
         end
     else
-        -- Ищем оригинального питомца в Tool для снятия точного относительного оффсета
-        print("🔍 Ищу оригинального питомца в Tool для копирования ПОЗЫ В РУКЕ...")
-        for _, obj in pairs(handTool:GetDescendants()) do
-            if obj:IsA("Model") and obj ~= petCopy then
-                originalHandPet = obj
-                print("✅ Найден оригинальный питомец в руке:", obj.Name)
-                break
+        -- Ищем оригинального питомца в Tool, связанного с Handle (надёжно), для точного оффсета
+        print("🔍 Ищу оригинального питомца, связанного с Handle...")
+        originalHandPet = findModelBoundToHandle(handTool, handle, petCopy)
+        if originalHandPet then
+            print("✅ Найден оригинальный питомец (связан с Handle):", originalHandPet.Name)
+        else
+            print("⚠️ Не удалось найти по связям — попробую эвристический выбор модели")
+            originalHandPet = pickOriginalHandPet(handTool, petCopy)
+            if originalHandPet then
+                print("✅ Выбран кандидат оригинала:", originalHandPet.Name)
             end
         end
 
@@ -871,20 +912,24 @@ local function replaceHandPetWithAnimation()
             end
         end
 
-        -- Вычисляем относительный оффсет rel к Handle
+        -- Вычисляем устойчивый относительный оффсет rel к Handle
         local DEFAULT_HAND_REL = CFrame.new(0, 0.2, -0.6) * CFrame.Angles(0, math.rad(10), 0)
         local rel = DEFAULT_HAND_REL
-        if originalHandPet and originalHandPet.PrimaryPart and petCopy.PrimaryPart then
-            local ok, computed = pcall(function()
-                return handle.CFrame:ToObjectSpace(originalHandPet.PrimaryPart.CFrame)
-            end)
-            if ok and typeof(computed) == "CFrame" then
+        if originalHandPet and petCopy.PrimaryPart then
+            -- подстрахуемся: если нет PrimaryPart у оригинала, установим
+            if not originalHandPet.PrimaryPart then
+                for _, d in ipairs(originalHandPet:GetDescendants()) do
+                    if d:IsA("BasePart") then originalHandPet.PrimaryPart = d break end
+                end
+            end
+            local computed = waitStableRel(handle, originalHandPet, 0.6)
+            if computed and typeof(computed) == "CFrame" then
                 rel = computed
             else
-                print("⚠️ Не удалось вычислить rel, используем дефолтный оффсет")
+                print("⚠️ Не удалось получить стабильный rel — использую дефолтный оффсет")
             end
         else
-            print("⚠️ Нет оригинала/PrimaryPart — используем дефолтный оффсет")
+            print("⚠️ Нет оригинала/PrimaryPart — использую дефолтный оффсет")
         end
 
         -- Ставим копию в точную позу в руке и привариваем к Handle
@@ -895,6 +940,23 @@ local function replaceHandPetWithAnimation()
             weld.Part1 = petCopy.PrimaryPart
             weld.Parent = petCopy.PrimaryPart
             print("🧲 Копия приварена к Handle по снятому оффсету")
+
+            -- Сброс скоростей у копии, чтобы исключить стартовые импульсы
+            for _, p in ipairs(petCopy:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.AssemblyLinearVelocity = Vector3.new()
+                    p.AssemblyAngularVelocity = Vector3.new()
+                    p.Velocity = Vector3.new()
+                    p.RotVelocity = Vector3.new()
+                end
+            end
+
+            -- Критично: отстыковываем оригинал от Handle и чистим лишние связи у Handle,
+            -- чтобы исключить конкурирующие силы и рывки игрока
+            if originalHandPet then
+                detachModelFromHandle(originalHandPet, handle)
+            end
+            cleanHandleConstraintsExceptCopy(handle, petCopy.PrimaryPart)
         else
             print("⚠️ Нет PrimaryPart у копии — позиционирование ограничено")
         end
@@ -954,9 +1016,10 @@ local function replaceHandPetWithAnimation()
     
     print("✅ Исправлено Attachment связей:", fixedCount)
     
-    -- Шаг 5: УМНОЕ УПРАВЛЕНИЕ ANCHORED ДЛЯ КОПИИ В РУКЕ (КАК В PetScaler_v3.226.lua)
-    print("🧠 Настройка Anchored для копии в руке...")
-    local copyParts = getAllParts(petCopy)
+    -- Шаг 5: УМНОЕ УПРАВЛЕНИЕ ANCHORED
+    -- Всегда убеждаемся, что части копии не Anchored, чтобы они следовали за Handle через WeldConstraint
+    do
+        local copyParts = getAllParts(petCopy)
     
     -- Находим корневую часть для якорения (точно как в PetScaler_v3.226.lua)
     local rootPart = nil
@@ -980,11 +1043,15 @@ local function replaceHandPetWithAnimation()
     end
     
     -- КРИТИЧНО: Все части свободны для анимации И следования за рукой
-    for _, part in ipairs(copyParts) do
-        part.Anchored = false -- Все части свободны для движения с рукой
+        for _, part in ipairs(copyParts) do
+            part.Anchored = false
+        end
+        if petCopy:IsDescendantOf(handTool) then
+            print("✅ Anchored отключен для копии в Tool (следует за Handle)")
+        else
+            print("✅ Anchored отключен для копии рядом с игроком")
+        end
     end
-    
-    print("✅ Anchored настроен: все части свободны для следования за рукой")
     
     -- Шаг 6: ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ОТ ОРИГИНАЛА НА ЗЕМЛЕ К КОПИИ В РУКЕ
     print("\n🎭 === ПЕРЕДАЧА MOTOR6D АНИМАЦИЙ ===")
@@ -1662,7 +1729,7 @@ local function isPetReady(tool)
 end
 
 -- Находит наиболее вероятную исходную модель питомца внутри Tool (исключая копию)
-local function pickOriginalHandPet(handTool, excludeModel)
+pickOriginalHandPet = function(handTool, excludeModel)
     if not handTool then return nil end
     local best, bestScore = nil, -math.huge
     local handle = handTool:FindFirstChild("Handle")
@@ -1694,14 +1761,15 @@ local function pickOriginalHandPet(handTool, excludeModel)
 end
 
 -- Ждёт стабилизации относительного оффсета между Handle и моделью питомца
-local function waitStableRel(handle, model, maxTime)
-    if not handle or not model or not model.PrimaryPart then return nil end
+waitStableRel = function(handle, model, maxTime)
+    if not handle or not model then return nil end
     maxTime = maxTime or 0.6
     local t0 = os.clock()
     local prevRel, stableCount = nil, 0
     while os.clock() - t0 < maxTime do
         local ok, rel = pcall(function()
-            return handle.CFrame:ToObjectSpace(model.PrimaryPart.CFrame)
+            local pivot = model:GetPivot()
+            return handle.CFrame:ToObjectSpace(pivot)
         end)
         if not ok then break end
         if prevRel then
@@ -1721,6 +1789,77 @@ local function waitStableRel(handle, model, maxTime)
         task.wait(0.05)
     end
     return prevRel
+end
+
+-- Находит модель, физически связную с Handle (через Weld/Motor/Constraint)
+findModelBoundToHandle = function(handTool, handle, excludeModel)
+    if not handTool or not handle then return nil end
+    local function getModel(part)
+        return part and part:FindFirstAncestorOfClass("Model") or nil
+    end
+    for _, obj in ipairs(handTool:GetDescendants()) do
+        if obj:IsA("Constraint") or obj:IsA("Weld") or obj:IsA("WeldConstraint") or obj:IsA("Motor6D") then
+            local p0 = obj.Part0 or obj.Attachment0 and obj.Attachment0.Parent
+            local p1 = obj.Part1 or obj.Attachment1 and obj.Attachment1.Parent
+            if p0 == handle or p1 == handle then
+                local other = (p0 == handle) and p1 or p0
+                local mdl = getModel(other)
+                if mdl
+                   and mdl ~= excludeModel
+                   and not (excludeModel and mdl:IsDescendantOf(excludeModel))
+                   and mdl:IsDescendantOf(handTool) -- только модели внутри Tool
+                   and mdl ~= handTool then
+                    -- гарантируем PrimaryPart для стабильных вычислений
+                    if not mdl.PrimaryPart then
+                        for _, d in ipairs(mdl:GetDescendants()) do
+                            if d:IsA("BasePart") then mdl.PrimaryPart = d break end
+                        end
+                    end
+                    return mdl
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Полностью отсоединяет модель от Handle и гасит физику, чтобы не дёргала игрока
+detachModelFromHandle = function(model, handle)
+    if not model then return end
+    for _, obj in ipairs(model:GetDescendants()) do
+        if obj:IsA("Constraint") or obj:IsA("Weld") or obj:IsA("WeldConstraint") or obj:IsA("Motor6D") then
+            local p0 = obj.Part0 or obj.Attachment0 and obj.Attachment0.Parent
+            local p1 = obj.Part1 or obj.Attachment1 and obj.Attachment1.Parent
+            if p0 == handle or p1 == handle then
+                obj:Destroy()
+            end
+        end
+    end
+    for _, p in ipairs(model:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.Anchored = true
+            p.CanCollide = false
+            p.Massless = true
+            p.AssemblyLinearVelocity = Vector3.new()
+            p.AssemblyAngularVelocity = Vector3.new()
+            p.Velocity = Vector3.new()
+            p.RotVelocity = Vector3.new()
+        elseif p:IsA("Decal") then
+            p.Transparency = 1
+        elseif p:IsA("Beam") or p:IsA("ParticleEmitter") or p:IsA("Trail") then
+            p.Enabled = false
+        end
+    end
+end
+
+-- Удаляет предыдущие копии в Tool, чтобы не было нескольких сварок
+removePriorCopies = function(handTool)
+    if not handTool then return end
+    for _, m in ipairs(handTool:GetChildren()) do
+        if m:IsA("Model") and m:FindFirstChild("HandPetCopyTag") then
+            m:Destroy()
+        end
+    end
 end
 
 local function disconnectAll()
