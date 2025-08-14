@@ -13,6 +13,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 -- Глобальные переменные
 local gui = nil
+local autoStartMonitoring = false -- конфиг: автоскан при запуске отключен
 local consoleOutput = {}
 local petDatabase = {} -- База данных отсканированных питомцев
 local scriptRunning = true
@@ -65,6 +66,143 @@ local function logEvent(eventType, message, data)
                 consoleFrame.CanvasPosition = Vector2.new(0, math.max(0, textHeight - consoleFrame.AbsoluteSize.Y + 100))
             end
         end)
+    end
+end
+
+-- === ПРЕДВАРИТЕЛЬНОЕ ОБЪЯВЛЕНИЕ ФУНКЦИЙ ДЛЯ GUI ===
+
+-- Функция поиска и сканирования UUID питомцев рядом с игроком (ПЕРЕНЕСЕНА СЮДА)
+local function findAndScanNearbyUUIDPets()
+    if not scriptRunning then return end
+    
+    logEvent("🔍 SEARCH", "Searching for UUID pets near player...")
+    
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ ERROR", "Player character or HumanoidRootPart not found")
+        return
+    end
+    
+    local playerPosition = playerChar.HumanoidRootPart.Position
+    local foundPets = {}
+    local searchRadius = 100 -- 100 стадов радиус поиска
+    
+    -- Ищем UUID модели в Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if not scriptRunning then break end
+        
+        if obj:IsA("Model") and isUUIDName(obj.Name) then
+            local success, modelCFrame = pcall(function() 
+                return obj:GetModelCFrame() 
+            end)
+            
+            if success then
+                local distance = (modelCFrame.Position - playerPosition).Magnitude
+                
+                if distance <= searchRadius then
+                    table.insert(foundPets, {
+                        model = obj,
+                        distance = distance,
+                        name = obj.Name
+                    })
+                end
+            end
+        end
+    end
+    
+    -- Сортируем по расстоянию
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    
+    logEvent("🎯 SEARCH_RESULT", "Found " .. #foundPets .. " UUID pets within " .. searchRadius .. " studs")
+    
+    -- Сканируем найденных питомцев (синхронно, чтобы база заполнилась до завершения функции)
+    for i, petInfo in ipairs(foundPets) do
+        if not scriptRunning then break end
+        
+        logEvent("🔬 SCANNING", "Pet " .. i .. "/" .. #foundPets, {
+            Name = petInfo.name,
+            Distance = string.format("%.1f studs", petInfo.distance)
+        })
+        
+        if scanUUIDPet then
+            local success, err = pcall(scanUUIDPet, petInfo.model)
+            if success then
+                logEvent("✅ SCAN_SUCCESS", "Pet scanned successfully", { PetName = petInfo.name })
+            else
+                logEvent("❌ SCAN_ERROR", "Failed to scan pet: " .. tostring(err), { PetName = petInfo.name })
+            end
+        else
+            logEvent("⚠️ SCAN_SKIP", "scanUUIDPet function not available yet", { PetName = petInfo.name })
+        end
+        
+        wait(0.05)
+    end
+    
+    -- Подсчитываем размер базы данных правильно
+    local databaseSize = 0
+    for _ in pairs(petDatabase) do
+        databaseSize = databaseSize + 1
+    end
+    
+    logEvent("✅ SCAN_COMPLETE", "All nearby UUID pets scanned successfully", {
+        TotalScanned = #foundPets,
+        DatabaseSize = databaseSize
+    })
+end
+
+-- Функция воссоздания ближайшего питомца из базы (ПЕРЕНЕСЕНА СЮДА)
+local function recreateNearestPet()
+    if not scriptRunning then return end
+    
+    -- Подсчитываем размер базы данных правильно
+    local databaseSize = 0
+    for _ in pairs(petDatabase) do
+        databaseSize = databaseSize + 1
+    end
+    
+    if databaseSize == 0 then
+        logEvent("⚠️ RECREATE_WARNING", "Pet database is empty! Scan some pets first.", {
+            DatabaseSize = databaseSize
+        })
+        return
+    end
+    
+    logEvent("📊 DATABASE_STATUS", "Database contains pets", {
+        DatabaseSize = databaseSize
+    })
+    
+    -- Находим первого питомца в базе
+    local petName = next(petDatabase)
+    
+    -- Позиция рядом с игроком
+    local playerChar = player.Character
+    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
+        logEvent("❌ RECREATE_ERROR", "Player character not found")
+        return
+    end
+    
+    local playerPos = playerChar.HumanoidRootPart.Position
+    local spawnPos = playerPos + Vector3.new(5, 0, 5) -- 5 стадов от игрока
+    
+    logEvent("🚀 RECREATE_ATTEMPT", "Attempting to recreate pet", {
+        PetName = petName,
+        SpawnPosition = tostring(spawnPos)
+    })
+    
+    -- Вызываем функцию воссоздания (будет объявлена позже)
+    if recreatePetFromDatabase then
+        local recreatedPet = recreatePetFromDatabase(petName, spawnPos)
+        
+        if recreatedPet then
+            logEvent("🎉 RECREATE_COMPLETE", "Pet successfully recreated from database!")
+            return recreatedPet
+        else
+            logEvent("❌ RECREATE_FAILED", "Failed to recreate pet from database")
+            return nil
+        end
+    else
+        logEvent("❌ RECREATE_ERROR", "Recreation function not available yet")
+        return nil
     end
 end
 
@@ -235,10 +373,9 @@ local function createModernGUI()
         logEvent("🔍 SCAN", "Starting pet structure scan...")
         scanButton.Text = "⏳ SCANNING..."
         
-        spawn(function()
-            findAndScanNearbyUUIDPets()
-            scanButton.Text = "🔍 SCAN PETS"
-        end)
+        findAndScanNearbyUUIDPets()
+        
+        scanButton.Text = "🔍 SCAN PETS"
     end)
     
     createButton.MouseButton1Click:Connect(function()
@@ -264,22 +401,85 @@ local function createModernGUI()
     end)
     
     copyButton.MouseButton1Click:Connect(function()
-        logEvent("📋 COPY", "Copying console to clipboard...")
-        copyButton.Text = "⏳ COPYING..."
+        logEvent("📋 COPY", "Preparing console text for manual copy...")
+        copyButton.Text = "⏳ PREPARING..."
         
-        spawn(function()
-            local consoleData = table.concat(consoleOutput, "\n")
-            -- В Roblox нет прямого доступа к clipboard, но можем показать данные
-            logEvent("📋 COPY", "Console data ready for manual copy:")
-            logEvent("📋 DATA", "=== CONSOLE EXPORT START ===")
-            for _, line in ipairs(consoleOutput) do
-                print(line) -- Выводим в консоль для копирования
-            end
-            logEvent("📋 DATA", "=== CONSOLE EXPORT END ===")
-            
-            wait(2)
+        local screenGui = gui or playerGui:FindFirstChild("PetStructureAnalyzerGUI")
+        if not screenGui then
             copyButton.Text = "📋 COPY CONSOLE"
-        end)
+            return
+        end
+        
+        -- Создаем/показываем окно копирования с TextBox
+        local copyFrame = screenGui:FindFirstChild("CopyDialog")
+        if not copyFrame then
+            copyFrame = Instance.new("Frame")
+            copyFrame.Name = "CopyDialog"
+            copyFrame.Size = UDim2.new(0.8, 0, 0.6, 0)
+            copyFrame.Position = UDim2.new(0.1, 0, 0.2, 0)
+            copyFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+            copyFrame.BorderSizePixel = 0
+            copyFrame.Parent = screenGui
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 10)
+            corner.Parent = copyFrame
+            
+            local title = Instance.new("TextLabel")
+            title.Name = "Title"
+            title.Size = UDim2.new(1, -10, 0, 30)
+            title.Position = UDim2.new(0, 5, 0, 5)
+            title.BackgroundTransparency = 1
+            title.Text = "📋 Console Export (Ctrl+A then Ctrl+C)"
+            title.TextColor3 = Color3.fromRGB(255, 255, 255)
+            title.Font = Enum.Font.GothamBold
+            title.TextSize = 16
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = copyFrame
+            
+            local textBox = Instance.new("TextBox")
+            textBox.Name = "CopyText"
+            textBox.Size = UDim2.new(1, -10, 1, -50)
+            textBox.Position = UDim2.new(0, 5, 0, 40)
+            textBox.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+            textBox.TextColor3 = Color3.fromRGB(200, 255, 200)
+            textBox.ClearTextOnFocus = false
+            textBox.MultiLine = true
+            textBox.TextXAlignment = Enum.TextXAlignment.Left
+            textBox.TextYAlignment = Enum.TextYAlignment.Top
+            textBox.TextWrapped = false
+            textBox.Font = Enum.Font.RobotoMono
+            textBox.TextSize = 12
+            textBox.Parent = copyFrame
+            
+            local closeBtn = Instance.new("TextButton")
+            closeBtn.Name = "Close"
+            closeBtn.Size = UDim2.new(0, 100, 0, 30)
+            closeBtn.Position = UDim2.new(1, -110, 1, -40)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            closeBtn.TextColor3 = Color3.new(1, 1, 1)
+            closeBtn.Text = "Close"
+            closeBtn.Font = Enum.Font.GothamBold
+            closeBtn.TextSize = 14
+            closeBtn.Parent = copyFrame
+            
+            closeBtn.MouseButton1Click:Connect(function()
+                copyFrame.Visible = false
+            end)
+        end
+        
+        -- Обновляем текст и фокус
+        local textBox = copyFrame:FindFirstChild("CopyText")
+        local data = table.concat(consoleOutput, "\n")
+        textBox.Text = data
+        copyFrame.Visible = true
+        
+        textBox:CaptureFocus()
+        textBox.SelectionStart = 1
+        textBox.CursorPosition = #data + 1
+        
+        copyButton.Text = "📋 COPY CONSOLE"
+        logEvent("✅ COPY_READY", "Text ready in CopyDialog; use Ctrl+A then Ctrl+C")
     end)
     
     clearButton.MouseButton1Click:Connect(function()
@@ -501,7 +701,16 @@ local function scanUUIDPet(petModel)
         className = petModel.ClassName,
         primaryPart = petModel.PrimaryPart and petModel.PrimaryPart.Name or "nil",
         scanTime = os.date("%Y-%m-%d %H:%M:%S"),
-        position = petModel:GetModelCFrame().Position
+        position = (function()
+            local ok, cf = pcall(function()
+                return petModel:GetModelCFrame()
+            end)
+            if ok and cf then
+                return cf.Position
+            end
+            local pp = petModel.PrimaryPart
+            return pp and pp.Position or Vector3.new()
+        end)()
     }
     
     -- Сканируем Motor6D
@@ -543,70 +752,7 @@ local function scanUUIDPet(petModel)
     return petData
 end
 
--- Функция поиска и сканирования UUID питомцев рядом с игроком
-local function findAndScanNearbyUUIDPets()
-    if not scriptRunning then return end
-    
-    logEvent("🔍 SEARCH", "Searching for UUID pets near player...")
-    
-    local playerChar = player.Character
-    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
-        logEvent("❌ ERROR", "Player character or HumanoidRootPart not found")
-        return
-    end
-    
-    local playerPosition = playerChar.HumanoidRootPart.Position
-    local foundPets = {}
-    local searchRadius = 100 -- 100 стадов радиус поиска
-    
-    -- Ищем UUID модели в Workspace
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if not scriptRunning then break end
-        
-        if obj:IsA("Model") and isUUIDName(obj.Name) then
-            local success, modelCFrame = pcall(function() 
-                return obj:GetModelCFrame() 
-            end)
-            
-            if success then
-                local distance = (modelCFrame.Position - playerPosition).Magnitude
-                
-                if distance <= searchRadius then
-                    table.insert(foundPets, {
-                        model = obj,
-                        distance = distance,
-                        name = obj.Name
-                    })
-                end
-            end
-        end
-    end
-    
-    -- Сортируем по расстоянию
-    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
-    
-    logEvent("🎯 SEARCH_RESULT", "Found " .. #foundPets .. " UUID pets within " .. searchRadius .. " studs")
-    
-    -- Сканируем найденных питомцев
-    for i, petInfo in ipairs(foundPets) do
-        if not scriptRunning then break end
-        
-        logEvent("🔬 SCANNING", "Pet " .. i .. "/" .. #foundPets, {
-            Name = petInfo.name,
-            Distance = string.format("%.1f studs", petInfo.distance)
-        })
-        
-        local petData = scanUUIDPet(petInfo.model)
-        
-        -- Небольшая пауза между сканированиями
-        wait(0.1)
-    end
-    
-    logEvent("✅ SCAN_COMPLETE", "All nearby UUID pets scanned successfully", {
-        TotalScanned = #foundPets,
-        DatabaseSize = #petDatabase
-    })
-end
+
 
 -- Функция экспорта базы данных питомцев
 local function exportPetDatabase()
@@ -884,7 +1030,13 @@ local function recreatePetFromDatabase(petName, position)
     
     -- Позиционируем модель
     if position and model.PrimaryPart then
-        model:SetPrimaryPartCFrame(CFrame.new(position))
+        pcall(function()
+            if model.PivotTo then
+                model:PivotTo(CFrame.new(position))
+            else
+                model:SetPrimaryPartCFrame(CFrame.new(position))
+            end
+        end)
     end
     
     -- Размещаем в Workspace
@@ -901,43 +1053,7 @@ local function recreatePetFromDatabase(petName, position)
     return model
 end
 
--- Функция воссоздания ближайшего питомца из базы
-local function recreateNearestPet()
-    if not scriptRunning then return end
-    
-    if next(petDatabase) == nil then
-        logEvent("⚠️ RECREATE_WARNING", "Pet database is empty! Scan some pets first.")
-        return
-    end
-    
-    -- Находим первого питомца в базе
-    local petName = next(petDatabase)
-    
-    -- Позиция рядом с игроком
-    local playerChar = player.Character
-    if not playerChar or not playerChar:FindFirstChild("HumanoidRootPart") then
-        logEvent("❌ RECREATE_ERROR", "Player character not found")
-        return
-    end
-    
-    local playerPos = playerChar.HumanoidRootPart.Position
-    local spawnPos = playerPos + Vector3.new(5, 0, 5) -- 5 стадов от игрока
-    
-    logEvent("🚀 RECREATE_ATTEMPT", "Attempting to recreate pet", {
-        PetName = petName,
-        SpawnPosition = tostring(spawnPos)
-    })
-    
-    local recreatedPet = recreatePetFromDatabase(petName, spawnPos)
-    
-    if recreatedPet then
-        logEvent("🎉 RECREATE_COMPLETE", "Pet successfully recreated from database!")
-        return recreatedPet
-    else
-        logEvent("❌ RECREATE_FAILED", "Failed to recreate pet from database")
-        return nil
-    end
-end
+-- (удалено дублирующееся определение recreateNearestPet)
 
 -- === ИНИЦИАЛИЗАЦИЯ И АВТОЗАПУСК ===
 
@@ -968,8 +1084,15 @@ local function startAutoMonitoring()
                                     Name = child.Name,
                                     Distance = string.format("%.1f studs", distance)
                                 })
-                                scanUUIDPet(child)
+                                local ok, err = pcall(function()
+                                    scanUUIDPet(child)
+                                end)
+                                if not ok then
+                                    logEvent("❌ AUTO_SCAN_ERROR", tostring(err) or "unknown error")
+                                end
                             end
+                        else
+                            logEvent("❌ MODEL_CFRAME_ERROR", tostring(modelCFrame) or "unknown error")
                         end
                     end
                 end
@@ -999,6 +1122,8 @@ local function startAutoMonitoring()
     })
 end
 
+-- (удалено дублирующееся определение startSystem)
+
 -- Запуск системы (КАК В РАБОЧЕМ СКРИПТЕ)
 local function startSystem()
     print("🚀 Запуск Pet Structure Analyzer v4.0...")
@@ -1011,15 +1136,12 @@ local function startSystem()
         return
     end
     
-    -- Запускаем автоматический мониторинг
-    startAutoMonitoring()
-    
-    -- Первоначальное сканирование
-    spawn(function()
-        wait(2) -- Даем время GUI загрузиться
-        logEvent("🔍 INITIAL_SCAN", "Performing initial UUID pet scan...")
-        findAndScanNearbyUUIDPets()
-    end)
+    -- Автоскан при запуске отключен по запросу пользователя
+    if autoStartMonitoring then
+        startAutoMonitoring()
+    else
+        logEvent("🛑 AUTO_SCAN_DISABLED", "Auto-scan at startup is disabled")
+    end
     
     logEvent("🎉 SYSTEM_READY", "Pet Structure Analyzer v4.0 is fully operational!", {
         GUI = "Modern interface loaded",
