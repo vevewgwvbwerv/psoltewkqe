@@ -1,368 +1,574 @@
-local StarterGui = game:GetService("StarterGui")
+-- 🔍 PET ANALYZER - Анализатор питомцев для Grow a Garden
+-- Анализирует UUID питомцев рядом с игроком и показывает детальную информацию
+
 local Players = game:GetService("Players")
-
--- Wait for game to load
-if not game:IsLoaded() then
-	game.Loaded:Wait()
-end
-
-task.wait(1)
-
--- Notification
-pcall(function()
-	StarterGui:SetCore("SendNotification", {
-		Title = "📢 Adrian Scripts Notice",
-		Text = "You Must Subscribe And Click Bell Button To See The Latest Script\nOn My YouTube: AdrianCrafts / AdrianScripts",
-		Duration = 10
-	})
-end)
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
 
--- MAIN GUI HOLDER
-local mainGui = Instance.new("ScreenGui", playerGui)
-mainGui.Name = "AdrianScriptsMain"
-mainGui.ResetOnSpawn = false
+print("🔍 === PET ANALYZER - Анализатор питомцев ===")
 
--- TOGGLE FRAME
-local toggleFrame = Instance.new("Frame", mainGui)
-toggleFrame.Size = UDim2.new(0, 130, 0, 110)
-toggleFrame.Position = UDim2.new(0, 20, 0.4, 0)
-toggleFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-toggleFrame.BorderSizePixel = 0
-toggleFrame.Active = true
-toggleFrame.Draggable = true
-Instance.new("UICorner", toggleFrame).CornerRadius = UDim.new(0, 10)
-
--- Toggle Button Creator
-local function createToggleButton(text, color, posY)
-	local btn = Instance.new("TextButton", toggleFrame)
-	btn.Size = UDim2.new(1, -10, 0, 30)
-	btn.Position = UDim2.new(0, 5, 0, posY)
-	btn.Text = text
-	btn.BackgroundColor3 = color
-	btn.TextColor3 = Color3.new(1, 1, 1)
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 14
-	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-	return btn
-end
-
-local toggleSpawner = createToggleButton("🐾 Pet Spawner", Color3.fromRGB(0, 170, 127), 5)
-local toggleDupe = createToggleButton("🌀 Pet Dupe", Color3.fromRGB(65, 130, 65), 40)
-local showListBtn = createToggleButton("📋 Show Pet List", Color3.fromRGB(100, 100, 180), 75)
-
--- PET SPAWNER GUI
-local petSpawner = Instance.new("ScreenGui", playerGui)
-petSpawner.Name = "PetSpawnerGUI"
-petSpawner.Enabled = false
-
-local frame = Instance.new("Frame", petSpawner)
-frame.Position = UDim2.new(0.5, -125, 0.5, -110)
-frame.Size = UDim2.new(0, 250, 0, 220)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.Active = true
-frame.Draggable = true
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
-
-local closeBtn1 = Instance.new("TextButton", frame)
-closeBtn1.Size = UDim2.new(0, 30, 0, 30)
-closeBtn1.Position = UDim2.new(1, -35, 0, 5)
-closeBtn1.Text = "❌"
-closeBtn1.TextColor3 = Color3.new(1, 0.4, 0.4)
-closeBtn1.BackgroundTransparency = 1
-closeBtn1.Font = Enum.Font.GothamBold
-closeBtn1.TextSize = 20
-closeBtn1.MouseButton1Click:Connect(function()
-	petSpawner.Enabled = false
-end)
-
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, 0, 0, 30)
-title.Text = "🐾 Pet Spawner"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.BackgroundTransparency = 1
-title.TextScaled = true
-title.Font = Enum.Font.GothamBold
-
-local function createLabel(text, y)
-	local label = Instance.new("TextLabel", frame)
-	label.Position = UDim2.new(0, 10, 0, y)
-	label.Size = UDim2.new(0, 200, 0, 15)
-	label.Text = text
-	label.BackgroundTransparency = 1
-	label.TextColor3 = Color3.fromRGB(200, 200, 200)
-	label.TextSize = 12
-	label.Font = Enum.Font.Gotham
-	label.TextXAlignment = Enum.TextXAlignment.Left
-end
-
-local function createBox(placeholder, y)
-	local box = Instance.new("TextBox", frame)
-	box.Position = UDim2.new(0, 10, 0, y)
-	box.Size = UDim2.new(0.9, 0, 0, 25)
-	box.PlaceholderText = placeholder
-	box.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-	box.TextColor3 = Color3.fromRGB(255, 255, 255)
-	box.Font = Enum.Font.Gotham
-	box.TextSize = 14
-	box.Text = ""
-	Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
-	return box
-end
-
-createLabel("Pet Name", 35)
-local nameBox = createBox("e.g. Raccoon", 50)
-
-createLabel("Age", 80)
-local ageBox = createBox("e.g. 3", 95)
-
-createLabel("KG", 125)
-local kgBox = createBox("e.g. 5.4", 140)
-
-local notify = Instance.new("TextLabel", frame)
-notify.Position = UDim2.new(0, 10, 0, 170)
-notify.Size = UDim2.new(0.9, 0, 0, 20)
-notify.BackgroundTransparency = 1
-notify.Text = ""
-notify.TextColor3 = Color3.fromRGB(255, 255, 0)
-notify.TextScaled = true
-notify.Font = Enum.Font.GothamBold
-
-local spawnBtn = Instance.new("TextButton", frame)
-spawnBtn.Position = UDim2.new(0, 10, 0, 190)
-spawnBtn.Size = UDim2.new(0.9, 0, 0, 25)
-spawnBtn.Text = "Spawn Pet"
-spawnBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 127)
-spawnBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-spawnBtn.TextScaled = true
-spawnBtn.Font = Enum.Font.GothamBold
-Instance.new("UICorner", spawnBtn).CornerRadius = UDim.new(0, 6)
-
-spawnBtn.MouseButton1Click:Connect(function()
-	local message = "Bypassing... spawning your pet. This may take a few minutes, please wait patiently."
-	notify.Text = message
-	StarterGui:SetCore("SendNotification", {
-		Title = "Pet Spawner",
-		Text = message,
-		Duration = 5
-	})
-end)
-
--- PET DUPE GUI
-local petDupe = Instance.new("ScreenGui", playerGui)
-petDupe.Name = "GrowAGardenPetDupe"
-petDupe.Enabled = false
-
-local dupeFrame = Instance.new("Frame", petDupe)
-dupeFrame.Size = UDim2.new(0, 250, 0, 210)
-dupeFrame.Position = UDim2.new(0.5, -125, 0.5, -105)
-dupeFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-dupeFrame.Active = true
-dupeFrame.Draggable = true
-Instance.new("UICorner", dupeFrame).CornerRadius = UDim.new(0, 10)
-
-local closeBtn2 = Instance.new("TextButton", dupeFrame)
-closeBtn2.Size = UDim2.new(0, 30, 0, 30)
-closeBtn2.Position = UDim2.new(1, -35, 0, 5)
-closeBtn2.Text = "❌"
-closeBtn2.TextColor3 = Color3.new(1, 0.4, 0.4)
-closeBtn2.BackgroundTransparency = 1
-closeBtn2.Font = Enum.Font.GothamBold
-closeBtn2.TextSize = 20
-closeBtn2.MouseButton1Click:Connect(function()
-	petDupe.Enabled = false
-end)
-
-local title2 = Instance.new("TextLabel", dupeFrame)
-title2.Size = UDim2.new(1, 0, 0, 40)
-title2.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-title2.Text = "🐾 GAG Pet Dupe"
-title2.TextColor3 = Color3.new(1, 1, 1)
-title2.Font = Enum.Font.GothamBold
-title2.TextSize = 18
-Instance.new("UICorner", title2).CornerRadius = UDim.new(0, 10)
-
-local input = Instance.new("TextBox", dupeFrame)
-input.PlaceholderText = "Type pet name here..."
-input.Size = UDim2.new(0.9, 0, 0, 35)
-input.Position = UDim2.new(0.05, 0, 0, 50)
-input.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-input.TextColor3 = Color3.new(1, 1, 1)
-input.Font = Enum.Font.Gotham
-input.TextSize = 14
-Instance.new("UICorner", input).CornerRadius = UDim.new(0, 6)
-
-local status = Instance.new("TextLabel", dupeFrame)
-status.Size = UDim2.new(1, -20, 0, 40)
-status.Position = UDim2.new(0, 10, 0, 90)
-status.Text = "Please put a pet name / make sure you have it"
-status.BackgroundTransparency = 1
-status.TextColor3 = Color3.new(1, 1, 1)
-status.Font = Enum.Font.Gotham
-status.TextSize = 13
-status.TextWrapped = true
-status.TextYAlignment = Enum.TextYAlignment.Center
-
-local dupeBtn = Instance.new("TextButton", dupeFrame)
-dupeBtn.Size = UDim2.new(0.9, 0, 0, 35)
-dupeBtn.Position = UDim2.new(0.05, 0, 0, 140)
-dupeBtn.BackgroundColor3 = Color3.fromRGB(65, 130, 65)
-dupeBtn.Text = "Dupe Pet"
-dupeBtn.TextColor3 = Color3.new(1, 1, 1)
-dupeBtn.Font = Enum.Font.GothamBold
-dupeBtn.TextSize = 15
-Instance.new("UICorner", dupeBtn).CornerRadius = UDim.new(0, 6)
-
--- ✅ Fixed: Added missing commas
-local validPets = {
-	["Dragonfly"] = true,
-	["Raccoon"] = true,
-	["Disco Bee"] = true,
-	["Butterfly"] = true,
-	["Queen Bee"] = true,
-	["Mimic Octopus"] = true,
-	["T-Rex"] = true,
-	["Kitsune"] = true
+-- Конфигурация
+local CONFIG = {
+    SEARCH_RADIUS = 100,
+    MAX_ANALYZED_PETS = 10
 }
 
-input:GetPropertyChangedSignal("Text"):Connect(function()
-	local pet = input.Text:match("^%s*(.-)%s*$")
-	if pet == "" then
-		status.Text = "Please put a pet name / make sure you have it"
-	elseif validPets[pet] then
-		status.Text = "Pet Found"
-	else
-		status.Text = "Pet not found / unsupported"
-	end
-end)
+-- Хранилище проанализированных питомцев
+local analyzedPets = {}
 
-dupeBtn.MouseButton1Click:Connect(function()
-	local petName = input.Text:match("^%s*(.-)%s*$")
-	if validPets[petName] then
-		status.Text = "Please wait... The pet is duping"
-		StarterGui:SetCore("SendNotification", {
-			Title = "Grow A Garden",
-			Text = "Bypassing... your pet is duping ✅",
-			Duration = 4
-		})
-	else
-		status.Text = "Pet not found / unsupported"
-		StarterGui:SetCore("SendNotification", {
-			Title = "Grow A Garden",
-			Text = "You don't have this supported pet. Duplication won't work.",
-			Duration = 4
-		})
-	end
-end)
+-- === ФУНКЦИИ ПОИСКА UUID ПИТОМЦЕВ (ИЗ FutureBestVisual.lua) ===
 
--- SUPPORTED PET LIST
-local function createPetList()
-	local welcomeGui = Instance.new("ScreenGui", playerGui)
-	welcomeGui.Name = "PetDupeWelcome"
-	welcomeGui.ResetOnSpawn = false
-
-	local popup = Instance.new("Frame", welcomeGui)
-	popup.Size = UDim2.new(0, 330, 0, 260)
-	popup.Position = UDim2.new(0.5, -165, 0.5, -130)
-	popup.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-	popup.Active = true
-	popup.Draggable = true
-	Instance.new("UICorner", popup).CornerRadius = UDim.new(0, 12)
-
-	local closeBtn = Instance.new("TextButton", popup)
-	closeBtn.Size = UDim2.new(0, 30, 0, 30)
-	closeBtn.Position = UDim2.new(1, -35, 0, 5)
-	closeBtn.Text = "❌"
-	closeBtn.TextColor3 = Color3.new(1, 0.4, 0.4)
-	closeBtn.BackgroundTransparency = 1
-	closeBtn.Font = Enum.Font.GothamBold
-	closeBtn.TextSize = 20
-	closeBtn.MouseButton1Click:Connect(function()
-		welcomeGui:Destroy()
-	end)
-
-	local title = Instance.new("TextLabel", popup)
-	title.Size = UDim2.new(1, -40, 0, 30)
-	title.Position = UDim2.new(0, 10, 0, 10)
-	title.Text = "📋 Supported Pets for Duping"
-	title.TextColor3 = Color3.new(1, 1, 1)
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBold
-	title.TextSize = 16
-	title.TextXAlignment = Enum.TextXAlignment.Left
-
-	local petList = Instance.new("TextLabel", popup)
-	petList.Size = UDim2.new(1, -20, 0, 150)
-	petList.Position = UDim2.new(0, 10, 0, 50)
-	petList.Text = [[
-🦝 Raccoon
-🐉 Dragonfly
-🐝🪩 Disco Bee
-🐝 Queen Bee
-🦋 Butterfly
-🐙 Mimic Octopus
-🦖 T-Rex
-🌸 Kitsune
-
-🎁 Join our Discord to win 20x Raccoon!
-]]
-	petList.TextColor3 = Color3.new(1, 1, 1)
-	petList.BackgroundTransparency = 1
-	petList.Font = Enum.Font.Gotham
-	petList.TextSize = 14
-	petList.TextWrapped = true
-	petList.TextYAlignment = Enum.TextYAlignment.Top
-	petList.TextXAlignment = Enum.TextXAlignment.Left
-
-	local copyBtn = Instance.new("TextButton", popup)
-	copyBtn.Size = UDim2.new(0.9, 0, 0, 35)
-	copyBtn.Position = UDim2.new(0.05, 0, 1, -45)
-	copyBtn.BackgroundColor3 = Color3.fromRGB(65, 130, 65)
-	copyBtn.Text = "📎 Copy Discord Link"
-	copyBtn.TextColor3 = Color3.new(1, 1, 1)
-	copyBtn.Font = Enum.Font.GothamBold
-	copyBtn.TextSize = 15
-	Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 6)
-
-	copyBtn.MouseButton1Click:Connect(function()
-		local success = pcall(function()
-			setclipboard("https://discord.gg/admtDBsuXM")
-		end)
-		if success then
-			StarterGui:SetCore("SendNotification", {
-				Title = "Discord Copied!",
-				Text = "Invite link copied to clipboard ✅",
-				Duration = 3
-			})
-		else
-			StarterGui:SetCore("SendNotification", {
-				Title = "Failed",
-				Text = "Clipboard not supported ⚠️",
-				Duration = 3
-			})
-		end
-	end)
+-- Функция проверки визуальных элементов питомца
+local function hasPetVisuals(model)
+    local visualCount = 0
+    
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            visualCount = visualCount + 1
+        elseif obj:IsA("Part") then
+            local hasDecal = obj:FindFirstChildOfClass("Decal")
+            local hasTexture = obj:FindFirstChildOfClass("Texture")
+            if hasDecal or hasTexture or obj.Material ~= Enum.Material.Plastic then
+                visualCount = visualCount + 1
+            end
+        elseif obj:IsA("UnionOperation") then
+            visualCount = visualCount + 1
+        end
+    end
+    
+    if visualCount == 0 then
+        local partCount = 0
+        for _, obj in pairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                partCount = partCount + 1
+            end
+        end
+        if partCount >= 2 then
+            visualCount = partCount
+        end
+    end
+    
+    return visualCount > 0
 end
 
--- Show pet list on start
-createPetList()
+-- Функция поиска ближайшего UUID питомца (СКОПИРОВАНО ИЗ FutureBestVisual.lua)
+local function findClosestUUIDPet()
+    print("🔍 Поиск UUID моделей питомцев...")
+    
+    local playerChar = player.Character
+    if not playerChar then
+        return nil
+    end
 
--- TOGGLE HANDLERS
-toggleSpawner.MouseButton1Click:Connect(function()
-	petSpawner.Enabled = not petSpawner.Enabled
-end)
+    local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return nil
+    end
 
-toggleDupe.MouseButton1Click:Connect(function()
-	petDupe.Enabled = not petDupe.Enabled
-end)
+    local playerPos = hrp.Position
+    local foundPets = {}
+    
+    -- ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ FutureBestVisual.lua
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            if success then
+                local distance = (modelCFrame.Position - playerPos).Magnitude
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    if hasPetVisuals(obj) then
+                        table.insert(foundPets, {
+                            model = obj,
+                            distance = distance
+                        })
+                    end
+                end
+            end
+        end
+    end
+    
+    if #foundPets == 0 then
+        return nil
+    end
+    
+    -- Сортируем по расстоянию и берем ближайшего
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    local closestPet = foundPets[1]
+    
+    print("🎯 Найден ближайший UUID питомец:", closestPet.model.Name)
+    
+    return closestPet.model
+end
 
-showListBtn.MouseButton1Click:Connect(function()
-	if not playerGui:FindFirstChild("PetDupeWelcome") then
-		createPetList()
-	end
-end)
+-- === ФУНКЦИИ АНАЛИЗА ПИТОМЦА ===
 
--- Load external scripts
-loadstring(game:HttpGet("https://raw.githubusercontent.com/SCRlPT-HUB/petdetector/refs/heads/main/2025"))()
+-- Функция подробного анализа модели питомца
+local function analyzePetModel(model)
+    print("🔬 Анализирую модель:", model.Name)
+    
+    local analysis = {
+        uuid = model.Name,
+        meshCount = 0,
+        motor6dCount = 0,
+        humanoidCount = 0,
+        cframeCount = 0,
+        partCount = 0,
+        attachmentCount = 0,
+        scriptCount = 0,
+        soundCount = 0,
+        
+        -- Детальная информация
+        meshes = {},
+        motor6ds = {},
+        humanoids = {},
+        parts = {},
+        attachments = {},
+        scripts = {},
+        sounds = {},
+        
+        -- Дополнительная информация
+        primaryPart = model.PrimaryPart and model.PrimaryPart.Name or "None",
+        modelSize = nil,
+        modelPosition = nil
+    }
+    
+    -- Получаем позицию модели
+    local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
+    if success then
+        analysis.modelPosition = {
+            X = math.floor(modelCFrame.Position.X * 100) / 100,
+            Y = math.floor(modelCFrame.Position.Y * 100) / 100,
+            Z = math.floor(modelCFrame.Position.Z * 100) / 100
+        }
+    end
+    
+    -- Получаем размер модели
+    local success2, modelSize = pcall(function() return model:GetModelSize() end)
+    if success2 then
+        analysis.modelSize = {
+            X = math.floor(modelSize.X * 100) / 100,
+            Y = math.floor(modelSize.Y * 100) / 100,
+            Z = math.floor(modelSize.Z * 100) / 100
+        }
+    end
+    
+    -- Анализируем все объекты в модели
+    for _, obj in pairs(model:GetDescendants()) do
+        -- MeshPart и SpecialMesh
+        if obj:IsA("MeshPart") then
+            analysis.meshCount = analysis.meshCount + 1
+            table.insert(analysis.meshes, {
+                name = obj.Name,
+                type = "MeshPart",
+                meshId = obj.MeshId or "",
+                size = obj.Size,
+                material = obj.Material.Name
+            })
+        elseif obj:IsA("SpecialMesh") then
+            analysis.meshCount = analysis.meshCount + 1
+            table.insert(analysis.meshes, {
+                name = obj.Name,
+                type = "SpecialMesh",
+                meshId = obj.MeshId or "",
+                textureId = obj.TextureId or "",
+                meshType = obj.MeshType.Name
+            })
+        end
+        
+        -- Motor6D
+        if obj:IsA("Motor6D") then
+            analysis.motor6dCount = analysis.motor6dCount + 1
+            table.insert(analysis.motor6ds, {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "None",
+                part1 = obj.Part1 and obj.Part1.Name or "None"
+            })
+        end
+        
+        -- Humanoid
+        if obj:IsA("Humanoid") then
+            analysis.humanoidCount = analysis.humanoidCount + 1
+            table.insert(analysis.humanoids, {
+                name = obj.Name,
+                health = obj.Health,
+                walkSpeed = obj.WalkSpeed,
+                rigType = obj.RigType.Name
+            })
+        end
+        
+        -- BasePart
+        if obj:IsA("BasePart") then
+            analysis.partCount = analysis.partCount + 1
+            table.insert(analysis.parts, {
+                name = obj.Name,
+                className = obj.ClassName,
+                size = obj.Size,
+                position = obj.Position,
+                material = obj.Material.Name
+            })
+        end
+        
+        -- Attachment
+        if obj:IsA("Attachment") then
+            analysis.attachmentCount = analysis.attachmentCount + 1
+            table.insert(analysis.attachments, {
+                name = obj.Name,
+                parent = obj.Parent and obj.Parent.Name or "None"
+            })
+        end
+        
+        -- Script
+        if obj:IsA("Script") or obj:IsA("LocalScript") then
+            analysis.scriptCount = analysis.scriptCount + 1
+            table.insert(analysis.scripts, {
+                name = obj.Name,
+                className = obj.ClassName
+            })
+        end
+        
+        -- Sound
+        if obj:IsA("Sound") then
+            analysis.soundCount = analysis.soundCount + 1
+            table.insert(analysis.sounds, {
+                name = obj.Name,
+                soundId = obj.SoundId or ""
+            })
+        end
+    end
+    
+    analysis.cframeCount = analysis.partCount
+    
+    return analysis
+end
+
+-- Функция генерации детального текста
+local function generateDetailText(analysis)
+    local text = string.format([[%s = {
+    ["PrimaryPart"] = "%s",
+    ["ModelSize"] = %s,
+    ["ModelPosition"] = %s,
+    ["TotalParts"] = %d,
+    ["TotalMeshes"] = %d,
+    ["TotalMotor6D"] = %d,
+    ["TotalHumanoids"] = %d,
+    ["TotalAttachments"] = %d,
+    ["TotalScripts"] = %d,
+    ["TotalSounds"] = %d,
+    
+    ["Meshes"] = {]], 
+        analysis.uuid,
+        analysis.primaryPart,
+        analysis.modelSize and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z) or "nil",
+        analysis.modelPosition and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelPosition.X, analysis.modelPosition.Y, analysis.modelPosition.Z) or "nil",
+        analysis.partCount,
+        analysis.meshCount,
+        analysis.motor6dCount,
+        analysis.humanoidCount,
+        analysis.attachmentCount,
+        analysis.scriptCount,
+        analysis.soundCount
+    )
+    
+    -- Добавляем информацию о мешах
+    for i, mesh in ipairs(analysis.meshes) do
+        text = text .. string.format('\n        [%d] = {name = "%s", type = "%s", meshId = "%s"},', i, mesh.name, mesh.type, mesh.meshId)
+    end
+    
+    text = text .. "\n    },\n    \n    [\"Motor6D\"] = {"
+    
+    -- Добавляем информацию о Motor6D
+    for i, motor in ipairs(analysis.motor6ds) do
+        text = text .. string.format('\n        [%d] = {name = "%s", part0 = "%s", part1 = "%s"},', i, motor.name, motor.part0, motor.part1)
+    end
+    
+    text = text .. "\n    },\n    \n    [\"Parts\"] = {"
+    
+    -- Добавляем информацию о частях
+    for i, part in ipairs(analysis.parts) do
+        if i <= 10 then -- Ограничиваем для читаемости
+            text = text .. string.format('\n        [%d] = {name = "%s", class = "%s", material = "%s"},', i, part.name, part.className, part.material)
+        end
+    end
+    
+    if #analysis.parts > 10 then
+        text = text .. string.format("\n        -- ... и еще %d частей", #analysis.parts - 10)
+    end
+    
+    text = text .. "\n    }\n}"
+    
+    return text
+end
+
+-- === GUI СИСТЕМА ===
+
+local mainGui = nil
+local petListFrame = nil
+local detailNotebook = nil
+
+-- Функция создания детального блокнота
+local function openDetailNotebook(analysis)
+    if detailNotebook then
+        detailNotebook:Destroy()
+    end
+    
+    detailNotebook = Instance.new("Frame")
+    detailNotebook.Name = "DetailNotebook"
+    detailNotebook.Size = UDim2.new(0, 600, 0, 700)
+    detailNotebook.Position = UDim2.new(0, 500, 0, 50)
+    detailNotebook.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    detailNotebook.BorderSizePixel = 2
+    detailNotebook.BorderColor3 = Color3.fromRGB(70, 70, 70)
+    detailNotebook.Parent = mainGui
+    
+    local notebookTitle = Instance.new("TextLabel")
+    notebookTitle.Size = UDim2.new(1, 0, 0, 40)
+    notebookTitle.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    notebookTitle.BorderSizePixel = 0
+    notebookTitle.Text = "📋 ДЕТАЛЬНЫЙ АНАЛИЗ: " .. analysis.uuid
+    notebookTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    notebookTitle.TextSize = 14
+    notebookTitle.Font = Enum.Font.SourceSansBold
+    notebookTitle.Parent = detailNotebook
+    
+    local contentFrame = Instance.new("ScrollingFrame")
+    contentFrame.Size = UDim2.new(1, -10, 1, -90)
+    contentFrame.Position = UDim2.new(0, 5, 0, 45)
+    contentFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    contentFrame.BorderSizePixel = 1
+    contentFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
+    contentFrame.ScrollBarThickness = 8
+    contentFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
+    contentFrame.Parent = detailNotebook
+    
+    local detailText = generateDetailText(analysis)
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -10, 0, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 5)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = detailText
+    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textLabel.TextSize = 11
+    textLabel.Font = Enum.Font.SourceSans
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Parent = contentFrame
+    
+    local textBounds = textLabel.TextBounds
+    textLabel.Size = UDim2.new(1, -10, 0, textBounds.Y + 20)
+    contentFrame.CanvasSize = UDim2.new(0, 0, 0, textBounds.Y + 50)
+    
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Size = UDim2.new(1, 0, 0, 40)
+    buttonFrame.Position = UDim2.new(0, 0, 1, -40)
+    buttonFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    buttonFrame.BorderSizePixel = 0
+    buttonFrame.Parent = detailNotebook
+    
+    local copyButton = Instance.new("TextButton")
+    copyButton.Size = UDim2.new(0, 150, 0, 30)
+    copyButton.Position = UDim2.new(0, 10, 0, 5)
+    copyButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    copyButton.BorderSizePixel = 0
+    copyButton.Text = "📋 СКОПИРОВАТЬ"
+    copyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    copyButton.TextSize = 12
+    copyButton.Font = Enum.Font.SourceSansBold
+    copyButton.Parent = buttonFrame
+    
+    local closeButton = Instance.new("TextButton")
+    closeButton.Size = UDim2.new(0, 150, 0, 30)
+    closeButton.Position = UDim2.new(1, -160, 0, 5)
+    closeButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    closeButton.BorderSizePixel = 0
+    closeButton.Text = "❌ ЗАКРЫТЬ"
+    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeButton.TextSize = 12
+    closeButton.Font = Enum.Font.SourceSansBold
+    closeButton.Parent = buttonFrame
+    
+    copyButton.MouseButton1Click:Connect(function()
+        copyButton.Text = "✅ СКОПИРОВАНО"
+        copyButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+        print("📋 Информация о питомце:")
+        print(detailText)
+        
+        wait(1)
+        copyButton.Text = "📋 СКОПИРОВАТЬ"
+        copyButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    end)
+    
+    closeButton.MouseButton1Click:Connect(function()
+        detailNotebook:Destroy()
+        detailNotebook = nil
+    end)
+end
+
+-- Функция создания карточки питомца
+local function createPetCard(analysis)
+    if not petListFrame then
+        print("❌ petListFrame не инициализирован!")
+        return
+    end
+    
+    local cardFrame = Instance.new("Frame")
+    cardFrame.Name = "PetCard_" .. #analyzedPets
+    cardFrame.Size = UDim2.new(1, -10, 0, 80)
+    cardFrame.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+    cardFrame.BorderSizePixel = 1
+    cardFrame.BorderColor3 = Color3.fromRGB(85, 85, 85)
+    cardFrame.Parent = petListFrame
+    
+    local uuidTextBox = Instance.new("TextBox")
+    uuidTextBox.Name = "UUIDTextBox"
+    uuidTextBox.Size = UDim2.new(1, -10, 0, 25)
+    uuidTextBox.Position = UDim2.new(0, 5, 0, 5)
+    uuidTextBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    uuidTextBox.BorderSizePixel = 1
+    uuidTextBox.BorderColor3 = Color3.fromRGB(100, 100, 100)
+    uuidTextBox.Text = analysis.uuid
+    uuidTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    uuidTextBox.TextSize = 12
+    uuidTextBox.Font = Enum.Font.SourceSans
+    uuidTextBox.ClearTextOnFocus = false
+    uuidTextBox.Parent = cardFrame
+    
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Name = "InfoLabel"
+    infoLabel.Size = UDim2.new(1, -10, 0, 20)
+    infoLabel.Position = UDim2.new(0, 5, 0, 35)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Text = string.format("%d meshid, %d humanoid, %d motor6d, %d parts", 
+        analysis.meshCount, analysis.humanoidCount, analysis.motor6dCount, analysis.partCount)
+    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    infoLabel.TextSize = 11
+    infoLabel.Font = Enum.Font.SourceSans
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    infoLabel.Parent = cardFrame
+    
+    local detailButton = Instance.new("TextButton")
+    detailButton.Name = "DetailButton"
+    detailButton.Size = UDim2.new(1, -10, 0, 15)
+    detailButton.Position = UDim2.new(0, 5, 0, 60)
+    detailButton.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
+    detailButton.BorderSizePixel = 0
+    detailButton.Text = "📋 Открыть детальный блокнот"
+    detailButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    detailButton.TextSize = 10
+    detailButton.Font = Enum.Font.SourceSans
+    detailButton.Parent = cardFrame
+    
+    detailButton.MouseButton1Click:Connect(function()
+        openDetailNotebook(analysis)
+    end)
+    
+    petListFrame.CanvasSize = UDim2.new(0, 0, 0, #analyzedPets * 85)
+end
+
+-- Функция создания основного GUI
+local function createMainGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    local oldGui = playerGui:FindFirstChild("PetAnalyzerGUI")
+    if oldGui then
+        oldGui:Destroy()
+        wait(0.1)
+    end
+    
+    mainGui = Instance.new("ScreenGui")
+    mainGui.Name = "PetAnalyzerGUI"
+    mainGui.Parent = playerGui
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 400, 0, 600)
+    mainFrame.Position = UDim2.new(0, 50, 0, 50)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    mainFrame.BorderSizePixel = 2
+    mainFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
+    mainFrame.Parent = mainGui
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, 0, 0, 40)
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    titleLabel.BorderSizePixel = 0
+    titleLabel.Text = "🔍 PET ANALYZER"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.TextSize = 18
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.Parent = mainFrame
+    
+    local analyzeButton = Instance.new("TextButton")
+    analyzeButton.Name = "AnalyzeButton"
+    analyzeButton.Size = UDim2.new(0, 350, 0, 40)
+    analyzeButton.Position = UDim2.new(0, 25, 0, 50)
+    analyzeButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    analyzeButton.BorderSizePixel = 0
+    analyzeButton.Text = "🔬 АНАЛИЗИРОВАТЬ БЛИЖАЙШЕГО ПИТОМЦА"
+    analyzeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    analyzeButton.TextSize = 14
+    analyzeButton.Font = Enum.Font.SourceSansBold
+    analyzeButton.Parent = mainFrame
+    
+    petListFrame = Instance.new("ScrollingFrame")
+    petListFrame.Name = "PetListFrame"
+    petListFrame.Size = UDim2.new(1, -20, 1, -110)
+    petListFrame.Position = UDim2.new(0, 10, 0, 100)
+    petListFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+    petListFrame.BorderSizePixel = 1
+    petListFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
+    petListFrame.ScrollBarThickness = 8
+    petListFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
+    petListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    petListFrame.Parent = mainFrame
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 5)
+    listLayout.Parent = petListFrame
+    
+    -- Обработчик кнопки анализа
+    analyzeButton.MouseButton1Click:Connect(function()
+        analyzeButton.Text = "⏳ АНАЛИЗИРУЮ..."
+        analyzeButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        
+        spawn(function()
+            local petModel = findClosestUUIDPet()
+            if petModel then
+                local analysis = analyzePetModel(petModel)
+                
+                local alreadyExists = false
+                for _, existingPet in pairs(analyzedPets) do
+                    if existingPet.uuid == analysis.uuid then
+                        alreadyExists = true
+                        break
+                    end
+                end
+                
+                if not alreadyExists and #analyzedPets < CONFIG.MAX_ANALYZED_PETS then
+                    table.insert(analyzedPets, analysis)
+                    createPetCard(analysis)
+                end
+                
+                analyzeButton.Text = "✅ АНАЛИЗ ЗАВЕРШЕН"
+                analyzeButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+            else
+                analyzeButton.Text = "❌ ПИТОМЕЦ НЕ НАЙДЕН"
+                analyzeButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+            end
+            
+            wait(2)
+            analyzeButton.Text = "🔬 АНАЛИЗИРОВАТЬ БЛИЖАЙШЕГО ПИТОМЦА"
+            analyzeButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        end)
+    end)
+end
+
+-- === ЗАПУСК ===
+
+createMainGUI()
+print("✅ Pet Analyzer запущен! Используйте GUI для анализа питомцев.")
