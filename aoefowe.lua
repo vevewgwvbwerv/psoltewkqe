@@ -1,24 +1,33 @@
--- 🔍 PET ANALYZER - Анализатор питомцев для Grow a Garden
--- Анализирует UUID питомцев рядом с игроком и показывает детальную информацию
+-- === PET ANALYZER WITH WINDUI ===
+-- Made by Assistant | Styled after DONCALDERONE
 
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local UserInputService = game:GetService("UserInputService")
+-- Load WindUI Library
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
-local player = Players.LocalPlayer
+-- === КОНФИГУРАЦИЯ ===
 
-print("🔍 === PET ANALYZER - Анализатор питомцев ===")
-
--- Конфигурация
 local CONFIG = {
     SEARCH_RADIUS = 100,
     MAX_ANALYZED_PETS = 10
 }
 
--- Хранилище проанализированных питомцев
-local analyzedPets = {}
+-- === СЕРВИСЫ ===
 
--- === ФУНКЦИИ ПОИСКА UUID ПИТОМЦЕВ (ИЗ FutureBestVisual.lua) ===
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerPos = player.Character and player.Character.HumanoidRootPart and player.Character.HumanoidRootPart.Position or Vector3.new(0, 0, 0)
+
+-- === ПЕРЕМЕННЫЕ ===
+
+local analyzedPets = {}
+local currentAnalysis = nil
+
+-- === ФУНКЦИИ ПОИСКА UUID ПИТОМЦЕВ ===
 
 -- Функция проверки визуальных элементов питомца
 local function hasPetVisuals(model)
@@ -50,194 +59,132 @@ local function hasPetVisuals(model)
         end
     end
     
-    return visualCount > 0
+    return visualCount >= 2
 end
 
--- Функция поиска ближайшего UUID питомца (СКОПИРОВАНО ИЗ FutureBestVisual.lua)
+-- Функция проверки UUID формата
+local function isUUIDFormat(name)
+    return string.match(name, "%{[%w%-]+%}") ~= nil
+end
+
+-- Функция поиска ближайшего UUID питомца
 local function findClosestUUIDPet()
-    print("🔍 Поиск UUID моделей питомцев...")
-    
-    local playerChar = player.Character
-    if not playerChar then
+    local player = Players.LocalPlayer
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
         return nil
     end
-
-    local hrp = playerChar:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        return nil
-    end
-
-    local playerPos = hrp.Position
-    local foundPets = {}
     
-    -- ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ FutureBestVisual.lua
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
-            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
-            if success then
-                local distance = (modelCFrame.Position - playerPos).Magnitude
-                if distance <= CONFIG.SEARCH_RADIUS then
-                    if hasPetVisuals(obj) then
-                        table.insert(foundPets, {
-                            model = obj,
-                            distance = distance
-                        })
-                    end
+    local playerPos = player.Character.HumanoidRootPart.Position
+    local closestPet = nil
+    local closestDistance = CONFIG.SEARCH_RADIUS
+    
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") and obj ~= player.Character then
+            if isUUIDFormat(obj.Name) and hasPetVisuals(obj) then
+                local petPos = obj:GetModelCFrame().Position
+                local distance = (playerPos - petPos).Magnitude
+                
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPet = obj
                 end
             end
         end
     end
     
-    if #foundPets == 0 then
-        return nil
-    end
-    
-    -- Сортируем по расстоянию и берем ближайшего
-    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
-    local closestPet = foundPets[1]
-    
-    print("🎯 Найден ближайший UUID питомец:", closestPet.model.Name)
-    
-    return closestPet.model
+    return closestPet
 end
 
--- === ФУНКЦИИ АНАЛИЗА ПИТОМЦА ===
+-- === ФУНКЦИИ АНАЛИЗА ПИТОМЦЕВ ===
 
--- Функция подробного анализа модели питомца
+-- Функция глубокого анализа модели питомца
 local function analyzePetModel(model)
-    print("🔬 Анализирую модель:", model.Name)
-    
     local analysis = {
         uuid = model.Name,
         meshCount = 0,
         motor6dCount = 0,
         humanoidCount = 0,
-        cframeCount = 0,
         partCount = 0,
         attachmentCount = 0,
         scriptCount = 0,
-        soundCount = 0,
-        
-        -- Детальная информация
         meshes = {},
         motor6ds = {},
         humanoids = {},
         parts = {},
         attachments = {},
         scripts = {},
-        sounds = {},
-        
-        -- Дополнительная информация
         primaryPart = model.PrimaryPart and model.PrimaryPart.Name or "None",
         modelSize = nil,
         modelPosition = nil
     }
     
-    -- Получаем позицию модели
-    local success, modelCFrame = pcall(function() return model:GetModelCFrame() end)
-    if success then
-        analysis.modelPosition = {
-            X = math.floor(modelCFrame.Position.X * 100) / 100,
-            Y = math.floor(modelCFrame.Position.Y * 100) / 100,
-            Z = math.floor(modelCFrame.Position.Z * 100) / 100
-        }
-    end
+    -- Получение размера и позиции модели
+    local cf, size = model:GetBoundingBox()
+    analysis.modelSize = size
+    analysis.modelPosition = cf.Position
     
-    -- Получаем размер модели
-    local success2, modelSize = pcall(function() return model:GetModelSize() end)
-    if success2 then
-        analysis.modelSize = {
-            X = math.floor(modelSize.X * 100) / 100,
-            Y = math.floor(modelSize.Y * 100) / 100,
-            Z = math.floor(modelSize.Z * 100) / 100
-        }
-    end
-    
-    -- Анализируем все объекты в модели
+    -- Анализ всех потомков
     for _, obj in pairs(model:GetDescendants()) do
-        -- MeshPart и SpecialMesh
-        if obj:IsA("MeshPart") then
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
             analysis.meshCount = analysis.meshCount + 1
-            table.insert(analysis.meshes, {
+            local meshInfo = {
                 name = obj.Name,
-                type = "MeshPart",
-                meshId = obj.MeshId or "",
-                size = obj.Size,
-                material = obj.Material.Name
-            })
-        elseif obj:IsA("SpecialMesh") then
-            analysis.meshCount = analysis.meshCount + 1
-            table.insert(analysis.meshes, {
-                name = obj.Name,
-                type = "SpecialMesh",
-                meshId = obj.MeshId or "",
-                textureId = obj.TextureId or "",
-                meshType = obj.MeshType.Name
-            })
-        end
-        
-        -- Motor6D
-        if obj:IsA("Motor6D") then
+                type = obj.ClassName,
+                parent = obj.Parent.Name
+            }
+            if obj:IsA("MeshPart") then
+                meshInfo.meshId = obj.MeshId
+            elseif obj:IsA("SpecialMesh") then
+                meshInfo.meshId = obj.MeshId
+                meshInfo.meshType = obj.MeshType.Name
+            end
+            table.insert(analysis.meshes, meshInfo)
+            
+        elseif obj:IsA("Motor6D") then
             analysis.motor6dCount = analysis.motor6dCount + 1
             table.insert(analysis.motor6ds, {
                 name = obj.Name,
                 part0 = obj.Part0 and obj.Part0.Name or "None",
                 part1 = obj.Part1 and obj.Part1.Name or "None"
             })
-        end
-        
-        -- Humanoid
-        if obj:IsA("Humanoid") then
+            
+        elseif obj:IsA("Humanoid") then
             analysis.humanoidCount = analysis.humanoidCount + 1
             table.insert(analysis.humanoids, {
                 name = obj.Name,
                 health = obj.Health,
-                walkSpeed = obj.WalkSpeed,
-                rigType = obj.RigType.Name
+                maxHealth = obj.MaxHealth,
+                walkSpeed = obj.WalkSpeed
             })
-        end
-        
-        -- BasePart
-        if obj:IsA("BasePart") then
+            
+        elseif obj:IsA("BasePart") then
             analysis.partCount = analysis.partCount + 1
             table.insert(analysis.parts, {
                 name = obj.Name,
-                className = obj.ClassName,
+                type = obj.ClassName,
                 size = obj.Size,
-                position = obj.Position,
-                material = obj.Material.Name
+                material = obj.Material.Name,
+                color = obj.Color
             })
-        end
-        
-        -- Attachment
-        if obj:IsA("Attachment") then
+            
+        elseif obj:IsA("Attachment") then
             analysis.attachmentCount = analysis.attachmentCount + 1
             table.insert(analysis.attachments, {
                 name = obj.Name,
-                parent = obj.Parent and obj.Parent.Name or "None"
+                parent = obj.Parent.Name,
+                position = obj.Position
             })
-        end
-        
-        -- Script
-        if obj:IsA("Script") or obj:IsA("LocalScript") then
+            
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
             analysis.scriptCount = analysis.scriptCount + 1
             table.insert(analysis.scripts, {
                 name = obj.Name,
-                className = obj.ClassName
-            })
-        end
-        
-        -- Sound
-        if obj:IsA("Sound") then
-            analysis.soundCount = analysis.soundCount + 1
-            table.insert(analysis.sounds, {
-                name = obj.Name,
-                soundId = obj.SoundId or ""
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
             })
         end
     end
-    
-    analysis.cframeCount = analysis.partCount
     
     return analysis
 end
@@ -254,11 +201,10 @@ local function generateDetailText(analysis)
     ["TotalHumanoids"] = %d,
     ["TotalAttachments"] = %d,
     ["TotalScripts"] = %d,
-    ["TotalSounds"] = %d,
     
     ["Meshes"] = {]], 
         analysis.uuid,
-        analysis.primaryPart,
+        analysis.primaryPart or "None",
         analysis.modelSize and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z) or "nil",
         analysis.modelPosition and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelPosition.X, analysis.modelPosition.Y, analysis.modelPosition.Z) or "nil",
         analysis.partCount,
@@ -266,281 +212,306 @@ local function generateDetailText(analysis)
         analysis.motor6dCount,
         analysis.humanoidCount,
         analysis.attachmentCount,
-        analysis.scriptCount,
-        analysis.soundCount
+        analysis.scriptCount
     )
     
-    -- Добавляем информацию о мешах
+    -- Добавление мешей
     for i, mesh in ipairs(analysis.meshes) do
-        text = text .. string.format('\n        [%d] = {name = "%s", type = "%s", meshId = "%s"},', i, mesh.name, mesh.type, mesh.meshId)
+        text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", meshId = "%s"}]], 
+            i, mesh.name, mesh.type, mesh.parent, mesh.meshId or "")
+        if i < #analysis.meshes then text = text .. "," end
     end
+    text = text .. "\n    },\n"
     
-    text = text .. "\n    },\n    \n    [\"Motor6D\"] = {"
-    
-    -- Добавляем информацию о Motor6D
+    -- Добавление Motor6D
+    text = text .. '\n    ["Motor6D"] = {'
     for i, motor in ipairs(analysis.motor6ds) do
-        text = text .. string.format('\n        [%d] = {name = "%s", part0 = "%s", part1 = "%s"},', i, motor.name, motor.part0, motor.part1)
+        text = text .. string.format([[
+        [%d] = {name = "%s", part0 = "%s", part1 = "%s"}]], 
+            i, motor.name, motor.part0, motor.part1)
+        if i < #analysis.motor6ds then text = text .. "," end
     end
+    text = text .. "\n    },\n"
     
-    text = text .. "\n    },\n    \n    [\"Parts\"] = {"
-    
-    -- Добавляем информацию о частях
+    -- Добавление частей
+    text = text .. '\n    ["Parts"] = {'
     for i, part in ipairs(analysis.parts) do
-        if i <= 10 then -- Ограничиваем для читаемости
-            text = text .. string.format('\n        [%d] = {name = "%s", class = "%s", material = "%s"},', i, part.name, part.className, part.material)
+        text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", size = Vector3.new(%.2f, %.2f, %.2f), material = "%s"}]], 
+            i, part.name, part.type, part.size.X, part.size.Y, part.size.Z, part.material)
+        if i < #analysis.parts then text = text .. "," end
+    end
+    text = text .. "\n    }"
+    
+    -- Добавление гуманоидов (только если есть)
+    if #analysis.humanoids > 0 then
+        text = text .. ',\n\n    ["Humanoids"] = {'
+        for i, humanoid in ipairs(analysis.humanoids) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", health = %.1f, maxHealth = %.1f, walkSpeed = %.1f}]], 
+                i, humanoid.name, humanoid.health, humanoid.maxHealth, humanoid.walkSpeed)
+            if i < #analysis.humanoids then text = text .. "," end
         end
+        text = text .. "\n    }"
     end
     
-    if #analysis.parts > 10 then
-        text = text .. string.format("\n        -- ... и еще %d частей", #analysis.parts - 10)
+    -- Добавление аттачментов (только если есть)
+    if #analysis.attachments > 0 then
+        text = text .. ',\n\n    ["Attachments"] = {'
+        for i, attachment in ipairs(analysis.attachments) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", parent = "%s", position = Vector3.new(%.2f, %.2f, %.2f)}]], 
+                i, attachment.name, attachment.parent, attachment.position.X, attachment.position.Y, attachment.position.Z)
+            if i < #analysis.attachments then text = text .. "," end
+        end
+        text = text .. "\n    }"
     end
     
-    text = text .. "\n    }\n}"
+    -- Добавление скриптов (только если есть)
+    if #analysis.scripts > 0 then
+        text = text .. ',\n\n    ["Scripts"] = {'
+        for i, script in ipairs(analysis.scripts) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", enabled = %s}]], 
+                i, script.name, script.type, script.parent, tostring(script.enabled))
+            if i < #analysis.scripts then text = text .. "," end
+        end
+        text = text .. "\n    }"
+    end
     
+    text = text .. "\n}"
     return text
 end
 
--- === GUI СИСТЕМА ===
+-- === WINDUI СИСТЕМА ===
 
-local mainGui = nil
-local petListFrame = nil
-local detailNotebook = nil
+-- Gradient function for text styling
+function gradient(text, startColor, endColor)
+    local result = ""
+    local length = #text
 
--- Функция создания карточки питомца
-local function createPetCard(analysis)
-    if not petListFrame then
-        print("❌ petListFrame не инициализирован!")
+    for i = 1, length do
+        local t = (i - 1) / math.max(length - 1, 1)
+        local r = math.floor((startColor.R + (endColor.R - startColor.R) * t) * 255)
+        local g = math.floor((startColor.G + (endColor.G - startColor.G) * t) * 255)
+        local b = math.floor((startColor.B + (endColor.B - startColor.B) * t) * 255)
+
+        local char = text:sub(i, i)
+        result = result .. '<font color="rgb(' .. r .. ", " .. g .. ", " .. b .. ')">' .. char .. "</font>"
+    end
+
+    return result
+end
+
+-- Show initial popup
+local Confirmed = false
+
+WindUI:Popup({
+    Title = "Pet Analyzer Loaded!",
+    Icon = "search",
+    IconThemed = true,
+    Content = "Advanced " .. gradient("Pet Analysis Tool", Color3.fromHex("#00FF87"), Color3.fromHex("#60EFFF")) .. " with detailed model inspection for Roblox pets",
+    Buttons = {
+        {
+            Title = "Cancel",
+            Callback = function()
+            end,
+            Variant = "Secondary"
+        },
+        {
+            Title = "Start Analyzing",
+            Icon = "arrow-right",
+            Callback = function()
+                Confirmed = true
+            end,
+            Variant = "Primary"
+        }
+    }
+})
+
+repeat
+    wait()
+until Confirmed
+
+-- Create main WindUI window
+local Window = WindUI:CreateWindow({
+    Title = "Pet Analyzer | Advanced Model Inspector",
+    Icon = "search",
+    IconThemed = true,
+    Author = "Pet Analysis Tool",
+    Folder = "PetAnalyzer",
+    Size = UDim2.fromOffset(450, 400),
+    Transparent = false,
+    Theme = "Dark",
+    User = {
+        Enabled = true,
+        Callback = function()
+        end,
+        Anonymous = false
+    },
+    SideBarWidth = 160,
+    ScrollBarEnabled = true
+})
+
+Window:EditOpenButton({
+    Title = "Pet Analyzer",
+    Icon = "search",
+    CornerRadius = UDim.new(0, 12),
+    StrokeThickness = 2,
+    Color = ColorSequence.new(Color3.fromHex("#FF6B6B"), Color3.fromHex("#4ECDC4")),
+    Draggable = true
+})
+
+-- Create sections and tabs
+local Tabs = {}
+
+Tabs.AnalyzerSection = Window:Section({
+    Title = "Pet Analysis Tools",
+    Icon = "search",
+    Opened = true
+})
+
+Tabs.ResultsSection = Window:Section({
+    Title = "Analysis Results",
+    Icon = "file-text",
+    Opened = false
+})
+
+Tabs.MainTab = Tabs.AnalyzerSection:Tab({
+    Title = "Analyzer",
+    Icon = "search",
+    Desc = "Find and analyze nearby UUID pets"
+})
+
+Tabs.ResultsTab = Tabs.ResultsSection:Tab({
+    Title = "Results",
+    Icon = "list",
+    Desc = "View analyzed pets and detailed data"
+})
+
+Tabs.SettingsTab = Tabs.AnalyzerSection:Tab({
+    Title = "Settings",
+    Icon = "settings",
+    Desc = "Configure analysis parameters"
+})
+
+Window:SelectTab(1)
+
+-- Function to show detailed analysis in a popup
+function showDetailedAnalysis(analysis)
+    local detailText = generateDetailText(analysis)
+    
+    WindUI:Popup({
+        Title = "📋 Detailed Analysis: " .. analysis.uuid,
+        Icon = "file-text",
+        IconThemed = true,
+        Content = "Complete model analysis with " .. analysis.partCount .. " parts, " .. analysis.meshCount .. " meshes, and " .. analysis.motor6dCount .. " Motor6D joints.",
+        Buttons = {
+            {
+                Title = "Copy to Clipboard",
+                Icon = "copy",
+                Callback = function()
+                    pcall(function()
+                        if setclipboard then
+                            setclipboard(detailText)
+                        else
+                            game:GetService("GuiService"):SetClipboard(detailText)
+                        end
+                    end)
+                    
+                    print("📋 Pet Analysis Data:")
+                    print(detailText)
+                    
+                    WindUI:Notify({
+                        Title = "Copied!",
+                        Content = "Analysis data copied to clipboard",
+                        Icon = "copy",
+                        Duration = 3
+                    })
+                end,
+                Variant = "Primary"
+            },
+            {
+                Title = "Close",
+                Callback = function()
+                end,
+                Variant = "Secondary"
+            }
+        }
+    })
+end
+
+-- Function to update results tab
+function updateResultsTab()
+    -- Clear existing content
+    Tabs.ResultsTab:Clear()
+    
+    if #analyzedPets == 0 then
+        Tabs.ResultsTab:Paragraph({
+            Title = "No Analysis Data",
+            Desc = "No pets have been analyzed yet. Use the Analyzer tab to scan for pets.",
+            Image = "info",
+            Color = "Gray"
+        })
         return
     end
     
-    local cardFrame = Instance.new("Frame")
-    cardFrame.Name = "PetCard_" .. #analyzedPets
-    cardFrame.Size = UDim2.new(1, -10, 0, 80)
-    cardFrame.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
-    cardFrame.BorderSizePixel = 1
-    cardFrame.BorderColor3 = Color3.fromRGB(85, 85, 85)
-    cardFrame.Parent = petListFrame
+    Tabs.ResultsTab:Paragraph({
+        Title = "Analysis Results",
+        Desc = "Found " .. #analyzedPets .. " analyzed pets",
+        Image = "list",
+        Color = "Blue"
+    })
     
-    local uuidTextBox = Instance.new("TextBox")
-    uuidTextBox.Name = "UUIDTextBox"
-    uuidTextBox.Size = UDim2.new(1, -10, 0, 25)
-    uuidTextBox.Position = UDim2.new(0, 5, 0, 5)
-    uuidTextBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    uuidTextBox.BorderSizePixel = 1
-    uuidTextBox.BorderColor3 = Color3.fromRGB(100, 100, 100)
-    uuidTextBox.Text = analysis.uuid
-    uuidTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    uuidTextBox.TextSize = 12
-    uuidTextBox.Font = Enum.Font.SourceSans
-    uuidTextBox.ClearTextOnFocus = false
-    uuidTextBox.Parent = cardFrame
-    
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Name = "InfoLabel"
-    infoLabel.Size = UDim2.new(1, -10, 0, 20)
-    infoLabel.Position = UDim2.new(0, 5, 0, 35)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = string.format("%d meshid, %d humanoid, %d motor6d, %d parts", 
-        analysis.meshCount, analysis.humanoidCount, analysis.motor6dCount, analysis.partCount)
-    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLabel.TextSize = 11
-    infoLabel.Font = Enum.Font.SourceSans
-    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-    infoLabel.Parent = cardFrame
-    
-    local detailButton = Instance.new("TextButton")
-    detailButton.Name = "DetailButton"
-    detailButton.Size = UDim2.new(1, -10, 0, 15)
-    detailButton.Position = UDim2.new(0, 5, 0, 60)
-    detailButton.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
-    detailButton.BorderSizePixel = 0
-    detailButton.Text = "📋 Открыть детальный блокнот"
-    detailButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    detailButton.TextSize = 10
-    detailButton.Font = Enum.Font.SourceSans
-    detailButton.Parent = cardFrame
-    
-    detailButton.MouseButton1Click:Connect(function()
-        openDetailNotebook(analysis)
-    end)
-    
-    petListFrame.CanvasSize = UDim2.new(0, 0, 0, #analyzedPets * 85)
-end
-
--- Функция создания детального блокнота
-local function openDetailNotebook(analysis)
-    if detailNotebook then
-        detailNotebook:Destroy()
-    end
-    
-    detailNotebook = Instance.new("Frame")
-    detailNotebook.Name = "DetailNotebook"
-    detailNotebook.Size = UDim2.new(0, 600, 0, 700)
-    detailNotebook.Position = UDim2.new(0, 500, 0, 50)
-    detailNotebook.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    detailNotebook.BorderSizePixel = 2
-    detailNotebook.BorderColor3 = Color3.fromRGB(70, 70, 70)
-    detailNotebook.Parent = mainGui
-    
-    local notebookTitle = Instance.new("TextLabel")
-    notebookTitle.Size = UDim2.new(1, 0, 0, 40)
-    notebookTitle.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    notebookTitle.BorderSizePixel = 0
-    notebookTitle.Text = "📋 ДЕТАЛЬНЫЙ АНАЛИЗ: " .. analysis.uuid
-    notebookTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    notebookTitle.TextSize = 14
-    notebookTitle.Font = Enum.Font.SourceSansBold
-    notebookTitle.Parent = detailNotebook
-    
-    local contentFrame = Instance.new("ScrollingFrame")
-    contentFrame.Size = UDim2.new(1, -10, 1, -90)
-    contentFrame.Position = UDim2.new(0, 5, 0, 45)
-    contentFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    contentFrame.BorderSizePixel = 1
-    contentFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
-    contentFrame.ScrollBarThickness = 8
-    contentFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-    contentFrame.Parent = detailNotebook
-    
-    local detailText = generateDetailText(analysis)
-    
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -10, 0, 0)
-    textLabel.Position = UDim2.new(0, 5, 0, 5)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = detailText
-    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textLabel.TextSize = 11
-    textLabel.Font = Enum.Font.SourceSans
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.TextYAlignment = Enum.TextYAlignment.Top
-    textLabel.TextWrapped = true
-    textLabel.Parent = contentFrame
-    
-    local textBounds = textLabel.TextBounds
-    textLabel.Size = UDim2.new(1, -10, 0, textBounds.Y + 20)
-    contentFrame.CanvasSize = UDim2.new(0, 0, 0, textBounds.Y + 50)
-    
-    local buttonFrame = Instance.new("Frame")
-    buttonFrame.Size = UDim2.new(1, 0, 0, 40)
-    buttonFrame.Position = UDim2.new(0, 0, 1, -40)
-    buttonFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    buttonFrame.BorderSizePixel = 0
-    buttonFrame.Parent = detailNotebook
-    
-    local copyButton = Instance.new("TextButton")
-    copyButton.Size = UDim2.new(0, 150, 0, 30)
-    copyButton.Position = UDim2.new(0, 10, 0, 5)
-    copyButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-    copyButton.BorderSizePixel = 0
-    copyButton.Text = "📋 СКОПИРОВАТЬ"
-    copyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    copyButton.TextSize = 12
-    copyButton.Font = Enum.Font.SourceSansBold
-    copyButton.Parent = buttonFrame
-    
-    local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(0, 150, 0, 30)
-    closeButton.Position = UDim2.new(1, -160, 0, 5)
-    closeButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-    closeButton.BorderSizePixel = 0
-    closeButton.Text = "❌ ЗАКРЫТЬ"
-    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextSize = 12
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.Parent = buttonFrame
-    
-    copyButton.MouseButton1Click:Connect(function()
-        copyButton.Text = "✅ СКОПИРОВАНО"
-        copyButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-        print("📋 Информация о питомце:")
-        print(detailText)
+    for i, analysis in ipairs(analyzedPets) do
+        Tabs.ResultsTab:Paragraph({
+            Title = "Pet #" .. i .. ": " .. analysis.uuid,
+            Desc = string.format("Parts: %d | Meshes: %d | Motor6D: %d | Humanoids: %d", 
+                analysis.partCount, analysis.meshCount, analysis.motor6dCount, analysis.humanoidCount),
+            Image = "search",
+            Color = "Green"
+        })
         
-        wait(1)
-        copyButton.Text = "📋 СКОПИРОВАТЬ"
-        copyButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-    end)
-    
-    closeButton.MouseButton1Click:Connect(function()
-        detailNotebook:Destroy()
-        detailNotebook = nil
-    end)
+        Tabs.ResultsTab:Button({
+            Title = "📋 View Details",
+            Icon = "file-text",
+            Callback = function()
+                showDetailedAnalysis(analysis)
+            end
+        })
+        
+        if i < #analyzedPets then
+            Tabs.ResultsTab:Divider()
+        end
+    end
 end
 
--- Функция создания основного GUI
-local function createMainGUI()
-    local playerGui = player:WaitForChild("PlayerGui")
-    
-    local oldGui = playerGui:FindFirstChild("PetAnalyzerGUI")
-    if oldGui then
-        oldGui:Destroy()
-        wait(0.1)
-    end
-    
-    mainGui = Instance.new("ScreenGui")
-    mainGui.Name = "PetAnalyzerGUI"
-    mainGui.Parent = playerGui
-    
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 400, 0, 600)
-    mainFrame.Position = UDim2.new(0, 50, 0, 50)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    mainFrame.BorderSizePixel = 2
-    mainFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
-    mainFrame.Parent = mainGui
-    
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, 0, 0, 40)
-    titleLabel.Position = UDim2.new(0, 0, 0, 0)
-    titleLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    titleLabel.BorderSizePixel = 0
-    titleLabel.Text = "🔍 PET ANALYZER"
-    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleLabel.TextSize = 18
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.Parent = mainFrame
-    
-    local analyzeButton = Instance.new("TextButton")
-    analyzeButton.Name = "AnalyzeButton"
-    analyzeButton.Size = UDim2.new(0, 350, 0, 40)
-    analyzeButton.Position = UDim2.new(0, 25, 0, 50)
-    analyzeButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
-    analyzeButton.BorderSizePixel = 0
-    analyzeButton.Text = "🔬 АНАЛИЗИРОВАТЬ БЛИЖАЙШЕГО ПИТОМЦА"
-    analyzeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    analyzeButton.TextSize = 14
-    analyzeButton.Font = Enum.Font.SourceSansBold
-    analyzeButton.Parent = mainFrame
-    
-    petListFrame = Instance.new("ScrollingFrame")
-    petListFrame.Name = "PetListFrame"
-    petListFrame.Size = UDim2.new(1, -20, 1, -110)
-    petListFrame.Position = UDim2.new(0, 10, 0, 100)
-    petListFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-    petListFrame.BorderSizePixel = 1
-    petListFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
-    petListFrame.ScrollBarThickness = 8
-    petListFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-    petListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    petListFrame.Parent = mainFrame
-    
-    local listLayout = Instance.new("UIListLayout")
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    listLayout.Padding = UDim.new(0, 5)
-    listLayout.Parent = petListFrame
-    
-    -- Обработчик кнопки анализа
-    analyzeButton.MouseButton1Click:Connect(function()
-        analyzeButton.Text = "⏳ АНАЛИЗИРУЮ..."
-        analyzeButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+-- Main Tab Implementation
+Tabs.MainTab:Paragraph({
+    Title = "Pet Analyzer",
+    Desc = "Searches for pets with UUID names (containing {}) and provides detailed model analysis",
+    Image = "search",
+    Color = "Blue"
+})
+
+Tabs.MainTab:Button({
+    Title = "🔬 Analyze Closest Pet",
+    Icon = "search",
+    Callback = function()
+        WindUI:Notify({
+            Title = "Analyzing...",
+            Content = "Searching for nearby UUID pets",
+            Icon = "search",
+            Duration = 2
+        })
         
         spawn(function()
             local petModel = findClosestUUIDPet()
             if petModel then
                 local analysis = analyzePetModel(petModel)
                 
+                -- Check if already exists
                 local alreadyExists = false
                 for _, existingPet in pairs(analyzedPets) do
                     if existingPet.uuid == analysis.uuid then
@@ -551,25 +522,124 @@ local function createMainGUI()
                 
                 if not alreadyExists and #analyzedPets < CONFIG.MAX_ANALYZED_PETS then
                     table.insert(analyzedPets, analysis)
-                    createPetCard(analysis)
+                    currentAnalysis = analysis
+                    
+                    WindUI:Notify({
+                        Title = "Analysis Complete!",
+                        Content = "Found pet: " .. analysis.uuid .. " with " .. analysis.partCount .. " parts",
+                        Icon = "check-circle",
+                        Duration = 4
+                    })
+                    
+                    -- Update results tab
+                    updateResultsTab()
+                else
+                    WindUI:Notify({
+                        Title = "Pet Already Analyzed",
+                        Content = "This pet has already been analyzed",
+                        Icon = "info",
+                        Duration = 3
+                    })
                 end
-                
-                analyzeButton.Text = "✅ АНАЛИЗ ЗАВЕРШЕН"
-                analyzeButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
             else
-                analyzeButton.Text = "❌ ПИТОМЕЦ НЕ НАЙДЕН"
-                analyzeButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+                WindUI:Notify({
+                    Title = "No Pet Found",
+                    Content = "No UUID pets found within " .. CONFIG.SEARCH_RADIUS .. " studs",
+                    Icon = "alert-triangle",
+                    Duration = 4
+                })
             end
-            
-            wait(2)
-            analyzeButton.Text = "🔬 АНАЛИЗИРОВАТЬ БЛИЖАЙШЕГО ПИТОМЦА"
-            analyzeButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
         end)
-    end)
-end
+    end
+})
 
+Tabs.MainTab:Button({
+    Title = "📋 Show Detailed Analysis",
+    Icon = "file-text",
+    Callback = function()
+        if currentAnalysis then
+            showDetailedAnalysis(currentAnalysis)
+        else
+            WindUI:Notify({
+                Title = "No Analysis Available",
+                Content = "Please analyze a pet first",
+                Icon = "alert-triangle",
+                Duration = 3
+            })
+        end
+    end
+})
 
--- === ЗАПУСК ===
+Tabs.MainTab:Divider()
 
-createMainGUI()
-print("✅ Pet Analyzer запущен! Используйте GUI для анализа питомцев.")
+Tabs.MainTab:Paragraph({
+    Title = "Quick Stats",
+    Desc = "Analyzed Pets: " .. #analyzedPets .. "/" .. CONFIG.MAX_ANALYZED_PETS,
+    Image = "bar-chart",
+    Color = "Green"
+})
+
+-- Settings Tab Implementation
+Tabs.SettingsTab:Paragraph({
+    Title = "Analysis Settings",
+    Desc = "Configure search parameters and limits",
+    Image = "settings",
+    Color = "Purple"
+})
+
+Tabs.SettingsTab:Slider({
+    Title = "Search Radius (Studs)",
+    Value = {
+        Min = 50,
+        Max = 500,
+        Default = CONFIG.SEARCH_RADIUS
+    },
+    Callback = function(value)
+        CONFIG.SEARCH_RADIUS = value
+        WindUI:Notify({
+            Title = "Search Radius Updated",
+            Content = "Now searching within " .. value .. " studs",
+            Icon = "target",
+            Duration = 2
+        })
+    end
+})
+
+Tabs.SettingsTab:Slider({
+    Title = "Max Analyzed Pets",
+    Value = {
+        Min = 5,
+        Max = 50,
+        Default = CONFIG.MAX_ANALYZED_PETS
+    },
+    Callback = function(value)
+        CONFIG.MAX_ANALYZED_PETS = value
+        WindUI:Notify({
+            Title = "Pet Limit Updated",
+            Content = "Can now store up to " .. value .. " analyzed pets",
+            Icon = "list",
+            Duration = 2
+        })
+    end
+})
+
+Tabs.SettingsTab:Button({
+    Title = "Clear All Data",
+    Icon = "trash-2",
+    Callback = function()
+        analyzedPets = {}
+        currentAnalysis = nil
+        WindUI:Notify({
+            Title = "Data Cleared",
+            Content = "All analyzed pet data has been cleared",
+            Icon = "trash-2",
+            Duration = 3
+        })
+        updateResultsTab()
+    end
+})
+
+-- Initialize results tab
+updateResultsTab()
+
+print("✅ Pet Analyzer with WindUI loaded successfully!")
