@@ -1069,13 +1069,73 @@ function showDetailedAnalysis(analysis)
                 Title = "Copy to Clipboard",
                 Icon = "copy",
                 Callback = function()
-                    pcall(function()
-                        if setclipboard then
-                            setclipboard(detailText)
-                        else
-                            game:GetService("GuiService"):SetClipboard(detailText)
+                    -- Многоэтапное копирование для длинных текстов
+                    local maxClipboardSize = 45000  -- Уменьшаем лимит для надежности
+                    local textLength = #detailText
+                    
+                    if textLength > maxClipboardSize then
+                        -- Разбиваем на части и копируем поэтапно
+                        local totalParts = math.ceil(textLength / maxClipboardSize)
+                        
+                        -- Создаем popup с кнопками для каждой части
+                        local buttons = {}
+                        
+                        for i = 1, totalParts do
+                            local startPos = (i - 1) * maxClipboardSize + 1
+                            local endPos = math.min(i * maxClipboardSize, textLength)
+                            local partText = string.sub(detailText, startPos, endPos)
+                            
+                            table.insert(buttons, {
+                                Title = string.format("Copy Part %d/%d", i, totalParts),
+                                Icon = "copy",
+                                Callback = function()
+                                    pcall(function()
+                                        if setclipboard then
+                                            setclipboard(partText)
+                                        else
+                                            game:GetService("GuiService"):SetClipboard(partText)
+                                        end
+                                    end)
+                                    
+                                    WindUI:Notify({
+                                        Title = string.format("Part %d Copied!", i),
+                                        Content = string.format("Copied part %d/%d (%d chars)", i, totalParts, #partText),
+                                        Icon = "copy",
+                                        Duration = 3
+                                    })
+                                end
+                            })
                         end
-                    end)
+                        
+                        table.insert(buttons, {
+                            Title = "Close",
+                            Callback = function() end
+                        })
+                        
+                        WindUI:Popup({
+                            Title = "📋 Multi-Part Copy",
+                            Icon = "layers",
+                            Content = string.format("Text is %d chars long, split into %d parts of ~%d chars each. Copy each part separately:", textLength, totalParts, maxClipboardSize),
+                            Buttons = buttons
+                        })
+                        
+                    else
+                        -- Обычное копирование для коротких текстов
+                        pcall(function()
+                            if setclipboard then
+                                setclipboard(detailText)
+                            else
+                                game:GetService("GuiService"):SetClipboard(detailText)
+                            end
+                        end)
+                        
+                        WindUI:Notify({
+                            Title = "Copied!",
+                            Content = "Analysis data copied to clipboard",
+                            Icon = "copy",
+                            Duration = 3
+                        })
+                    end
                     
                     print("📋 Pet Analysis Data:")
                     -- Разбиваем длинный текст на части для консоли
@@ -1235,13 +1295,73 @@ Complete analysis data with CFrame animations, Motor6D data, and all child objec
                 Title = "📋 Copy Full Tool Data",
                 Icon = "copy",
                 Callback = function()
-                    pcall(function()
-                        if setclipboard then
-                            setclipboard(detailText)
-                        else
-                            game:GetService("GuiService"):SetClipboard(detailText)
+                    -- Многоэтапное копирование для длинных текстов
+                    local maxClipboardSize = 45000  -- Уменьшаем лимит для надежности
+                    local textLength = #detailText
+                    
+                    if textLength > maxClipboardSize then
+                        -- Разбиваем на части и копируем поэтапно
+                        local totalParts = math.ceil(textLength / maxClipboardSize)
+                        
+                        -- Создаем popup с кнопками для каждой части
+                        local buttons = {}
+                        
+                        for i = 1, totalParts do
+                            local startPos = (i - 1) * maxClipboardSize + 1
+                            local endPos = math.min(i * maxClipboardSize, textLength)
+                            local partText = string.sub(detailText, startPos, endPos)
+                            
+                            table.insert(buttons, {
+                                Title = string.format("Copy Part %d/%d", i, totalParts),
+                                Icon = "copy",
+                                Callback = function()
+                                    pcall(function()
+                                        if setclipboard then
+                                            setclipboard(partText)
+                                        else
+                                            game:GetService("GuiService"):SetClipboard(partText)
+                                        end
+                                    end)
+                                    
+                                    WindUI:Notify({
+                                        Title = string.format("Part %d Copied!", i),
+                                        Content = string.format("Copied part %d/%d (%d chars)", i, totalParts, #partText),
+                                        Icon = "copy",
+                                        Duration = 3
+                                    })
+                                end
+                            })
                         end
-                    end)
+                        
+                        table.insert(buttons, {
+                            Title = "Close",
+                            Callback = function() end
+                        })
+                        
+                        WindUI:Popup({
+                            Title = "📋 Multi-Part Copy Tool",
+                            Icon = "layers",
+                            Content = string.format("Tool analysis is %d chars long, split into %d parts of ~%d chars each. Copy each part separately:", textLength, totalParts, maxClipboardSize),
+                            Buttons = buttons
+                        })
+                        
+                    else
+                        -- Обычное копирование для коротких текстов
+                        pcall(function()
+                            if setclipboard then
+                                setclipboard(detailText)
+                            else
+                                game:GetService("GuiService"):SetClipboard(detailText)
+                            end
+                        end)
+                        
+                        WindUI:Notify({
+                            Title = "Copied!",
+                            Content = "Full hand tool analysis data copied to clipboard",
+                            Icon = "copy",
+                            Duration = 3
+                        })
+                    end
                     
                     print("🔧 Hand Tool Analysis Data:")
                     -- Разбиваем длинный текст на части для консоли
