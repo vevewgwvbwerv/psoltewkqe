@@ -258,7 +258,7 @@ local function generateDetailText(analysis)
     
     ["Meshes"] = {]], 
         analysis.uuid,
-        analysis.primaryPart,
+        analysis.primaryPart or "None",
         analysis.modelSize and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z) or "nil",
         analysis.modelPosition and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelPosition.X, analysis.modelPosition.Y, analysis.modelPosition.Z) or "nil",
         analysis.partCount,
@@ -284,15 +284,37 @@ local function generateDetailText(analysis)
     
     text = text .. "\n    },\n    \n    [\"Parts\"] = {"
     
-    -- Добавляем информацию о частях
+    -- Добавляем информацию о частях (показываем все)
     for i, part in ipairs(analysis.parts) do
-        if i <= 10 then -- Ограничиваем для читаемости
-            text = text .. string.format('\n        [%d] = {name = "%s", class = "%s", material = "%s"},', i, part.name, part.className, part.material)
-        end
+        text = text .. string.format('\n        [%d] = {name = "%s", class = "%s", size = Vector3.new(%.2f, %.2f, %.2f), material = "%s"},', i, part.name, part.className, part.size.X, part.size.Y, part.size.Z, part.material)
     end
     
-    if #analysis.parts > 10 then
-        text = text .. string.format("\n        -- ... и еще %d частей", #analysis.parts - 10)
+    text = text .. "\n    },\n    \n    [\"Humanoids\"] = {"
+    
+    -- Добавляем информацию о Humanoids
+    for i, humanoid in ipairs(analysis.humanoids) do
+        text = text .. string.format('\n        [%d] = {name = "%s", health = %.1f, walkSpeed = %.1f, rigType = "%s"},', i, humanoid.name, humanoid.health, humanoid.walkSpeed, humanoid.rigType)
+    end
+    
+    text = text .. "\n    },\n    \n    [\"Attachments\"] = {"
+    
+    -- Добавляем информацию об Attachments
+    for i, attachment in ipairs(analysis.attachments) do
+        text = text .. string.format('\n        [%d] = {name = "%s", parent = "%s"},', i, attachment.name, attachment.parent)
+    end
+    
+    text = text .. "\n    },\n    \n    [\"Scripts\"] = {"
+    
+    -- Добавляем информацию о Scripts
+    for i, script in ipairs(analysis.scripts) do
+        text = text .. string.format('\n        [%d] = {name = "%s", type = "%s"},', i, script.name, script.className)
+    end
+    
+    text = text .. "\n    },\n    \n    [\"Sounds\"] = {"
+    
+    -- Добавляем информацию о Sounds
+    for i, sound in ipairs(analysis.sounds) do
+        text = text .. string.format('\n        [%d] = {name = "%s", soundId = "%s", volume = %.2f},', i, sound.name, sound.soundId, sound.volume)
     end
     
     text = text .. "\n    }\n}"
@@ -305,6 +327,43 @@ end
 local mainGui = nil
 local petListFrame = nil
 local detailNotebook = nil
+local analyzedPets = {}
+
+-- Функция создания закругленных углов
+local function addRoundedCorners(frame, cornerRadius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, cornerRadius or 8)
+    corner.Parent = frame
+end
+
+-- Функция добавления возможности перетаскивания
+local function makeDraggable(frame)
+    local UserInputService = game:GetService("UserInputService")
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+        end
+    end)
+    
+    frame.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    frame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
 
 -- Функция создания детального блокнота
 local function openDetailNotebook(analysis)
@@ -314,38 +373,47 @@ local function openDetailNotebook(analysis)
     
     detailNotebook = Instance.new("Frame")
     detailNotebook.Name = "DetailNotebook"
-    detailNotebook.Size = UDim2.new(0, 600, 0, 700)
-    detailNotebook.Position = UDim2.new(0, 500, 0, 50)
+    detailNotebook.Size = UDim2.new(0, 600, 0, 500)  -- Компактный размер
+    detailNotebook.Position = UDim2.new(0, 400, 0, 100)  -- Справа от основного окна
     detailNotebook.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    detailNotebook.BorderSizePixel = 2
-    detailNotebook.BorderColor3 = Color3.fromRGB(70, 70, 70)
+    detailNotebook.BorderSizePixel = 0
+    detailNotebook.ZIndex = 100
     detailNotebook.Parent = mainGui
     
+    addRoundedCorners(detailNotebook, 12)
+    makeDraggable(detailNotebook)
+    
     local notebookTitle = Instance.new("TextLabel")
-    notebookTitle.Size = UDim2.new(1, 0, 0, 40)
+    notebookTitle.Size = UDim2.new(1, 0, 0, 50)
     notebookTitle.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     notebookTitle.BorderSizePixel = 0
     notebookTitle.Text = "📋 ДЕТАЛЬНЫЙ АНАЛИЗ: " .. analysis.uuid
     notebookTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    notebookTitle.TextSize = 14
+    notebookTitle.TextSize = 16
     notebookTitle.Font = Enum.Font.SourceSansBold
+    notebookTitle.TextScaled = true
+    notebookTitle.ZIndex = 101
     notebookTitle.Parent = detailNotebook
     
+    addRoundedCorners(notebookTitle, 12)
+    
     local contentFrame = Instance.new("ScrollingFrame")
-    contentFrame.Size = UDim2.new(1, -10, 1, -90)
-    contentFrame.Position = UDim2.new(0, 5, 0, 45)
+    contentFrame.Size = UDim2.new(1, -20, 1, -110)
+    contentFrame.Position = UDim2.new(0, 10, 0, 55)
     contentFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    contentFrame.BorderSizePixel = 1
-    contentFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
-    contentFrame.ScrollBarThickness = 8
+    contentFrame.BorderSizePixel = 0
+    contentFrame.ScrollBarThickness = 12
     contentFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
+    contentFrame.ZIndex = 101
     contentFrame.Parent = detailNotebook
+    
+    addRoundedCorners(contentFrame, 8)
     
     local detailText = generateDetailText(analysis)
     
     local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -10, 0, 0)
-    textLabel.Position = UDim2.new(0, 5, 0, 5)
+    textLabel.Size = UDim2.new(1, -20, 0, 0)
+    textLabel.Position = UDim2.new(0, 10, 0, 10)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = detailText
     textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -354,40 +422,55 @@ local function openDetailNotebook(analysis)
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
     textLabel.TextYAlignment = Enum.TextYAlignment.Top
     textLabel.TextWrapped = true
+    textLabel.TextScaled = false
+    textLabel.ZIndex = 102
     textLabel.Parent = contentFrame
     
+    -- Ждем один кадр для правильного расчета размера текста
+    game:GetService("RunService").Heartbeat:Wait()
     local textBounds = textLabel.TextBounds
-    textLabel.Size = UDim2.new(1, -10, 0, textBounds.Y + 20)
+    textLabel.Size = UDim2.new(1, -20, 0, math.max(textBounds.Y + 20, 100))
     contentFrame.CanvasSize = UDim2.new(0, 0, 0, textBounds.Y + 50)
     
     local buttonFrame = Instance.new("Frame")
-    buttonFrame.Size = UDim2.new(1, 0, 0, 40)
-    buttonFrame.Position = UDim2.new(0, 0, 1, -40)
+    buttonFrame.Size = UDim2.new(1, 0, 0, 50)
+    buttonFrame.Position = UDim2.new(0, 0, 1, -50)
     buttonFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     buttonFrame.BorderSizePixel = 0
+    buttonFrame.ZIndex = 101
     buttonFrame.Parent = detailNotebook
     
+    addRoundedCorners(buttonFrame, 12)
+    
     local copyButton = Instance.new("TextButton")
-    copyButton.Size = UDim2.new(0, 150, 0, 30)
-    copyButton.Position = UDim2.new(0, 10, 0, 5)
+    copyButton.Size = UDim2.new(0.45, -5, 0, 35)
+    copyButton.Position = UDim2.new(0, 10, 0, 7.5)
     copyButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
     copyButton.BorderSizePixel = 0
     copyButton.Text = "📋 СКОПИРОВАТЬ"
     copyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    copyButton.TextSize = 12
+    copyButton.TextSize = 14
     copyButton.Font = Enum.Font.SourceSansBold
+    copyButton.TextScaled = true
+    copyButton.ZIndex = 102
     copyButton.Parent = buttonFrame
     
+    addRoundedCorners(copyButton, 8)
+    
     local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(0, 150, 0, 30)
-    closeButton.Position = UDim2.new(1, -160, 0, 5)
+    closeButton.Size = UDim2.new(0.45, -5, 0, 35)
+    closeButton.Position = UDim2.new(0.55, 0, 0, 7.5)
     closeButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
     closeButton.BorderSizePixel = 0
     closeButton.Text = "❌ ЗАКРЫТЬ"
     closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextSize = 12
+    closeButton.TextSize = 14
     closeButton.Font = Enum.Font.SourceSansBold
+    closeButton.TextScaled = true
+    closeButton.ZIndex = 102
     closeButton.Parent = buttonFrame
+    
+    addRoundedCorners(closeButton, 8)
     
     copyButton.MouseButton1Click:Connect(function()
         copyButton.Text = "✅ СКОПИРОВАНО"
@@ -415,11 +498,14 @@ local function createPetCard(analysis)
     
     local cardFrame = Instance.new("Frame")
     cardFrame.Name = "PetCard_" .. #analyzedPets
-    cardFrame.Size = UDim2.new(1, -10, 0, 80)
-    cardFrame.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
-    cardFrame.BorderSizePixel = 1
-    cardFrame.BorderColor3 = Color3.fromRGB(85, 85, 85)
+    cardFrame.Size = UDim2.new(1, -10, 0, 85)
+    cardFrame.Position = UDim2.new(0, 10, 0, (#analyzedPets - 1) * 95)
+    cardFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    cardFrame.BorderSizePixel = 0
+    cardFrame.ZIndex = 10
     cardFrame.Parent = petListFrame
+    
+    addRoundedCorners(cardFrame, 8)
     
     local uuidTextBox = Instance.new("TextBox")
     uuidTextBox.Name = "UUIDTextBox"
@@ -435,36 +521,42 @@ local function createPetCard(analysis)
     uuidTextBox.ClearTextOnFocus = false
     uuidTextBox.Parent = cardFrame
     
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Name = "InfoLabel"
-    infoLabel.Size = UDim2.new(1, -10, 0, 20)
-    infoLabel.Position = UDim2.new(0, 5, 0, 35)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = string.format("%d meshid, %d humanoid, %d motor6d, %d parts", 
-        analysis.meshCount, analysis.humanoidCount, analysis.motor6dCount, analysis.partCount)
-    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLabel.TextSize = 11
-    infoLabel.Font = Enum.Font.SourceSans
-    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-    infoLabel.Parent = cardFrame
+    local statsLabel = Instance.new("TextLabel")
+    statsLabel.Name = "StatsLabel"
+    statsLabel.Size = UDim2.new(1, -20, 0, 25)
+    statsLabel.Position = UDim2.new(0, 10, 0, 25)
+    statsLabel.BackgroundTransparency = 1
+    statsLabel.Text = string.format("📊 Части: %d | Меши: %d | Motor6D: %d | Humanoid: %d", analysis.partCount, analysis.meshCount, analysis.motor6dCount, analysis.humanoidCount)
+    statsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statsLabel.TextSize = 10
+    statsLabel.Font = Enum.Font.SourceSans
+    statsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statsLabel.TextWrapped = true
+    statsLabel.TextScaled = true
+    statsLabel.ZIndex = 11
+    statsLabel.Parent = cardFrame
     
     local detailButton = Instance.new("TextButton")
     detailButton.Name = "DetailButton"
-    detailButton.Size = UDim2.new(1, -10, 0, 15)
-    detailButton.Position = UDim2.new(0, 5, 0, 60)
+    detailButton.Size = UDim2.new(1, -20, 0, 25)
+    detailButton.Position = UDim2.new(0, 10, 0, 55)
     detailButton.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
     detailButton.BorderSizePixel = 0
     detailButton.Text = "📋 Открыть детальный блокнот"
     detailButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    detailButton.TextSize = 10
+    detailButton.TextSize = 12
     detailButton.Font = Enum.Font.SourceSans
+    detailButton.TextScaled = true
+    detailButton.ZIndex = 11
     detailButton.Parent = cardFrame
+    
+    addRoundedCorners(detailButton, 6)
     
     detailButton.MouseButton1Click:Connect(function()
         openDetailNotebook(analysis)
     end)
     
-    petListFrame.CanvasSize = UDim2.new(0, 0, 0, #analyzedPets * 85)
+    petListFrame.CanvasSize = UDim2.new(0, 0, 0, #analyzedPets * 95)
 end
 
 -- Функция создания основного GUI
@@ -479,56 +571,70 @@ local function createMainGUI()
     
     mainGui = Instance.new("ScreenGui")
     mainGui.Name = "PetAnalyzerGUI"
+    mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     mainGui.Parent = playerGui
     
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 400, 0, 600)
-    mainFrame.Position = UDim2.new(0, 50, 0, 50)
+    mainFrame.Size = UDim2.new(0, 350, 0, 500)  -- Узкое вертикальное окно
+    mainFrame.Position = UDim2.new(0, 20, 0, 50)  -- Левый верхний угол
     mainFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    mainFrame.BorderSizePixel = 2
-    mainFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.ZIndex = 5
     mainFrame.Parent = mainGui
+    
+    addRoundedCorners(mainFrame, 12)
+    makeDraggable(mainFrame)
     
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, 0, 0, 40)
+    titleLabel.Size = UDim2.new(1, 0, 0, 50)
     titleLabel.Position = UDim2.new(0, 0, 0, 0)
     titleLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     titleLabel.BorderSizePixel = 0
     titleLabel.Text = "🔍 PET ANALYZER"
     titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleLabel.TextSize = 18
+    titleLabel.TextSize = 20
     titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextScaled = true
+    titleLabel.ZIndex = 6
     titleLabel.Parent = mainFrame
+    
+    addRoundedCorners(titleLabel, 12)
     
     local analyzeButton = Instance.new("TextButton")
     analyzeButton.Name = "AnalyzeButton"
-    analyzeButton.Size = UDim2.new(0, 350, 0, 40)
-    analyzeButton.Position = UDim2.new(0, 25, 0, 50)
+    analyzeButton.Size = UDim2.new(1, -20, 0, 50)
+    analyzeButton.Position = UDim2.new(0, 10, 0, 60)
     analyzeButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
     analyzeButton.BorderSizePixel = 0
     analyzeButton.Text = "🔬 АНАЛИЗИРОВАТЬ БЛИЖАЙШЕГО ПИТОМЦА"
     analyzeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    analyzeButton.TextSize = 14
+    analyzeButton.TextSize = 16
     analyzeButton.Font = Enum.Font.SourceSansBold
+    analyzeButton.TextScaled = true
+    analyzeButton.ZIndex = 6
     analyzeButton.Parent = mainFrame
+    
+    addRoundedCorners(analyzeButton, 8)
     
     petListFrame = Instance.new("ScrollingFrame")
     petListFrame.Name = "PetListFrame"
-    petListFrame.Size = UDim2.new(1, -20, 1, -110)
-    petListFrame.Position = UDim2.new(0, 10, 0, 100)
+    petListFrame.Size = UDim2.new(1, -20, 1, -130)
+    petListFrame.Position = UDim2.new(0, 10, 0, 120)
     petListFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-    petListFrame.BorderSizePixel = 1
-    petListFrame.BorderColor3 = Color3.fromRGB(70, 70, 70)
-    petListFrame.ScrollBarThickness = 8
+    petListFrame.BorderSizePixel = 0
+    petListFrame.ScrollBarThickness = 12
     petListFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
     petListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    petListFrame.ZIndex = 6
     petListFrame.Parent = mainFrame
+    
+    addRoundedCorners(petListFrame, 8)
     
     local listLayout = Instance.new("UIListLayout")
     listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    listLayout.Padding = UDim.new(0, 5)
+    listLayout.Padding = UDim.new(0, 10)
     listLayout.Parent = petListFrame
     
     -- Обработчик кнопки анализа
