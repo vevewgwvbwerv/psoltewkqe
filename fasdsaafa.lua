@@ -1,706 +1,906 @@
--- SIMPLE PET ANALYZER v2.0
--- Анализатор питомцев с GUI консолью и мониторингом workspace
+-- === PET ANALYZER WITH WINDUI ===
+-- Made by Assistant | Styled after DONCALDERONE
+
+-- Load WindUI Library
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+-- === КОНФИГУРАЦИЯ ===
+
+local CONFIG = {
+    SEARCH_RADIUS = 100,
+    MAX_ANALYZED_PETS = 10
+}
+
+-- === СЕРВИСЫ ===
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local backpack = player.Backpack
-local playerGui = player:WaitForChild("PlayerGui")
+local playerPos = player.Character and player.Character.HumanoidRootPart and player.Character.HumanoidRootPart.Position or Vector3.new(0, 0, 0)
 
-print("=== SIMPLE PET ANALYZER v2.0 STARTED ===")
-print("Monitoring backpack, hands and workspace for pets...")
+-- === ПЕРЕМЕННЫЕ ===
 
--- Переменные для хранения данных
-local petEvents = {}
-local currentTool = nil
-local consoleOutput = {}
-local gui = nil
-local recentRemoteCalls = {}
-local remoteConnections = {}
+local analyzedPets = {}
+local currentAnalysis = nil
 
--- Функция логирования с GUI консолью
-local function logEvent(eventType, petName, details)
-    local event = {
-        time = tick(),
-        type = eventType,
-        pet = petName,
-        details = details or {}
-    }
-    table.insert(petEvents, event)
+-- === ФУНКЦИИ ПОИСКА UUID ПИТОМЦЕВ ===
+
+-- Функция проверки визуальных элементов питомца
+local function hasPetVisuals(model)
+    local visualCount = 0
     
-    local logMessage = string.format("[%.2f] %s: %s", event.time, eventType, petName)
-    print(logMessage)
-    
-    -- Добавляем в GUI консоль
-    table.insert(consoleOutput, logMessage)
-    if details then
-        for key, value in pairs(details) do
-            local detailMsg = string.format("  %s: %s", key, tostring(value))
-            print(detailMsg)
-            table.insert(consoleOutput, detailMsg)
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            visualCount = visualCount + 1
+        elseif obj:IsA("Part") then
+            local hasDecal = obj:FindFirstChildOfClass("Decal")
+            local hasTexture = obj:FindFirstChildOfClass("Texture")
+            if hasDecal or hasTexture or obj.Material ~= Enum.Material.Plastic then
+                visualCount = visualCount + 1
+            end
+        elseif obj:IsA("UnionOperation") then
+            visualCount = visualCount + 1
         end
     end
     
-    -- Ограничиваем размер консоли
-    if #consoleOutput > 100 then
-        table.remove(consoleOutput, 1)
+    if visualCount == 0 then
+        local partCount = 0
+        for _, obj in pairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                partCount = partCount + 1
+            end
+        end
+        if partCount >= 2 then
+            visualCount = partCount
+        end
     end
     
-    -- Обновляем GUI консоль если существует
-    updateGUIConsole()
+    return visualCount > 0
 end
 
--- Функция обновления GUI консоли (ИСПРАВЛЕННАЯ)
-local function updateGUIConsole()
-    if gui and gui:FindFirstChild("MainFrame") then
-        local mainFrame = gui:FindFirstChild("MainFrame")
-        if mainFrame then
-            local consoleFrame = mainFrame:FindFirstChild("ConsoleFrame")
-            if consoleFrame then
-                local consoleText = consoleFrame:FindFirstChild("ConsoleText")
-                if consoleText then
-                    local displayText = ""
-                    local startIndex = math.max(1, #consoleOutput - 15) -- Показываем последние 15 строк
-                    for i = startIndex, #consoleOutput do
-                        displayText = displayText .. consoleOutput[i] .. "\n"
+-- Функция проверки UUID формата
+local function isUUIDFormat(name)
+    return string.match(name, "%{[%w%-]+%}") ~= nil
+end
+
+-- Функция поиска ближайшего UUID питомца (СКОПИРОВАНО ИЗ ОРИГИНАЛА)
+local function findClosestUUIDPet()
+    print("🔍 Поиск UUID моделей питомцев...")
+    
+    local playerChar = player.Character
+    if not playerChar then
+        return nil
+    end
+
+    local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return nil
+    end
+
+    local playerPos = hrp.Position
+    local foundPets = {}
+    
+    -- ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ ОРИГИНАЛЬНОГО PetAnalyzer.lua
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            if success then
+                local distance = (modelCFrame.Position - playerPos).Magnitude
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    if hasPetVisuals(obj) then
+                        table.insert(foundPets, {
+                            model = obj,
+                            distance = distance
+                        })
                     end
-                    consoleText.Text = displayText
-                    
-                    -- Обновляем размер canvas для скроллинга
-                    local textHeight = consoleText.TextBounds.Y
-                    consoleFrame.CanvasSize = UDim2.new(0, 0, 0, math.max(textHeight + 20, consoleFrame.AbsoluteSize.Y))
-                    
-                    -- Автоскролл вниз
-                    consoleFrame.CanvasPosition = Vector2.new(0, math.max(0, textHeight - consoleFrame.AbsoluteSize.Y))
                 end
             end
         end
     end
-end
-
--- Функция анализа Tool (РАСШИРЕННАЯ)
-local function analyzeTool(tool)
-    if not tool then return {} end
     
-    local data = {
-        name = tool.Name,
-        className = tool.ClassName,
-        canBeDropped = tool.CanBeDropped,
-        enabled = tool.Enabled,
-        requiresHandle = tool.RequiresHandle,
-        toolTip = tool.ToolTip
-    }
-    
-    -- Анализируем все дочерние объекты
-    data.children = {}
-    for _, child in pairs(tool:GetChildren()) do
-        table.insert(data.children, {
-            name = child.Name,
-            className = child.ClassName
-        })
+    if #foundPets == 0 then
+        print("❌ UUID питомцы не найдены в радиусе", CONFIG.SEARCH_RADIUS, "стадов")
+        return nil
     end
     
-    local handle = tool:FindFirstChild("Handle")
-    if handle then
-        data.handleSize = tostring(handle.Size)
-        data.handlePosition = tostring(handle.Position)
-        data.handleCFrame = tostring(handle.CFrame)
-        data.handleMaterial = handle.Material.Name
-        data.handleAnchored = handle.Anchored
-        data.handleCanCollide = handle.CanCollide
-        data.handleTransparency = handle.Transparency
-        data.handleBrickColor = tostring(handle.BrickColor)
-        data.handleColor = tostring(handle.Color)
-        
-        -- Детальный анализ всех объектов в Handle
-        data.handleChildren = {}
-        for _, child in pairs(handle:GetChildren()) do
-            local childData = {
-                name = child.Name,
-                className = child.ClassName
+    -- Сортируем по расстоянию и берем ближайшего
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    local closestPet = foundPets[1]
+    
+    print("🎯 Найден ближайший UUID питомец:", closestPet.model.Name, "на расстоянии", math.floor(closestPet.distance), "стадов")
+    
+    return closestPet.model
+end
+
+-- === ФУНКЦИИ АНАЛИЗА ПИТОМЦЕВ ===
+
+-- Функция глубокого анализа модели питомца
+local function analyzePetModel(model)
+    local analysis = {
+        uuid = model.Name,
+        meshCount = 0,
+        motor6dCount = 0,
+        humanoidCount = 0,
+        partCount = 0,
+        attachmentCount = 0,
+        scriptCount = 0,
+        meshes = {},
+        motor6ds = {},
+        humanoids = {},
+        parts = {},
+        attachments = {},
+        scripts = {},
+        primaryPart = model.PrimaryPart and model.PrimaryPart.Name or "None",
+        modelSize = nil,
+        modelPosition = nil
+    }
+    
+    -- Получение размера и позиции модели
+    local cf, size = model:GetBoundingBox()
+    analysis.modelSize = size
+    analysis.modelPosition = cf.Position
+    
+    -- Анализ всех потомков
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            analysis.meshCount = analysis.meshCount + 1
+            local meshInfo = {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name
             }
-            
-            if child:IsA("SpecialMesh") then
-                childData.meshType = child.MeshType.Name
-                childData.meshId = child.MeshId
-                childData.textureId = child.TextureId
-                childData.meshScale = tostring(child.Scale)
-                childData.meshOffset = tostring(child.Offset)
-            elseif child:IsA("Attachment") then
-                childData.position = tostring(child.Position)
-                childData.orientation = tostring(child.Orientation)
-                childData.cframe = tostring(child.CFrame)
-            elseif child:IsA("Weld") or child:IsA("WeldConstraint") or child:IsA("Motor6D") then
-                childData.part0 = child.Part0 and child.Part0.Name or "nil"
-                childData.part1 = child.Part1 and child.Part1.Name or "nil"
-                if child:IsA("Motor6D") then
-                    childData.c0 = tostring(child.C0)
-                    childData.c1 = tostring(child.C1)
-                    childData.transform = tostring(child.Transform)
-                end
-            elseif child:IsA("Sound") then
-                childData.soundId = child.SoundId
-                childData.volume = child.Volume
-                childData.pitch = child.Pitch
+            if obj:IsA("MeshPart") then
+                meshInfo.meshId = obj.MeshId
+            elseif obj:IsA("SpecialMesh") then
+                meshInfo.meshId = obj.MeshId
+                meshInfo.meshType = obj.MeshType.Name
             end
+            table.insert(analysis.meshes, meshInfo)
             
-            table.insert(data.handleChildren, childData)
+        elseif obj:IsA("Motor6D") then
+            analysis.motor6dCount = analysis.motor6dCount + 1
+            table.insert(analysis.motor6ds, {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "None",
+                part1 = obj.Part1 and obj.Part1.Name or "None"
+            })
+            
+        elseif obj:IsA("Humanoid") then
+            analysis.humanoidCount = analysis.humanoidCount + 1
+            table.insert(analysis.humanoids, {
+                name = obj.Name,
+                health = obj.Health,
+                maxHealth = obj.MaxHealth,
+                walkSpeed = obj.WalkSpeed
+            })
+            
+        elseif obj:IsA("BasePart") then
+            analysis.partCount = analysis.partCount + 1
+            table.insert(analysis.parts, {
+                name = obj.Name,
+                type = obj.ClassName,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                transparency = obj.Transparency,
+                canCollide = obj.CanCollide,
+                position = obj.Position,
+                rotation = obj.Rotation,
+                brickColor = obj.BrickColor.Name,
+                reflectance = obj.Reflectance
+            })
+            
+        elseif obj:IsA("Attachment") then
+            analysis.attachmentCount = analysis.attachmentCount + 1
+            table.insert(analysis.attachments, {
+                name = obj.Name,
+                parent = obj.Parent.Name,
+                position = obj.Position
+            })
+            
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            analysis.scriptCount = analysis.scriptCount + 1
+            table.insert(analysis.scripts, {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
+            })
+            
+        -- Добавляем анализ декалей и текстур
+        elseif obj:IsA("Decal") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (Decal)",
+                type = "Decal",
+                parent = obj.Parent.Name,
+                texture = obj.Texture,
+                face = obj.Face.Name,
+                transparency = obj.Transparency
+            })
+            
+        elseif obj:IsA("Texture") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (Texture)",
+                type = "Texture", 
+                parent = obj.Parent.Name,
+                texture = obj.Texture,
+                face = obj.Face.Name,
+                transparency = obj.Transparency
+            })
+            
+        -- Добавляем анализ GUI элементов
+        elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (GUI)",
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
+            })
+            
+        -- Добавляем анализ эффектов
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (Effect)",
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
+            })
+            
+        -- Добавляем анализ источников света
+        elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (Light)",
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled,
+                brightness = obj.Brightness,
+                color = obj.Color
+            })
         end
     end
     
-    return data
+    return analysis
 end
 
--- Проверка является ли Tool питомцем
-local function isPet(tool)
-    if not tool then return false end
-    local name = tool.Name
-    return name:find("KG") or name:find("Dragonfly") or 
-           name:find("{") or name:find("Pet") or name:find("pet")
-end
-
--- Функция получения недавних RemoteEvent вызовов
-local function getRecentRemoteCalls(timeWindow)
-    timeWindow = timeWindow or 5 -- последние 5 секунд
-    local currentTime = tick()
-    local recentCalls = {}
+-- Функция генерации детального текста
+local function generateDetailText(analysis)
+    local text = string.format([[%s = {
+    ["PrimaryPart"] = "%s",
+    ["ModelSize"] = %s,
+    ["ModelPosition"] = %s,
+    ["TotalParts"] = %d,
+    ["TotalMeshes"] = %d,
+    ["TotalMotor6D"] = %d,
+    ["TotalHumanoids"] = %d,
+    ["TotalAttachments"] = %d,
+    ["TotalScripts"] = %d,
     
-    for _, call in ipairs(recentRemoteCalls) do
-        if currentTime - call.time <= timeWindow then
-            table.insert(recentCalls, call)
+    ["Meshes"] = {]], 
+        analysis.uuid,
+        analysis.primaryPart or "None",
+        analysis.modelSize and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z) or "nil",
+        analysis.modelPosition and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelPosition.X, analysis.modelPosition.Y, analysis.modelPosition.Z) or "nil",
+        analysis.partCount,
+        analysis.meshCount,
+        analysis.motor6dCount,
+        analysis.humanoidCount,
+        analysis.attachmentCount,
+        analysis.scriptCount
+    )
+    
+    -- Добавление мешей
+    for i, mesh in ipairs(analysis.meshes) do
+        text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", meshId = "%s"}]], 
+            i, mesh.name, mesh.type, mesh.parent, mesh.meshId or "")
+        if i < #analysis.meshes then text = text .. "," end
+    end
+    text = text .. "\n    },\n"
+    
+    -- Добавление Motor6D
+    text = text .. '\n    ["Motor6D"] = {'
+    for i, motor in ipairs(analysis.motor6ds) do
+        text = text .. string.format([[
+        [%d] = {name = "%s", part0 = "%s", part1 = "%s"}]], 
+            i, motor.name, motor.part0, motor.part1)
+        if i < #analysis.motor6ds then text = text .. "," end
+    end
+    text = text .. "\n    },\n"
+    
+    -- Добавление частей
+    text = text .. '\n    ["Parts"] = {'
+    for i, part in ipairs(analysis.parts) do
+        text = text .. string.format([[
+        [%d] = {
+            name = "%s", 
+            type = "%s", 
+            size = Vector3.new(%.2f, %.2f, %.2f), 
+            material = "%s",
+            color = Color3.new(%.3f, %.3f, %.3f),
+            brickColor = "%s",
+            transparency = %.2f,
+            canCollide = %s,
+            position = Vector3.new(%.2f, %.2f, %.2f),
+            rotation = Vector3.new(%.2f, %.2f, %.2f),
+            reflectance = %.2f
+        }]], 
+            i, part.name, part.type, 
+            part.size.X, part.size.Y, part.size.Z, 
+            part.material,
+            part.color.R, part.color.G, part.color.B,
+            part.brickColor,
+            part.transparency,
+            tostring(part.canCollide),
+            part.position.X, part.position.Y, part.position.Z,
+            part.rotation.X, part.rotation.Y, part.rotation.Z,
+            part.reflectance)
+        if i < #analysis.parts then text = text .. "," end
+    end
+    text = text .. "\n    }"
+    
+    -- Добавление гуманоидов (только если есть)
+    if #analysis.humanoids > 0 then
+        text = text .. ',\n\n    ["Humanoids"] = {'
+        for i, humanoid in ipairs(analysis.humanoids) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", health = %.1f, maxHealth = %.1f, walkSpeed = %.1f}]], 
+                i, humanoid.name, humanoid.health, humanoid.maxHealth, humanoid.walkSpeed)
+            if i < #analysis.humanoids then text = text .. "," end
         end
+        text = text .. "\n    }"
     end
     
-    return recentCalls
+    -- Добавление аттачментов (только если есть)
+    if #analysis.attachments > 0 then
+        text = text .. ',\n\n    ["Attachments"] = {'
+        for i, attachment in ipairs(analysis.attachments) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", parent = "%s", position = Vector3.new(%.2f, %.2f, %.2f)}]], 
+                i, attachment.name, attachment.parent, attachment.position.X, attachment.position.Y, attachment.position.Z)
+            if i < #analysis.attachments then text = text .. "," end
+        end
+        text = text .. "\n    }"
+    end
+    
+    -- Добавление скриптов (только если есть)
+    if #analysis.scripts > 0 then
+        text = text .. ',\n\n    ["Scripts"] = {'
+        for i, script in ipairs(analysis.scripts) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", enabled = %s}]], 
+                i, script.name, script.type, script.parent, tostring(script.enabled))
+            if i < #analysis.scripts then text = text .. "," end
+        end
+        text = text .. "\n    }"
+    end
+    
+    text = text .. "\n}"
+    return text
 end
 
--- Функция анализа источника появления питомца
-local function analyzeToolSource(tool)
-    local sourceData = {
-        creationTime = tick(),
-        stackTrace = debug.traceback("Tool creation source:", 2)
+-- === WINDUI СИСТЕМА ===
+
+-- Gradient function for text styling
+function gradient(text, startColor, endColor)
+    local result = ""
+    local length = #text
+
+    for i = 1, length do
+        local t = (i - 1) / math.max(length - 1, 1)
+        local r = math.floor((startColor.R + (endColor.R - startColor.R) * t) * 255)
+        local g = math.floor((startColor.G + (endColor.G - startColor.G) * t) * 255)
+        local b = math.floor((startColor.B + (endColor.B - startColor.B) * t) * 255)
+
+        local char = text:sub(i, i)
+        result = result .. '<font color="rgb(' .. r .. ", " .. g .. ", " .. b .. ')">' .. char .. "</font>"
+    end
+
+    return result
+end
+
+-- Show initial popup
+local Confirmed = false
+
+WindUI:Popup({
+    Title = "Pet Analyzer Loaded!",
+    Icon = "search",
+    IconThemed = true,
+    Content = "Advanced " .. gradient("Pet Analysis Tool", Color3.fromHex("#00FF87"), Color3.fromHex("#60EFFF")) .. " with detailed model inspection for Roblox pets",
+    Buttons = {
+        {
+            Title = "Cancel",
+            Callback = function()
+            end,
+            Variant = "Secondary"
+        },
+        {
+            Title = "Start Analyzing",
+            Icon = "arrow-right",
+            Callback = function()
+                Confirmed = true
+            end,
+            Variant = "Primary"
+        }
     }
+})
+
+repeat
+    wait()
+until Confirmed
+
+-- Create main WindUI window
+local Window = WindUI:CreateWindow({
+    Title = "Pet Analyzer | Advanced Model Inspector",
+    Icon = "search",
+    IconThemed = true,
+    Author = "Pet Analysis Tool",
+    Folder = "PetAnalyzer",
+    Size = UDim2.fromOffset(450, 400),
+    Transparent = false,
+    Theme = "Dark",
+    User = {
+        Enabled = true,
+        Callback = function()
+        end,
+        Anonymous = false
+    },
+    SideBarWidth = 160,
+    ScrollBarEnabled = true
+})
+
+Window:EditOpenButton({
+    Title = "Pet Analyzer",
+    Icon = "search",
+    CornerRadius = UDim.new(0, 12),
+    StrokeThickness = 2,
+    Color = ColorSequence.new(Color3.fromHex("#FF6B6B"), Color3.fromHex("#4ECDC4")),
+    Draggable = true
+})
+
+-- Create sections and tabs
+local Tabs = {}
+
+Tabs.AnalyzerSection = Window:Section({
+    Title = "Pet Analysis Tools",
+    Icon = "search",
+    Opened = true
+})
+
+Tabs.ResultsSection = Window:Section({
+    Title = "Analysis Results",
+    Icon = "file-text",
+    Opened = false
+})
+
+Tabs.MainTab = Tabs.AnalyzerSection:Tab({
+    Title = "Analyzer",
+    Icon = "search",
+    Desc = "Find and analyze nearby UUID pets"
+})
+
+Tabs.ResultsTab = Tabs.ResultsSection:Tab({
+    Title = "Results",
+    Icon = "list",
+    Desc = "View analyzed pets and detailed data"
+})
+
+Tabs.SettingsTab = Tabs.AnalyzerSection:Tab({
+    Title = "Settings",
+    Icon = "settings",
+    Desc = "Configure analysis parameters"
+})
+
+Window:SelectTab(1)
+
+-- Function to show detailed analysis in a popup
+function showDetailedAnalysis(analysis)
+    local detailText = generateDetailText(analysis)
     
-    -- Получаем недавние RemoteEvent вызовы (последние 10 секунд)
-    local recentCalls = getRecentRemoteCalls(10)
-    sourceData.recentRemoteCalls = {}
+    WindUI:Popup({
+        Title = "📋 Detailed Analysis: " .. analysis.uuid,
+        Icon = "file-text",
+        IconThemed = true,
+        Content = "Complete model analysis with " .. analysis.partCount .. " parts, " .. analysis.meshCount .. " meshes, and " .. analysis.motor6dCount .. " Motor6D joints.",
+        Buttons = {
+            {
+                Title = "Copy to Clipboard",
+                Icon = "copy",
+                Callback = function()
+                    pcall(function()
+                        if setclipboard then
+                            setclipboard(detailText)
+                        else
+                            game:GetService("GuiService"):SetClipboard(detailText)
+                        end
+                    end)
+                    
+                    print("📋 Pet Analysis Data:")
+                    print(detailText)
+                    
+                    WindUI:Notify({
+                        Title = "Copied!",
+                        Content = "Analysis data copied to clipboard",
+                        Icon = "copy",
+                        Duration = 3
+                    })
+                end,
+                Variant = "Primary"
+            },
+            {
+                Title = "Close",
+                Callback = function()
+                end,
+                Variant = "Secondary"
+            }
+        }
+    })
+end
+
+-- Function to create detailed notebook window
+function createDetailedNotebook(analysis)
+    local NotebookWindow = WindUI:CreateWindow({
+        Title = "📋 Pet Analysis: " .. (analysis.customName or analysis.uuid),
+        Icon = "file-text",
+        IconThemed = true,
+        Author = "Detailed Pet Data",
+        Folder = "PetAnalyzer_Details",
+        Size = UDim2.fromOffset(600, 500),
+        Transparent = false,
+        Theme = "Dark",
+        User = {
+            Enabled = false
+        },
+        SideBarWidth = 0,
+        ScrollBarEnabled = true
+    })
     
-    for _, call in ipairs(recentCalls) do
-        table.insert(sourceData.recentRemoteCalls, {
-            name = call.remoteName,
-            path = call.remotePath,
-            timeDiff = string.format("%.2f", sourceData.creationTime - call.time),
-            argsCount = call.argsCount,
-            firstArg = call.args[1] and tostring(call.args[1]) or "nil"
+    -- Create a section first, then tab
+    local DetailSection = NotebookWindow:Section({
+        Title = "Pet Analysis Data",
+        Icon = "database",
+        Opened = true
+    })
+    
+    local DetailTab = DetailSection:Tab({
+        Title = "Analysis Data",
+        Icon = "database",
+        Desc = "Complete pet model information"
+    })
+    
+    DetailTab:Paragraph({
+        Title = "Pet Information",
+        Desc = string.format("UUID: %s\nParts: %d | Meshes: %d | Motor6D: %d", 
+            analysis.uuid, analysis.partCount, analysis.meshCount, analysis.motor6dCount),
+        Image = "info",
+        Color = "Blue"
+    })
+    
+    DetailTab:Button({
+        Title = "📋 Copy Full Analysis",
+        Icon = "copy",
+        Callback = function()
+            local detailText = generateDetailText(analysis)
+            pcall(function()
+                if setclipboard then
+                    setclipboard(detailText)
+                else
+                    game:GetService("GuiService"):SetClipboard(detailText)
+                end
+            end)
+            
+            print("📋 Pet Analysis Data:")
+            print(detailText)
+            
+            WindUI:Notify({
+                Title = "Copied!",
+                Content = "Full analysis data copied to clipboard",
+                Icon = "copy",
+                Duration = 3
+            })
+        end
+    })
+    
+    DetailTab:Divider()
+    
+    -- Model Properties
+    DetailTab:Paragraph({
+        Title = "Model Properties",
+        Desc = string.format("Size: %.1f×%.1f×%.1f\nPosition: %.1f, %.1f, %.1f\nPrimary Part: %s", 
+            analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z,
+            analysis.modelPosition.X, analysis.modelPosition.Y, analysis.modelPosition.Z,
+            analysis.primaryPart),
+        Image = "box",
+        Color = "Purple"
+    })
+    
+    -- Parts breakdown
+    if #analysis.parts > 0 then
+        DetailTab:Paragraph({
+            Title = "Parts Breakdown",
+            Desc = string.format("%d total parts found", #analysis.parts),
+            Image = "layers",
+            Color = "Green"
         })
     end
     
-    -- Анализируем доступные RemoteEvent/Function
-    local success, remoteEvents = pcall(function()
-        local events = {}
-        for _, obj in pairs(game.ReplicatedStorage:GetDescendants()) do
-            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                table.insert(events, {
-                    name = obj.Name,
-                    path = obj:GetFullName()
+    -- Meshes breakdown
+    if #analysis.meshes > 0 then
+        DetailTab:Paragraph({
+            Title = "Meshes Found",
+            Desc = string.format("%d meshes with asset IDs", #analysis.meshes),
+            Image = "triangle",
+            Color = "Orange"
+        })
+    end
+    
+    -- Motor6D joints
+    if #analysis.motor6ds > 0 then
+        DetailTab:Paragraph({
+            Title = "Motor6D Joints",
+            Desc = string.format("%d joints connecting parts", #analysis.motor6ds),
+            Image = "link",
+            Color = "Red"
+        })
+    end
+    
+    DetailTab:Button({
+        Title = "Close Notebook",
+        Icon = "x",
+        Callback = function()
+            NotebookWindow:Destroy()
+        end
+    })
+end
+
+-- Function to update results tab with cards
+function updateResultsTab()
+    print("🔄 Updating Results tab with", #analyzedPets, "pets")
+    
+    -- Clear existing content
+    pcall(function()
+        Tabs.ResultsTab:Clear()
+    end)
+    
+    if #analyzedPets == 0 then
+        Tabs.ResultsTab:Paragraph({
+            Title = "No Analysis Data",
+            Desc = "No pets have been analyzed yet. Use the Analyzer tab to scan for pets.",
+            Image = "info",
+            Color = "Gray"
+        })
+        print("📝 Results tab shows empty state")
+        return
+    end
+    
+    Tabs.ResultsTab:Paragraph({
+        Title = "Analysis Results",
+        Desc = "Found " .. #analyzedPets .. " analyzed pets",
+        Image = "list",
+        Color = "Blue"
+    })
+    
+    for i, analysis in ipairs(analyzedPets) do
+        -- Pet card with custom name input
+        Tabs.ResultsTab:Input({
+            Title = "Pet #" .. i .. " Name",
+            Placeholder = analysis.uuid,
+            Value = analysis.customName or "",
+            Callback = function(text)
+                if text and text ~= "" then
+                    analysis.customName = text
+                else
+                    analysis.customName = nil
+                end
+                WindUI:Notify({
+                    Title = "Name Updated",
+                    Content = "Pet name has been updated",
+                    Icon = "edit",
+                    Duration = 2
                 })
             end
+        })
+        
+        Tabs.ResultsTab:Paragraph({
+            Title = analysis.customName or analysis.uuid,
+            Desc = string.format("Parts: %d | Meshes: %d | Motor6D: %d | Humanoids: %d\nSize: %.1f×%.1f×%.1f studs", 
+                analysis.partCount, analysis.meshCount, analysis.motor6dCount, analysis.humanoidCount,
+                analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z),
+            Image = "search",
+            Color = "Green"
+        })
+        
+        Tabs.ResultsTab:Button({
+            Title = "📋 Open Detailed Notebook",
+            Icon = "book-open",
+            Callback = function()
+                createDetailedNotebook(analysis)
+            end
+        })
+        
+        Tabs.ResultsTab:Button({
+            Title = "📄 Quick Copy Data",
+            Icon = "copy",
+            Callback = function()
+                showDetailedAnalysis(analysis)
+            end
+        })
+        
+        if i < #analyzedPets then
+            Tabs.ResultsTab:Divider()
         end
-        return events
-    end)
-    
-    if success then
-        sourceData.availableRemotes = remoteEvents
     end
-    
-    -- Проверяем StarterPack
-    local starterPack = game.StarterPack:GetChildren()
-    sourceData.starterPackTools = {}
-    for _, obj in pairs(starterPack) do
-        if obj:IsA("Tool") then
-            table.insert(sourceData.starterPackTools, obj.Name)
-        end
-    end
-    
-    -- Анализ вероятного источника
-    sourceData.likelySource = "Unknown"
-    if #sourceData.recentRemoteCalls > 0 then
-        local mostRecent = sourceData.recentRemoteCalls[#sourceData.recentRemoteCalls]
-        if tonumber(mostRecent.timeDiff) < 2 then -- Если RemoteEvent был менее 2 секунд назад
-            sourceData.likelySource = "RemoteEvent: " .. mostRecent.name
-        end
-    end
-    
-    return sourceData
 end
 
--- Мониторинг Backpack с анализом источника
-backpack.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") then
-        wait(0.1)
-        if isPet(child) then
-            local data = analyzeTool(child)
-            local sourceData = analyzeToolSource(child)
-            
-            -- Объединяем данные
-            for key, value in pairs(sourceData) do
-                data["source_" .. key] = value
-            end
-            
-            logEvent("BACKPACK_ADDED", child.Name, data)
-            
-            -- Дополнительный анализ: откуда мог появиться Tool
-            logEvent("SOURCE_ANALYSIS", child.Name, {
-                possibleSources = {
-                    "RemoteEvent from server",
-                    "StarterPack clone", 
-                    "Script creation",
-                    "Game service call"
-                },
-                toolParent = child.Parent and child.Parent.Name or "nil",
-                toolArchivable = child.Archivable,
-                toolClassName = child.ClassName
-            })
-        end
-    end
-end)
+-- Main Tab Implementation
+Tabs.MainTab:Paragraph({
+    Title = "Pet Analyzer",
+    Desc = "Searches for pets with UUID names (containing {}) and provides detailed model analysis",
+    Image = "search",
+    Color = "Blue"
+})
 
--- Мониторинг появления питомца в Workspace
-local function monitorWorkspacePets()
-    logEvent("SYSTEM", "Запуск мониторинга Workspace для UUID питомцев")
-    
-    Workspace.ChildAdded:Connect(function(child)
-        if child:IsA("Model") then
-            wait(0.1) -- Даем время на загрузку
-            
-            -- Проверяем UUID имя в фигурных скобках
-            if child.Name:find("{") and child.Name:find("}") then
-                local playerPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                if playerPos then
-                    local distance = (child:GetModelCFrame().Position - playerPos.Position).Magnitude
-                    if distance < 50 then -- В радиусе 50 studs от игрока
-                        logEvent("WORKSPACE_PET_SPAWNED", child.Name, {
-                            distance = string.format("%.2f", distance),
-                            position = tostring(child:GetModelCFrame().Position),
-                            primaryPart = child.PrimaryPart and child.PrimaryPart.Name or "nil"
-                        })
-                        
-                        -- Анализируем структуру питомца в workspace
-                        local petData = {
-                            name = child.Name,
-                            className = child.ClassName,
-                            children = {}
-                        }
-                        
-                        for _, obj in pairs(child:GetChildren()) do
-                            table.insert(petData.children, {
-                                name = obj.Name,
-                                className = obj.ClassName,
-                                size = obj:IsA("BasePart") and tostring(obj.Size) or "N/A"
-                            })
-                        end
-                        
-                        logEvent("WORKSPACE_PET_ANALYSIS", child.Name, petData)
+Tabs.MainTab:Button({
+    Title = "🔬 Analyze Closest Pet",
+    Icon = "search",
+    Callback = function()
+        WindUI:Notify({
+            Title = "Analyzing...",
+            Content = "Searching for nearby UUID pets",
+            Icon = "search",
+            Duration = 2
+        })
+        
+        spawn(function()
+            local petModel = findClosestUUIDPet()
+            if petModel then
+                local analysis = analyzePetModel(petModel)
+                
+                -- Check if already exists
+                local alreadyExists = false
+                for _, existingPet in pairs(analyzedPets) do
+                    if existingPet.uuid == analysis.uuid then
+                        alreadyExists = true
+                        break
                     end
                 end
-            end
-        end
-    end)
-end
-
--- Мониторинг Character
-local function monitorCharacter(char)
-    if not char then return end
-    
-    char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            wait(0.1)
-            currentTool = child
-            
-            if isPet(child) then
-                local data = analyzeTool(child)
                 
-                -- Дополнительный анализ позиции в руке
-                local handle = child:FindFirstChild("Handle")
-                if handle then
-                    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-                    if torso then
-                        local relativePos = torso.CFrame:PointToObjectSpace(handle.Position)
-                        data.relativeToTorso = tostring(relativePos)
-                    end
+                if not alreadyExists and #analyzedPets < CONFIG.MAX_ANALYZED_PETS then
+                    table.insert(analyzedPets, analysis)
+                    currentAnalysis = analysis
                     
-                    -- Анализ RightGrip
-                    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
-                    if rightArm then
-                        local rightGrip = rightArm:FindFirstChild("RightGrip")
-                        if rightGrip then
-                            data.rightGripC0 = tostring(rightGrip.C0)
-                            data.rightGripC1 = tostring(rightGrip.C1)
-                        end
-                    end
+                    WindUI:Notify({
+                        Title = "Analysis Complete!",
+                        Content = "Found pet: " .. analysis.uuid .. " with " .. analysis.partCount .. " parts",
+                        Icon = "check-circle",
+                        Duration = 4
+                    })
+                    
+                    -- Update results tab
+                    updateResultsTab()
+                    
+                    -- Force refresh Results tab by selecting it
+                    spawn(function()
+                        wait(0.5)
+                        Window:SelectTab(2) -- Results tab
+                        wait(0.1)
+                        Window:SelectTab(1) -- Back to main tab
+                    end)
+                else
+                    WindUI:Notify({
+                        Title = "Pet Already Analyzed",
+                        Content = "This pet has already been analyzed",
+                        Icon = "info",
+                        Duration = 3
+                    })
                 end
-                
-                logEvent("HAND_EQUIPPED", child.Name, data)
+            else
+                WindUI:Notify({
+                    Title = "No Pet Found",
+                    Content = "No UUID pets found within " .. CONFIG.SEARCH_RADIUS .. " studs",
+                    Icon = "alert-triangle",
+                    Duration = 4
+                })
             end
-        end
-    end)
-    
-    char.ChildRemoved:Connect(function(child)
-        if child:IsA("Tool") and child == currentTool then
-            if isPet(child) then
-                logEvent("HAND_REMOVED", child.Name)
-                -- После снятия питомца с руки запускаем мониторинг workspace на 10 секунд
-                spawn(function()
-                    logEvent("SYSTEM", "Мониторинг workspace после снятия питомца (10 сек)")
-                    wait(10)
-                    logEvent("SYSTEM", "Мониторинг workspace завершен")
-                end)
-            end
-            currentTool = nil
-        end
-    end)
-end
-
--- Запуск мониторинга
-if character then
-    monitorCharacter(character)
-end
-
-player.CharacterAdded:Connect(monitorCharacter)
-
--- Функция создания детального отчета
-local function generateDetailedReport()
-    local reportText = string.rep("=", 60) .. "\n"
-    reportText = reportText .. "=== DETAILED PET ANALYSIS REPORT ===\n"
-    reportText = reportText .. "Total events: " .. #petEvents .. "\n"
-    reportText = reportText .. string.rep("=", 60) .. "\n\n"
-    
-    for i, event in ipairs(petEvents) do
-        reportText = reportText .. string.format("[%d] %s - %s (%.2f)\n", i, event.type, event.pet, event.time)
-        reportText = reportText .. string.rep("-", 40) .. "\n"
-        
-        local details = event.details
-        
-        -- Основные свойства Tool
-        if details.className then
-            reportText = reportText .. "  Tool Class: " .. details.className .. "\n"
-        end
-        if details.canBeDropped ~= nil then
-            reportText = reportText .. "  Can Be Dropped: " .. tostring(details.canBeDropped) .. "\n"
-        end
-        
-        -- Handle данные
-        if details.handleSize then
-            reportText = reportText .. "  Handle Properties:\n"
-            reportText = reportText .. "    Size: " .. details.handleSize .. "\n"
-            reportText = reportText .. "    Position: " .. details.handlePosition .. "\n"
-            reportText = reportText .. "    Material: " .. (details.handleMaterial or "N/A") .. "\n"
-        end
-        
-        -- Handle дочерние объекты
-        if details.handleChildren and #details.handleChildren > 0 then
-            reportText = reportText .. "  Handle Children:\n"
-            for _, child in ipairs(details.handleChildren) do
-                reportText = reportText .. string.format("    - %s (%s)\n", child.name, child.className)
-                if child.meshId then
-                    reportText = reportText .. "      Mesh ID: " .. child.meshId .. "\n"
-                    reportText = reportText .. "      Mesh Scale: " .. (child.meshScale or "N/A") .. "\n"
-                end
-            end
-        end
-        
-        -- Позиционирование в руке
-        if details.relativeToTorso then
-            reportText = reportText .. "  Hand Positioning:\n"
-            reportText = reportText .. "    Relative to Torso: " .. details.relativeToTorso .. "\n"
-        end
-        
-        if details.rightGripC0 then
-            reportText = reportText .. "  RightGrip Connection:\n"
-            reportText = reportText .. "    C0: " .. details.rightGripC0 .. "\n"
-            reportText = reportText .. "    C1: " .. details.rightGripC1 .. "\n"
-        end
-        
-        reportText = reportText .. "\n"
-    end
-    
-    reportText = reportText .. string.rep("=", 60) .. "\n"
-    reportText = reportText .. "=== END DETAILED REPORT ===\n"
-    reportText = reportText .. string.rep("=", 60) .. "\n"
-    
-    return reportText
-end
-
--- Создание GUI (ИСПРАВЛЕННАЯ ВЕРСИЯ)
-local function createGUI()
-    print("🔧 Создание GUI - начало")
-    
-    -- Удаляем старый GUI
-    local oldGui = playerGui:FindFirstChild("PetAnalyzerGUI")
-    if oldGui then
-        oldGui:Destroy()
-        wait(0.1)
-    end
-    
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "PetAnalyzerGUI"
-    screenGui.ResetOnSpawn = false
-    screenGui.DisplayOrder = 10
-    print("🔧 ScreenGui создан")
-    
-    -- Главное окно - УПРОЩЕННАЯ ВЕРСИЯ
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 500, 0, 350)
-    mainFrame.Position = UDim2.new(0.5, -250, 0.5, -175) -- Центрируем
-    mainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    mainFrame.BorderSizePixel = 3
-    mainFrame.BorderColor3 = Color3.new(0, 0.6, 1)
-    mainFrame.Active = true
-    mainFrame.Draggable = true
-    print("🔧 MainFrame создан")
-    
-    -- Заголовок
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, 0, 0, 40)
-    titleLabel.Position = UDim2.new(0, 0, 0, 0)
-    titleLabel.BackgroundColor3 = Color3.new(0, 0.6, 1)
-    titleLabel.BorderSizePixel = 0
-    titleLabel.Text = "Pet Creation Analyzer v2.0 - WORKING"
-    titleLabel.TextColor3 = Color3.new(1, 1, 1)
-    titleLabel.TextSize = 18
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.TextStrokeTransparency = 0
-    titleLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-    titleLabel.Parent = mainFrame
-    print("🔧 TitleLabel создан")
-    
-    -- Консоль
-    local consoleFrame = Instance.new("ScrollingFrame")
-    consoleFrame.Name = "ConsoleFrame"
-    consoleFrame.Size = UDim2.new(1, -20, 1, -120)
-    consoleFrame.Position = UDim2.new(0, 10, 0, 50)
-    consoleFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-    consoleFrame.BorderSizePixel = 2
-    consoleFrame.BorderColor3 = Color3.new(0.4, 0.4, 0.4)
-    consoleFrame.ScrollBarThickness = 10
-    consoleFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    consoleFrame.Parent = mainFrame
-    print("🔧 ConsoleFrame создан")
-    
-    local consoleText = Instance.new("TextLabel")
-    consoleText.Name = "ConsoleText"
-    consoleText.Size = UDim2.new(1, -20, 1, 0)
-    consoleText.Position = UDim2.new(0, 10, 0, 0)
-    consoleText.BackgroundTransparency = 1
-    consoleText.Text = "Pet Analyzer Console Ready...\nWaiting for pet events..."
-    consoleText.TextColor3 = Color3.new(0, 1, 0)
-    consoleText.TextSize = 14
-    consoleText.Font = Enum.Font.Code
-    consoleText.TextXAlignment = Enum.TextXAlignment.Left
-    consoleText.TextYAlignment = Enum.TextYAlignment.Top
-    consoleText.TextWrapped = true
-    consoleText.Parent = consoleFrame
-    print("🔧 ConsoleText создан")
-    
-    -- Кнопки
-    local reportButton = Instance.new("TextButton")
-    reportButton.Name = "ReportButton"
-    reportButton.Size = UDim2.new(0, 140, 0, 35)
-    reportButton.Position = UDim2.new(0, 10, 1, -45)
-    reportButton.BackgroundColor3 = Color3.new(0, 0.7, 0)
-    reportButton.BorderSizePixel = 2
-    reportButton.BorderColor3 = Color3.new(0, 1, 0)
-    reportButton.Text = "GENERATE REPORT"
-    reportButton.TextColor3 = Color3.new(1, 1, 1)
-    reportButton.TextSize = 14
-    reportButton.Font = Enum.Font.SourceSansBold
-    reportButton.TextStrokeTransparency = 0
-    reportButton.TextStrokeColor3 = Color3.new(0, 0, 0)
-    reportButton.Parent = mainFrame
-    print("🔧 ReportButton создан")
-    
-    local clearButton = Instance.new("TextButton")
-    clearButton.Name = "ClearButton"
-    clearButton.Size = UDim2.new(0, 120, 0, 35)
-    clearButton.Position = UDim2.new(0, 160, 1, -45)
-    clearButton.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-    clearButton.BorderSizePixel = 2
-    clearButton.BorderColor3 = Color3.new(1, 0.6, 0)
-    clearButton.Text = "CLEAR LOG"
-    clearButton.TextColor3 = Color3.new(1, 1, 1)
-    clearButton.TextSize = 14
-    clearButton.Font = Enum.Font.SourceSansBold
-    clearButton.TextStrokeTransparency = 0
-    clearButton.TextStrokeColor3 = Color3.new(0, 0, 0)
-    clearButton.Parent = mainFrame
-    print("🔧 ClearButton создан")
-    
-    local closeButton = Instance.new("TextButton")
-    closeButton.Name = "CloseButton"
-    closeButton.Size = UDim2.new(0, 100, 0, 35)
-    closeButton.Position = UDim2.new(1, -110, 1, -45)
-    closeButton.BackgroundColor3 = Color3.new(0.8, 0, 0)
-    closeButton.BorderSizePixel = 2
-    closeButton.BorderColor3 = Color3.new(1, 0, 0)
-    closeButton.Text = "CLOSE"
-    closeButton.TextColor3 = Color3.new(1, 1, 1)
-    closeButton.TextSize = 14
-    closeButton.Font = Enum.Font.SourceSansBold
-    closeButton.TextStrokeTransparency = 0
-    closeButton.TextStrokeColor3 = Color3.new(0, 0, 0)
-    closeButton.Parent = mainFrame
-    print("🔧 CloseButton создан")
-    
-    -- Добавляем в PlayerGui ТОЛЬКО ПОСЛЕ создания всех элементов
-    screenGui.Parent = playerGui
-    print("🔧 GUI добавлен в PlayerGui")
-    
-    -- События кнопок
-    reportButton.MouseButton1Click:Connect(function()
-        print("🖱️ Report button clicked!")
-        reportButton.Text = "GENERATING..."
-        reportButton.BackgroundColor3 = Color3.new(0.5, 0.5, 0)
-        
-        spawn(function()
-            wait(0.5)
-            local report = generateDetailedReport()
-            print(report)
-            logEvent("SYSTEM", "Detailed report generated")
-            reportButton.Text = "GENERATE REPORT"
-            reportButton.BackgroundColor3 = Color3.new(0, 0.7, 0)
         end)
-    end)
-    
-    clearButton.MouseButton1Click:Connect(function()
-        print("🖱️ Clear button clicked!")
-        clearButton.Text = "CLEARING..."
-        clearButton.BackgroundColor3 = Color3.new(0.4, 0.2, 0)
-        
-        spawn(function()
-            petEvents = {}
-            consoleOutput = {}
-            consoleText.Text = "Pet Analyzer Console Ready...\nLog cleared!"
-            logEvent("SYSTEM", "Analysis log cleared")
-            wait(1)
-            clearButton.Text = "CLEAR LOG"
-            clearButton.BackgroundColor3 = Color3.new(0.8, 0.4, 0)
-        end)
-    end)
-    
-    closeButton.MouseButton1Click:Connect(function()
-        print("🖱️ Close button clicked!")
-        screenGui:Destroy()
-        gui = nil
-    end)
-    
-    gui = screenGui
-    print("🔧 GUI создание завершено успешно!")
-    return screenGui
-end
+    end
+})
 
--- Функция мониторинга RemoteEvent вызовов
-local function monitorRemoteEvents()
-    logEvent("SYSTEM", "Запуск мониторинга RemoteEvent вызовов")
-    
-    local function hookRemoteEvent(remote)
-        if remoteConnections[remote] then return end
-        
-        local connection = remote.OnClientEvent:Connect(function(...)
-            local args = {...}
-            local remoteCall = {
-                time = tick(),
-                remoteName = remote.Name,
-                remotePath = remote:GetFullName(),
-                args = args,
-                argsCount = #args
-            }
-            
-            table.insert(recentRemoteCalls, remoteCall)
-            
-            -- Ограничиваем размер лога
-            if #recentRemoteCalls > 50 then
-                table.remove(recentRemoteCalls, 1)
-            end
-            
-            logEvent("REMOTE_EVENT", remote.Name, {
-                path = remote:GetFullName(),
-                argsCount = #args,
-                firstArg = args[1] and tostring(args[1]) or "nil"
+Tabs.MainTab:Button({
+    Title = "📋 Show Detailed Analysis",
+    Icon = "file-text",
+    Callback = function()
+        if currentAnalysis then
+            showDetailedAnalysis(currentAnalysis)
+        else
+            WindUI:Notify({
+                Title = "No Analysis Available",
+                Content = "Please analyze a pet first",
+                Icon = "alert-triangle",
+                Duration = 3
             })
-        end)
-        
-        remoteConnections[remote] = connection
-    end
-    
-    local function hookRemoteFunction(remote)
-        if remoteConnections[remote] then return end
-        
-        -- Хукаем InvokeServer если возможно
-        local originalInvoke = remote.InvokeServer
-        remote.InvokeServer = function(self, ...)
-            local args = {...}
-            local remoteCall = {
-                time = tick(),
-                remoteName = remote.Name,
-                remotePath = remote:GetFullName(),
-                args = args,
-                argsCount = #args,
-                type = "InvokeServer"
-            }
-            
-            table.insert(recentRemoteCalls, remoteCall)
-            
-            if #recentRemoteCalls > 50 then
-                table.remove(recentRemoteCalls, 1)
-            end
-            
-            logEvent("REMOTE_FUNCTION", remote.Name, {
-                path = remote:GetFullName(),
-                argsCount = #args,
-                firstArg = args[1] and tostring(args[1]) or "nil"
-            })
-            
-            return originalInvoke(self, ...)
-        end
-        
-        remoteConnections[remote] = true
-    end
-    
-    -- Сканируем существующие RemoteEvent/Function
-    for _, obj in pairs(game.ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") then
-            hookRemoteEvent(obj)
-        elseif obj:IsA("RemoteFunction") then
-            hookRemoteFunction(obj)
         end
     end
-    
-    -- Отслеживаем новые RemoteEvent/Function
-    game.ReplicatedStorage.DescendantAdded:Connect(function(obj)
-        if obj:IsA("RemoteEvent") then
-            hookRemoteEvent(obj)
-        elseif obj:IsA("RemoteFunction") then
-            hookRemoteFunction(obj)
-        end
-    end)
+})
+
+Tabs.MainTab:Divider()
+
+-- Dynamic stats paragraph that updates
+local function updateMainTabStats()
+    Tabs.MainTab:Paragraph({
+        Title = "Quick Stats",
+        Desc = "Analyzed Pets: " .. #analyzedPets .. "/" .. CONFIG.MAX_ANALYZED_PETS,
+        Image = "bar-chart",
+        Color = "Green"
+    })
 end
 
--- Запуск системы
-createGUI()
-monitorWorkspacePets()
-monitorRemoteEvents()
+updateMainTabStats()
 
-if character then
-    monitorCharacter(character)
-end
+-- Settings Tab Implementation
+Tabs.SettingsTab:Paragraph({
+    Title = "Analysis Settings",
+    Desc = "Configure search parameters and limits",
+    Image = "settings",
+    Color = "Purple"
+})
 
-player.CharacterAdded:Connect(monitorCharacter)
+Tabs.SettingsTab:Slider({
+    Title = "Search Radius (Studs)",
+    Value = {
+        Min = 50,
+        Max = 500,
+        Default = CONFIG.SEARCH_RADIUS
+    },
+    Callback = function(value)
+        CONFIG.SEARCH_RADIUS = value
+        WindUI:Notify({
+            Title = "Search Radius Updated",
+            Content = "Now searching within " .. value .. " studs",
+            Icon = "target",
+            Duration = 2
+        })
+    end
+})
 
-logEvent("SYSTEM", "Pet Analyzer v2.0 started successfully")
-logEvent("SYSTEM", "Monitoring: Backpack, Hands, Workspace UUID pets, RemoteEvents")
-logEvent("SYSTEM", "Create a pet and take it in your hands to start analysis")
+Tabs.SettingsTab:Slider({
+    Title = "Max Analyzed Pets",
+    Value = {
+        Min = 5,
+        Max = 50,
+        Default = CONFIG.MAX_ANALYZED_PETS
+    },
+    Callback = function(value)
+        CONFIG.MAX_ANALYZED_PETS = value
+        WindUI:Notify({
+            Title = "Pet Limit Updated",
+            Content = "Can now store up to " .. value .. " analyzed pets",
+            Icon = "list",
+            Duration = 2
+        })
+    end
+})
+
+Tabs.SettingsTab:Button({
+    Title = "Clear All Data",
+    Icon = "trash-2",
+    Callback = function()
+        analyzedPets = {}
+        currentAnalysis = nil
+        WindUI:Notify({
+            Title = "Data Cleared",
+            Content = "All analyzed pet data has been cleared",
+            Icon = "trash-2",
+            Duration = 3
+        })
+        updateResultsTab()
+    end
+})
+
+-- Initialize results tab
+updateResultsTab()
+
+print("✅ Pet Analyzer with WindUI loaded successfully!")
