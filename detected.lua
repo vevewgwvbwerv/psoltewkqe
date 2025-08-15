@@ -1,192 +1,1442 @@
--- SIMPLE PET ANALYZER v1.0
--- Максимально простой анализатор питомцев без сложного GUI
+-- === PET ANALYZER WITH WINDUI ===
+-- Made by Assistant | Styled after DONCALDERONE
+
+-- Load WindUI Library
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+-- === КОНФИГУРАЦИЯ ===
+
+local CONFIG = {
+    SEARCH_RADIUS = 100,
+    MAX_ANALYZED_PETS = 10
+}
+
+-- === СЕРВИСЫ ===
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local backpack = player.Backpack
+local playerPos = player.Character and player.Character.HumanoidRootPart and player.Character.HumanoidRootPart.Position or Vector3.new(0, 0, 0)
 
-print("=== SIMPLE PET ANALYZER STARTED ===")
-print("Monitoring backpack and hands for pets...")
+-- === ПЕРЕМЕННЫЕ ===
 
--- Простые переменные для хранения данных
-local petEvents = {}
-local currentTool = nil
+local analyzedPets = {}
+local currentAnalysis = nil
+local currentHandAnalysis = nil
 
--- Простая функция логирования
-local function logEvent(eventType, petName, details)
-    local event = {
-        time = tick(),
-        type = eventType,
-        pet = petName,
-        details = details or {}
-    }
-    table.insert(petEvents, event)
+-- === ФУНКЦИИ ПОИСКА UUID ПИТОМЦЕВ ===
+
+-- Функция проверки визуальных элементов питомца
+local function hasPetVisuals(model)
+    local visualCount = 0
     
-    print(string.format("[%.2f] %s: %s", event.time, eventType, petName))
-    if details then
-        for key, value in pairs(details) do
-            print(string.format("  %s: %s", key, tostring(value)))
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            visualCount = visualCount + 1
+        elseif obj:IsA("Part") then
+            local hasDecal = obj:FindFirstChildOfClass("Decal")
+            local hasTexture = obj:FindFirstChildOfClass("Texture")
+            if hasDecal or hasTexture or obj.Material ~= Enum.Material.Plastic then
+                visualCount = visualCount + 1
+            end
+        elseif obj:IsA("UnionOperation") then
+            visualCount = visualCount + 1
         end
     end
+    
+    if visualCount == 0 then
+        local partCount = 0
+        for _, obj in pairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                partCount = partCount + 1
+            end
+        end
+        if partCount >= 2 then
+            visualCount = partCount
+        end
+    end
+    
+    return visualCount > 0
 end
 
--- Функция анализа Tool
-local function analyzeTool(tool)
-    if not tool then return {} end
+-- Функция проверки UUID формата
+local function isUUIDFormat(name)
+    return string.match(name, "%{[%w%-]+%}") ~= nil
+end
+
+-- Функция поиска ближайшего UUID питомца (СКОПИРОВАНО ИЗ ОРИГИНАЛА)
+local function findClosestUUIDPet()
+    print("🔍 Поиск UUID моделей питомцев...")
     
-    local data = {
-        name = tool.Name,
-        className = tool.ClassName
-    }
+    local playerChar = player.Character
+    if not playerChar then
+        return nil
+    end
+
+    local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return nil
+    end
+
+    local playerPos = hrp.Position
+    local foundPets = {}
     
-    local handle = tool:FindFirstChild("Handle")
-    if handle then
-        data.handleSize = tostring(handle.Size)
-        data.handlePosition = tostring(handle.Position)
-        data.handleCFrame = tostring(handle.CFrame)
-        
-        -- Ищем Mesh
-        for _, child in pairs(handle:GetChildren()) do
-            if child:IsA("SpecialMesh") then
-                data.meshId = child.MeshId
-                data.textureId = child.TextureId
-                data.meshScale = tostring(child.Scale)
-                break
+    -- ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ ОРИГИНАЛЬНОГО PetAnalyzer.lua
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find("%{") and obj.Name:find("%}") then
+            local success, modelCFrame = pcall(function() return obj:GetModelCFrame() end)
+            if success then
+                local distance = (modelCFrame.Position - playerPos).Magnitude
+                if distance <= CONFIG.SEARCH_RADIUS then
+                    if hasPetVisuals(obj) then
+                        table.insert(foundPets, {
+                            model = obj,
+                            distance = distance
+                        })
+                    end
+                end
             end
         end
     end
     
-    return data
+    if #foundPets == 0 then
+        print("❌ UUID питомцы не найдены в радиусе", CONFIG.SEARCH_RADIUS, "стадов")
+        return nil
+    end
+    
+    -- Сортируем по расстоянию и берем ближайшего
+    table.sort(foundPets, function(a, b) return a.distance < b.distance end)
+    local closestPet = foundPets[1]
+    
+    print("🎯 Найден ближайший UUID питомец:", closestPet.model.Name, "на расстоянии", math.floor(closestPet.distance), "стадов")
+    
+    return closestPet.model
 end
 
--- Проверка является ли Tool питомцем
-local function isPet(tool)
-    if not tool then return false end
-    local name = tool.Name
-    return name:find("KG") or name:find("Dragonfly") or 
-           name:find("{") or name:find("Pet") or name:find("pet")
+-- === ФУНКЦИИ АНАЛИЗА TOOL В РУКЕ ===
+
+-- Функция поиска tool в руке игрока
+local function findHandTool()
+    local playerChar = player.Character
+    if not playerChar then
+        return nil
+    end
+    
+    -- Проверяем tool в руке
+    local tool = playerChar:FindFirstChildOfClass("Tool")
+    if tool then
+        print("🔧 Найден tool в руке:", tool.Name)
+        return tool
+    end
+    
+    print("❌ Tool в руке не найден")
+    return nil
 end
 
--- Мониторинг Backpack
-backpack.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") then
-        wait(0.1)
-        if isPet(child) then
-            local data = analyzeTool(child)
-            logEvent("BACKPACK_ADDED", child.Name, data)
+-- Функция глубокого анализа tool
+local function analyzeHandTool(tool)
+    print("🔬 Анализирую tool:", tool.Name)
+    
+    local analysis = {
+        toolName = tool.Name,
+        toolType = tool.ClassName,
+        enabled = tool.Enabled,
+        canBeDropped = tool.CanBeDropped,
+        requiresHandle = tool.RequiresHandle,
+        manualActivationOnly = tool.ManualActivationOnly,
+        
+        -- Счетчики
+        meshCount = 0,
+        motor6dCount = 0,
+        humanoidCount = 0,
+        partCount = 0,
+        attachmentCount = 0,
+        scriptCount = 0,
+        animationCount = 0,
+        soundCount = 0,
+        guiCount = 0,
+        effectCount = 0,
+        lightCount = 0,
+        
+        -- Детальные массивы
+        meshes = {},
+        motor6ds = {},
+        humanoids = {},
+        parts = {},
+        attachments = {},
+        scripts = {},
+        animations = {},
+        sounds = {},
+        guis = {},
+        effects = {},
+        lights = {},
+        
+        -- Handle информация
+        handle = nil,
+        handleSize = nil,
+        handlePosition = nil,
+        handleCFrame = nil
+    }
+    
+    -- Анализ Handle
+    local handle = tool:FindFirstChild("Handle")
+    if handle then
+        analysis.handle = {
+            name = handle.Name,
+            type = handle.ClassName,
+            size = handle.Size,
+            position = handle.Position,
+            cframe = handle.CFrame,
+            material = handle.Material.Name,
+            color = handle.Color,
+            transparency = handle.Transparency,
+            canCollide = handle.CanCollide,
+            brickColor = handle.BrickColor.Name,
+            reflectance = handle.Reflectance
+        }
+        analysis.handleSize = handle.Size
+        analysis.handlePosition = handle.Position
+        analysis.handleCFrame = handle.CFrame
+    end
+    
+    -- Анализ всех потомков tool
+    for _, obj in pairs(tool:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            analysis.meshCount = analysis.meshCount + 1
+            local meshInfo = {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name
+            }
+            if obj:IsA("MeshPart") then
+                meshInfo.meshId = obj.MeshId
+                meshInfo.textureId = obj.TextureID
+            elseif obj:IsA("SpecialMesh") then
+                meshInfo.meshId = obj.MeshId
+                meshInfo.textureId = obj.TextureId
+                meshInfo.meshType = obj.MeshType.Name
+                meshInfo.scale = obj.Scale
+            end
+            table.insert(analysis.meshes, meshInfo)
+            
+        elseif obj:IsA("Motor6D") then
+            analysis.motor6dCount = analysis.motor6dCount + 1
+            table.insert(analysis.motor6ds, {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "None",
+                part1 = obj.Part1 and obj.Part1.Name or "None",
+                c0 = obj.C0,
+                c1 = obj.C1,
+                currentAngle = obj.CurrentAngle,
+                desiredAngle = obj.DesiredAngle
+            })
+            
+        elseif obj:IsA("Humanoid") then
+            analysis.humanoidCount = analysis.humanoidCount + 1
+            table.insert(analysis.humanoids, {
+                name = obj.Name,
+                health = obj.Health,
+                maxHealth = obj.MaxHealth,
+                walkSpeed = obj.WalkSpeed,
+                jumpPower = obj.JumpPower,
+                displayName = obj.DisplayName
+            })
+            
+        elseif obj:IsA("BasePart") then
+            analysis.partCount = analysis.partCount + 1
+            table.insert(analysis.parts, {
+                name = obj.Name,
+                type = obj.ClassName,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                transparency = obj.Transparency,
+                canCollide = obj.CanCollide,
+                position = obj.Position,
+                rotation = obj.Rotation,
+                cframe = obj.CFrame,
+                brickColor = obj.BrickColor.Name,
+                reflectance = obj.Reflectance,
+                shape = obj:IsA("Part") and obj.Shape.Name or "N/A"
+            })
+            
+        elseif obj:IsA("Attachment") then
+            analysis.attachmentCount = analysis.attachmentCount + 1
+            table.insert(analysis.attachments, {
+                name = obj.Name,
+                parent = obj.Parent.Name,
+                position = obj.Position,
+                cframe = obj.CFrame,
+                worldPosition = obj.WorldPosition,
+                worldCFrame = obj.WorldCFrame
+            })
+            
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            analysis.scriptCount = analysis.scriptCount + 1
+            table.insert(analysis.scripts, {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled,
+                source = obj.Source and string.len(obj.Source) or 0
+            })
+            
+        elseif obj:IsA("Animation") then
+            analysis.animationCount = analysis.animationCount + 1
+            table.insert(analysis.animations, {
+                name = obj.Name,
+                animationId = obj.AnimationId,
+                parent = obj.Parent.Name
+            })
+            
+        elseif obj:IsA("Sound") then
+            analysis.soundCount = analysis.soundCount + 1
+            table.insert(analysis.sounds, {
+                name = obj.Name,
+                soundId = obj.SoundId,
+                volume = obj.Volume,
+                pitch = obj.Pitch,
+                isLooped = obj.Looped,
+                isPlaying = obj.IsPlaying,
+                parent = obj.Parent.Name
+            })
+            
+        elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") or obj:IsA("ScreenGui") then
+            analysis.guiCount = analysis.guiCount + 1
+            table.insert(analysis.guis, {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
+            })
+            
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+            analysis.effectCount = analysis.effectCount + 1
+            table.insert(analysis.effects, {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
+            })
+            
+        elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+            analysis.lightCount = analysis.lightCount + 1
+            table.insert(analysis.lights, {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled,
+                brightness = obj.Brightness,
+                color = obj.Color,
+                range = obj.Range
+            })
         end
     end
-end)
-
--- Мониторинг Character
-local function monitorCharacter(char)
-    if not char then return end
     
-    char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            wait(0.1)
-            currentTool = child
+    return analysis
+end
+
+-- Функция генерации детального текста для tool
+local function generateHandToolDetailText(analysis)
+    local text = string.format([[%s_TOOL = {
+    ["ToolName"] = "%s",
+    ["ToolType"] = "%s",
+    ["Enabled"] = %s,
+    ["CanBeDropped"] = %s,
+    ["RequiresHandle"] = %s,
+    ["ManualActivationOnly"] = %s,
+    
+    ["TotalParts"] = %d,
+    ["TotalMeshes"] = %d,
+    ["TotalMotor6D"] = %d,
+    ["TotalHumanoids"] = %d,
+    ["TotalAttachments"] = %d,
+    ["TotalScripts"] = %d,
+    ["TotalAnimations"] = %d,
+    ["TotalSounds"] = %d,
+    ["TotalGUIs"] = %d,
+    ["TotalEffects"] = %d,
+    ["TotalLights"] = %d,]], 
+        analysis.toolName,
+        analysis.toolName,
+        analysis.toolType,
+        tostring(analysis.enabled),
+        tostring(analysis.canBeDropped),
+        tostring(analysis.requiresHandle),
+        tostring(analysis.manualActivationOnly),
+        analysis.partCount,
+        analysis.meshCount,
+        analysis.motor6dCount,
+        analysis.humanoidCount,
+        analysis.attachmentCount,
+        analysis.scriptCount,
+        analysis.animationCount,
+        analysis.soundCount,
+        analysis.guiCount,
+        analysis.effectCount,
+        analysis.lightCount
+    )
+    
+    -- Handle информация
+    if analysis.handle then
+        text = text .. string.format([[
+    
+    ["Handle"] = {
+        name = "%s",
+        type = "%s",
+        size = Vector3.new(%.2f, %.2f, %.2f),
+        position = Vector3.new(%.2f, %.2f, %.2f),
+        cframe = CFrame.new(%.2f, %.2f, %.2f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
+        material = "%s",
+        color = Color3.new(%.3f, %.3f, %.3f),
+        brickColor = "%s",
+        transparency = %.2f,
+        canCollide = %s,
+        reflectance = %.2f
+    },]], 
+            analysis.handle.name,
+            analysis.handle.type,
+            analysis.handle.size.X, analysis.handle.size.Y, analysis.handle.size.Z,
+            analysis.handle.position.X, analysis.handle.position.Y, analysis.handle.position.Z,
+            analysis.handle.cframe.X, analysis.handle.cframe.Y, analysis.handle.cframe.Z,
+            analysis.handle.cframe:GetComponents(),
+            analysis.handle.material,
+            analysis.handle.color.R, analysis.handle.color.G, analysis.handle.color.B,
+            analysis.handle.brickColor,
+            analysis.handle.transparency,
+            tostring(analysis.handle.canCollide),
+            analysis.handle.reflectance)
+    end
+    
+    -- Добавление мешей
+    if #analysis.meshes > 0 then
+        text = text .. '\n\n    ["Meshes"] = {'
+        for i, mesh in ipairs(analysis.meshes) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", meshId = "%s", textureId = "%s"}]], 
+                i, mesh.name, mesh.type, mesh.parent, mesh.meshId or "", mesh.textureId or "")
+            if i < #analysis.meshes then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    -- Добавление Motor6D с анимационными данными
+    if #analysis.motor6ds > 0 then
+        text = text .. '\n\n    ["Motor6D"] = {'
+        for i, motor in ipairs(analysis.motor6ds) do
+            text = text .. string.format([[
+        [%d] = {
+            name = "%s", 
+            part0 = "%s", 
+            part1 = "%s",
+            c0 = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
+            c1 = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
+            currentAngle = %.3f,
+            desiredAngle = %.3f
+        }]], 
+                i, motor.name, motor.part0, motor.part1,
+                motor.c0:GetComponents(),
+                motor.c1:GetComponents(),
+                motor.currentAngle, motor.desiredAngle)
+            if i < #analysis.motor6ds then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    -- Добавление частей с полной CFrame информацией
+    if #analysis.parts > 0 then
+        text = text .. '\n\n    ["Parts"] = {'
+        for i, part in ipairs(analysis.parts) do
+            text = text .. string.format([[
+        [%d] = {
+            name = "%s", 
+            type = "%s", 
+            size = Vector3.new(%.2f, %.2f, %.2f), 
+            material = "%s",
+            color = Color3.new(%.3f, %.3f, %.3f),
+            brickColor = "%s",
+            transparency = %.2f,
+            canCollide = %s,
+            position = Vector3.new(%.2f, %.2f, %.2f),
+            rotation = Vector3.new(%.2f, %.2f, %.2f),
+            cframe = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
+            reflectance = %.2f,
+            shape = "%s"
+        }]], 
+                i, part.name, part.type, 
+                part.size.X, part.size.Y, part.size.Z, 
+                part.material,
+                part.color.R, part.color.G, part.color.B,
+                part.brickColor,
+                part.transparency,
+                tostring(part.canCollide),
+                part.position.X, part.position.Y, part.position.Z,
+                part.rotation.X, part.rotation.Y, part.rotation.Z,
+                part.cframe:GetComponents(),
+                part.reflectance,
+                part.shape)
+            if i < #analysis.parts then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    -- Добавление анимаций
+    if #analysis.animations > 0 then
+        text = text .. '\n\n    ["Animations"] = {'
+        for i, anim in ipairs(analysis.animations) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", animationId = "%s", parent = "%s"}]], 
+                i, anim.name, anim.animationId, anim.parent)
+            if i < #analysis.animations then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    -- Добавление звуков
+    if #analysis.sounds > 0 then
+        text = text .. '\n\n    ["Sounds"] = {'
+        for i, sound in ipairs(analysis.sounds) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", soundId = "%s", volume = %.2f, pitch = %.2f, looped = %s, playing = %s, parent = "%s"}]], 
+                i, sound.name, sound.soundId, sound.volume, sound.pitch, tostring(sound.isLooped), tostring(sound.isPlaying), sound.parent)
+            if i < #analysis.sounds then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    -- Добавление остальных элементов (только если есть)
+    if #analysis.attachments > 0 then
+        text = text .. '\n\n    ["Attachments"] = {'
+        for i, attachment in ipairs(analysis.attachments) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", parent = "%s", position = Vector3.new(%.2f, %.2f, %.2f), worldPosition = Vector3.new(%.2f, %.2f, %.2f)}]], 
+                i, attachment.name, attachment.parent, 
+                attachment.position.X, attachment.position.Y, attachment.position.Z,
+                attachment.worldPosition.X, attachment.worldPosition.Y, attachment.worldPosition.Z)
+            if i < #analysis.attachments then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    if #analysis.scripts > 0 then
+        text = text .. '\n\n    ["Scripts"] = {'
+        for i, script in ipairs(analysis.scripts) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", enabled = %s, sourceLength = %d}]], 
+                i, script.name, script.type, script.parent, tostring(script.enabled), script.source)
+            if i < #analysis.scripts then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    if #analysis.guis > 0 then
+        text = text .. '\n\n    ["GUIs"] = {'
+        for i, gui in ipairs(analysis.guis) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", enabled = %s}]], 
+                i, gui.name, gui.type, gui.parent, tostring(gui.enabled))
+            if i < #analysis.guis then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    if #analysis.effects > 0 then
+        text = text .. '\n\n    ["Effects"] = {'
+        for i, effect in ipairs(analysis.effects) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", enabled = %s}]], 
+                i, effect.name, effect.type, effect.parent, tostring(effect.enabled))
+            if i < #analysis.effects then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    if #analysis.lights > 0 then
+        text = text .. '\n\n    ["Lights"] = {'
+        for i, light in ipairs(analysis.lights) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", enabled = %s, brightness = %.2f, color = Color3.new(%.3f, %.3f, %.3f), range = %.2f}]], 
+                i, light.name, light.type, light.parent, tostring(light.enabled), light.brightness, light.color.R, light.color.G, light.color.B, light.range)
+            if i < #analysis.lights then text = text .. "," end
+        end
+        text = text .. "\n    },"
+    end
+    
+    text = text .. "\n}"
+    return text
+end
+
+-- === ФУНКЦИИ АНАЛИЗА ПИТОМЦЕВ ===
+
+-- Функция глубокого анализа модели питомца
+local function analyzePetModel(model)
+    local analysis = {
+        uuid = model.Name,
+        meshCount = 0,
+        motor6dCount = 0,
+        humanoidCount = 0,
+        partCount = 0,
+        attachmentCount = 0,
+        scriptCount = 0,
+        meshes = {},
+        motor6ds = {},
+        humanoids = {},
+        parts = {},
+        attachments = {},
+        scripts = {},
+        primaryPart = model.PrimaryPart and model.PrimaryPart.Name or "None",
+        modelSize = nil,
+        modelPosition = nil
+    }
+    
+    -- Получение размера и позиции модели
+    local cf, size = model:GetBoundingBox()
+    analysis.modelSize = size
+    analysis.modelPosition = cf.Position
+    
+    -- Анализ всех потомков
+    for _, obj in pairs(model:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            analysis.meshCount = analysis.meshCount + 1
+            local meshInfo = {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name
+            }
+            if obj:IsA("MeshPart") then
+                meshInfo.meshId = obj.MeshId
+            elseif obj:IsA("SpecialMesh") then
+                meshInfo.meshId = obj.MeshId
+                meshInfo.meshType = obj.MeshType.Name
+            end
+            table.insert(analysis.meshes, meshInfo)
             
-            if isPet(child) then
-                local data = analyzeTool(child)
-                
-                -- Дополнительный анализ позиции в руке
-                local handle = child:FindFirstChild("Handle")
-                if handle then
-                    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-                    if torso then
-                        local relativePos = torso.CFrame:PointToObjectSpace(handle.Position)
-                        data.relativeToTorso = tostring(relativePos)
-                    end
-                    
-                    -- Анализ RightGrip
-                    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
-                    if rightArm then
-                        local rightGrip = rightArm:FindFirstChild("RightGrip")
-                        if rightGrip then
-                            data.rightGripC0 = tostring(rightGrip.C0)
-                            data.rightGripC1 = tostring(rightGrip.C1)
+        elseif obj:IsA("Motor6D") then
+            analysis.motor6dCount = analysis.motor6dCount + 1
+            table.insert(analysis.motor6ds, {
+                name = obj.Name,
+                part0 = obj.Part0 and obj.Part0.Name or "None",
+                part1 = obj.Part1 and obj.Part1.Name or "None"
+            })
+            
+        elseif obj:IsA("Humanoid") then
+            analysis.humanoidCount = analysis.humanoidCount + 1
+            table.insert(analysis.humanoids, {
+                name = obj.Name,
+                health = obj.Health,
+                maxHealth = obj.MaxHealth,
+                walkSpeed = obj.WalkSpeed
+            })
+            
+        elseif obj:IsA("BasePart") then
+            analysis.partCount = analysis.partCount + 1
+            table.insert(analysis.parts, {
+                name = obj.Name,
+                type = obj.ClassName,
+                size = obj.Size,
+                material = obj.Material.Name,
+                color = obj.Color,
+                transparency = obj.Transparency,
+                canCollide = obj.CanCollide,
+                position = obj.Position,
+                rotation = obj.Rotation,
+                brickColor = obj.BrickColor.Name,
+                reflectance = obj.Reflectance
+            })
+            
+        elseif obj:IsA("Attachment") then
+            analysis.attachmentCount = analysis.attachmentCount + 1
+            table.insert(analysis.attachments, {
+                name = obj.Name,
+                parent = obj.Parent.Name,
+                position = obj.Position
+            })
+            
+        elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+            analysis.scriptCount = analysis.scriptCount + 1
+            table.insert(analysis.scripts, {
+                name = obj.Name,
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
+            })
+            
+        -- Добавляем анализ декалей и текстур
+        elseif obj:IsA("Decal") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (Decal)",
+                type = "Decal",
+                parent = obj.Parent.Name,
+                texture = obj.Texture,
+                face = obj.Face.Name,
+                transparency = obj.Transparency
+            })
+            
+        elseif obj:IsA("Texture") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (Texture)",
+                type = "Texture", 
+                parent = obj.Parent.Name,
+                texture = obj.Texture,
+                face = obj.Face.Name,
+                transparency = obj.Transparency
+            })
+            
+        -- Добавляем анализ GUI элементов
+        elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (GUI)",
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
+            })
+            
+        -- Добавляем анализ эффектов
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (Effect)",
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled
+            })
+            
+        -- Добавляем анализ источников света
+        elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+            table.insert(analysis.parts, {
+                name = obj.Name .. " (Light)",
+                type = obj.ClassName,
+                parent = obj.Parent.Name,
+                enabled = obj.Enabled,
+                brightness = obj.Brightness,
+                color = obj.Color
+            })
+        end
+    end
+    
+    return analysis
+end
+
+-- Функция генерации детального текста
+local function generateDetailText(analysis)
+    local text = string.format([[%s = {
+    ["PrimaryPart"] = "%s",
+    ["ModelSize"] = %s,
+    ["ModelPosition"] = %s,
+    ["TotalParts"] = %d,
+    ["TotalMeshes"] = %d,
+    ["TotalMotor6D"] = %d,
+    ["TotalHumanoids"] = %d,
+    ["TotalAttachments"] = %d,
+    ["TotalScripts"] = %d,
+    
+    ["Meshes"] = {]], 
+        analysis.uuid,
+        analysis.primaryPart or "None",
+        analysis.modelSize and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z) or "nil",
+        analysis.modelPosition and string.format("Vector3.new(%.2f, %.2f, %.2f)", analysis.modelPosition.X, analysis.modelPosition.Y, analysis.modelPosition.Z) or "nil",
+        analysis.partCount,
+        analysis.meshCount,
+        analysis.motor6dCount,
+        analysis.humanoidCount,
+        analysis.attachmentCount,
+        analysis.scriptCount
+    )
+    
+    -- Добавление мешей
+    for i, mesh in ipairs(analysis.meshes) do
+        text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", meshId = "%s"}]], 
+            i, mesh.name, mesh.type, mesh.parent, mesh.meshId or "")
+        if i < #analysis.meshes then text = text .. "," end
+    end
+    text = text .. "\n    },\n"
+    
+    -- Добавление Motor6D
+    text = text .. '\n    ["Motor6D"] = {'
+    for i, motor in ipairs(analysis.motor6ds) do
+        text = text .. string.format([[
+        [%d] = {name = "%s", part0 = "%s", part1 = "%s"}]], 
+            i, motor.name, motor.part0, motor.part1)
+        if i < #analysis.motor6ds then text = text .. "," end
+    end
+    text = text .. "\n    },\n"
+    
+    -- Добавление частей
+    text = text .. '\n    ["Parts"] = {'
+    for i, part in ipairs(analysis.parts) do
+        text = text .. string.format([[
+        [%d] = {
+            name = "%s", 
+            type = "%s", 
+            size = Vector3.new(%.2f, %.2f, %.2f), 
+            material = "%s",
+            color = Color3.new(%.3f, %.3f, %.3f),
+            brickColor = "%s",
+            transparency = %.2f,
+            canCollide = %s,
+            position = Vector3.new(%.2f, %.2f, %.2f),
+            rotation = Vector3.new(%.2f, %.2f, %.2f),
+            reflectance = %.2f
+        }]], 
+            i, part.name, part.type, 
+            part.size.X, part.size.Y, part.size.Z, 
+            part.material,
+            part.color.R, part.color.G, part.color.B,
+            part.brickColor,
+            part.transparency,
+            tostring(part.canCollide),
+            part.position.X, part.position.Y, part.position.Z,
+            part.rotation.X, part.rotation.Y, part.rotation.Z,
+            part.reflectance)
+        if i < #analysis.parts then text = text .. "," end
+    end
+    text = text .. "\n    }"
+    
+    -- Добавление гуманоидов (только если есть)
+    if #analysis.humanoids > 0 then
+        text = text .. ',\n\n    ["Humanoids"] = {'
+        for i, humanoid in ipairs(analysis.humanoids) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", health = %.1f, maxHealth = %.1f, walkSpeed = %.1f}]], 
+                i, humanoid.name, humanoid.health, humanoid.maxHealth, humanoid.walkSpeed)
+            if i < #analysis.humanoids then text = text .. "," end
+        end
+        text = text .. "\n    }"
+    end
+    
+    -- Добавление аттачментов (только если есть)
+    if #analysis.attachments > 0 then
+        text = text .. ',\n\n    ["Attachments"] = {'
+        for i, attachment in ipairs(analysis.attachments) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", parent = "%s", position = Vector3.new(%.2f, %.2f, %.2f)}]], 
+                i, attachment.name, attachment.parent, attachment.position.X, attachment.position.Y, attachment.position.Z)
+            if i < #analysis.attachments then text = text .. "," end
+        end
+        text = text .. "\n    }"
+    end
+    
+    -- Добавление скриптов (только если есть)
+    if #analysis.scripts > 0 then
+        text = text .. ',\n\n    ["Scripts"] = {'
+        for i, script in ipairs(analysis.scripts) do
+            text = text .. string.format([[
+        [%d] = {name = "%s", type = "%s", parent = "%s", enabled = %s}]], 
+                i, script.name, script.type, script.parent, tostring(script.enabled))
+            if i < #analysis.scripts then text = text .. "," end
+        end
+        text = text .. "\n    }"
+    end
+    
+    text = text .. "\n}"
+    return text
+end
+
+-- === WINDUI СИСТЕМА ===
+
+-- Gradient function for text styling
+function gradient(text, startColor, endColor)
+    local result = ""
+    local length = #text
+
+    for i = 1, length do
+        local t = (i - 1) / math.max(length - 1, 1)
+        local r = math.floor((startColor.R + (endColor.R - startColor.R) * t) * 255)
+        local g = math.floor((startColor.G + (endColor.G - startColor.G) * t) * 255)
+        local b = math.floor((startColor.B + (endColor.B - startColor.B) * t) * 255)
+
+        local char = text:sub(i, i)
+        result = result .. '<font color="rgb(' .. r .. ", " .. g .. ", " .. b .. ')">' .. char .. "</font>"
+    end
+
+    return result
+end
+
+-- Show initial popup
+local Confirmed = false
+
+WindUI:Popup({
+    Title = "Pet Analyzer Loaded!",
+    Icon = "search",
+    IconThemed = true,
+    Content = "Advanced " .. gradient("Pet Analysis Tool", Color3.fromHex("#00FF87"), Color3.fromHex("#60EFFF")) .. " with detailed model inspection for Roblox pets",
+    Buttons = {
+        {
+            Title = "Cancel",
+            Callback = function()
+            end,
+            Variant = "Secondary"
+        },
+        {
+            Title = "Start Analyzing",
+            Icon = "arrow-right",
+            Callback = function()
+                Confirmed = true
+            end,
+            Variant = "Primary"
+        }
+    }
+})
+
+repeat
+    wait()
+until Confirmed
+
+-- Create main WindUI window
+local Window = WindUI:CreateWindow({
+    Title = "Pet Analyzer | Advanced Model Inspector",
+    Icon = "search",
+    IconThemed = true,
+    Author = "Pet Analysis Tool",
+    Folder = "PetAnalyzer",
+    Size = UDim2.fromOffset(450, 400),
+    Transparent = false,
+    Theme = "Dark",
+    User = {
+        Enabled = true,
+        Callback = function()
+        end,
+        Anonymous = false
+    },
+    SideBarWidth = 160,
+    ScrollBarEnabled = true
+})
+
+Window:EditOpenButton({
+    Title = "Pet Analyzer",
+    Icon = "search",
+    CornerRadius = UDim.new(0, 12),
+    StrokeThickness = 2,
+    Color = ColorSequence.new(Color3.fromHex("#FF6B6B"), Color3.fromHex("#4ECDC4")),
+    Draggable = true
+})
+
+-- Create sections and tabs
+local Tabs = {}
+
+Tabs.AnalyzerSection = Window:Section({
+    Title = "Pet Analysis Tools",
+    Icon = "search",
+    Opened = true
+})
+
+Tabs.ResultsSection = Window:Section({
+    Title = "Analysis Results",
+    Icon = "file-text",
+    Opened = false
+})
+
+Tabs.MainTab = Tabs.AnalyzerSection:Tab({
+    Title = "Analyzer",
+    Icon = "search",
+    Desc = "Find and analyze nearby UUID pets"
+})
+
+Tabs.ResultsTab = Tabs.ResultsSection:Tab({
+    Title = "Results",
+    Icon = "list",
+    Desc = "View analyzed pets and detailed data"
+})
+
+Tabs.SettingsTab = Tabs.AnalyzerSection:Tab({
+    Title = "Settings",
+    Icon = "settings",
+    Desc = "Configure analysis parameters"
+})
+
+Window:SelectTab(1)
+
+-- Function to show detailed analysis in a popup
+function showDetailedAnalysis(analysis)
+    local detailText = generateDetailText(analysis)
+    
+    WindUI:Popup({
+        Title = "📋 Detailed Analysis: " .. analysis.uuid,
+        Icon = "file-text",
+        IconThemed = true,
+        Content = "Complete model analysis with " .. analysis.partCount .. " parts, " .. analysis.meshCount .. " meshes, and " .. analysis.motor6dCount .. " Motor6D joints.",
+        Buttons = {
+            {
+                Title = "Copy to Clipboard",
+                Icon = "copy",
+                Callback = function()
+                    pcall(function()
+                        if setclipboard then
+                            setclipboard(detailText)
+                        else
+                            game:GetService("GuiService"):SetClipboard(detailText)
                         end
+                    end)
+                    
+                    print("📋 Pet Analysis Data:")
+                    print(detailText)
+                    
+                    WindUI:Notify({
+                        Title = "Copied!",
+                        Content = "Analysis data copied to clipboard",
+                        Icon = "copy",
+                        Duration = 3
+                    })
+                end,
+                Variant = "Primary"
+            },
+            {
+                Title = "Close",
+                Callback = function()
+                end,
+                Variant = "Secondary"
+            }
+        }
+    })
+end
+
+-- Function to create detailed notebook window
+function createDetailedNotebook(analysis)
+    -- Use a simple popup instead of complex window structure
+    local detailText = generateDetailText(analysis)
+    
+    WindUI:Popup({
+        Title = "📋 Detailed Pet Analysis",
+        Icon = "file-text",
+        IconThemed = true,
+        Content = string.format([[Pet: %s
+
+📊 Summary:
+• Parts: %d total
+• Meshes: %d with Asset IDs  
+• Motor6D: %d joints
+• Size: %.1f×%.1f×%.1f studs
+• Position: %.1f, %.1f, %.1f
+
+Complete analysis data has been copied to clipboard and printed to console.]], 
+            analysis.customName or analysis.uuid,
+            analysis.partCount,
+            analysis.meshCount, 
+            analysis.motor6dCount,
+            analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z,
+            analysis.modelPosition.X, analysis.modelPosition.Y, analysis.modelPosition.Z),
+        Buttons = {
+            {
+                Title = "📋 Copy Full Data",
+                Icon = "copy",
+                Callback = function()
+                    pcall(function()
+                        if setclipboard then
+                            setclipboard(detailText)
+                        else
+                            game:GetService("GuiService"):SetClipboard(detailText)
+                        end
+                    end)
+                    
+                    print("📋 Pet Analysis Data:")
+                    print(detailText)
+                    
+                    WindUI:Notify({
+                        Title = "Copied!",
+                        Content = "Full analysis data copied to clipboard",
+                        Icon = "copy",
+                        Duration = 3
+                    })
+                end,
+                Variant = "Primary"
+            },
+            {
+                Title = "Close",
+                Callback = function()
+                end,
+                Variant = "Secondary"
+            }
+        }
+    })
+end
+
+-- Function to show detailed hand tool analysis
+function showHandToolDetailedAnalysis(analysis)
+    local detailText = generateHandToolDetailText(analysis)
+    
+    WindUI:Popup({
+        Title = "🔧 Hand Tool Analysis: " .. analysis.toolName,
+        Icon = "tool",
+        IconThemed = true,
+        Content = string.format([[Tool: %s (%s)
+
+📊 Complete Analysis:
+• Parts: %d total
+• Meshes: %d with Asset IDs
+• Motor6D: %d joints with animation data
+• Scripts: %d (LocalScript/Script)
+• Animations: %d animation objects
+• Sounds: %d sound effects
+• GUIs: %d interface elements
+• Effects: %d particle/visual effects
+• Lights: %d light sources
+• Attachments: %d attachment points
+
+Handle: %s
+Tool Properties: Enabled=%s, CanBeDropped=%s
+
+Complete analysis data with CFrame animations, Motor6D data, and all child objects has been copied to clipboard.]], 
+            analysis.toolName,
+            analysis.toolType,
+            analysis.partCount,
+            analysis.meshCount,
+            analysis.motor6dCount,
+            analysis.scriptCount,
+            analysis.animationCount,
+            analysis.soundCount,
+            analysis.guiCount,
+            analysis.effectCount,
+            analysis.lightCount,
+            analysis.attachmentCount,
+            analysis.handle and analysis.handle.name or "None",
+            tostring(analysis.enabled),
+            tostring(analysis.canBeDropped)),
+        Buttons = {
+            {
+                Title = "📋 Copy Full Tool Data",
+                Icon = "copy",
+                Callback = function()
+                    pcall(function()
+                        if setclipboard then
+                            setclipboard(detailText)
+                        else
+                            game:GetService("GuiService"):SetClipboard(detailText)
+                        end
+                    end)
+                    
+                    print("🔧 Hand Tool Analysis Data:")
+                    print(detailText)
+                    
+                    WindUI:Notify({
+                        Title = "Copied!",
+                        Content = "Full hand tool analysis data copied to clipboard",
+                        Icon = "copy",
+                        Duration = 3
+                    })
+                end,
+                Variant = "Primary"
+            },
+            {
+                Title = "Close",
+                Callback = function()
+                end,
+                Variant = "Secondary"
+            }
+        }
+    })
+end
+
+-- Function to update results tab with cards
+function updateResultsTab()
+    print("🔄 Updating Results tab with", #analyzedPets, "pets")
+    
+    -- Clear existing content
+    pcall(function()
+        Tabs.ResultsTab:Clear()
+    end)
+    
+    if #analyzedPets == 0 then
+        Tabs.ResultsTab:Paragraph({
+            Title = "No Analysis Data",
+            Desc = "No pets have been analyzed yet. Use the Analyzer tab to scan for pets.",
+            Image = "info",
+            Color = "Gray"
+        })
+        print("📝 Results tab shows empty state")
+        return
+    end
+    
+    Tabs.ResultsTab:Paragraph({
+        Title = "Analysis Results",
+        Desc = "Found " .. #analyzedPets .. " analyzed pets",
+        Image = "list",
+        Color = "Blue"
+    })
+    
+    for i, analysis in ipairs(analyzedPets) do
+        -- Pet card with custom name input
+        Tabs.ResultsTab:Input({
+            Title = "Pet #" .. i .. " Name",
+            Placeholder = analysis.uuid,
+            Value = analysis.customName or "",
+            Callback = function(text)
+                if text and text ~= "" then
+                    analysis.customName = text
+                else
+                    analysis.customName = nil
+                end
+                WindUI:Notify({
+                    Title = "Name Updated",
+                    Content = "Pet name has been updated",
+                    Icon = "edit",
+                    Duration = 2
+                })
+            end
+        })
+        
+        Tabs.ResultsTab:Paragraph({
+            Title = analysis.customName or analysis.uuid,
+            Desc = string.format("Parts: %d | Meshes: %d | Motor6D: %d | Humanoids: %d\nSize: %.1f×%.1f×%.1f studs", 
+                analysis.partCount, analysis.meshCount, analysis.motor6dCount, analysis.humanoidCount,
+                analysis.modelSize.X, analysis.modelSize.Y, analysis.modelSize.Z),
+            Image = "search",
+            Color = "Green"
+        })
+        
+        Tabs.ResultsTab:Button({
+            Title = "📋 Open Detailed Notebook",
+            Icon = "book-open",
+            Callback = function()
+                createDetailedNotebook(analysis)
+            end
+        })
+        
+        Tabs.ResultsTab:Button({
+            Title = "📄 Quick Copy Data",
+            Icon = "copy",
+            Callback = function()
+                showDetailedAnalysis(analysis)
+            end
+        })
+        
+        if i < #analyzedPets then
+            Tabs.ResultsTab:Divider()
+        end
+    end
+end
+
+-- Main Tab Implementation
+Tabs.MainTab:Paragraph({
+    Title = "Pet Analyzer",
+    Desc = "Searches for pets with UUID names (containing {}) and provides detailed model analysis",
+    Image = "search",
+    Color = "Blue"
+})
+
+Tabs.MainTab:Button({
+    Title = "🔬 Analyze Closest Pet",
+    Icon = "search",
+    Callback = function()
+        WindUI:Notify({
+            Title = "Analyzing...",
+            Content = "Searching for nearby UUID pets",
+            Icon = "search",
+            Duration = 2
+        })
+        
+        spawn(function()
+            local petModel = findClosestUUIDPet()
+            if petModel then
+                local analysis = analyzePetModel(petModel)
+                
+                -- Check if already exists
+                local alreadyExists = false
+                for _, existingPet in pairs(analyzedPets) do
+                    if existingPet.uuid == analysis.uuid then
+                        alreadyExists = true
+                        break
                     end
                 end
                 
-                logEvent("HAND_EQUIPPED", child.Name, data)
+                if not alreadyExists and #analyzedPets < CONFIG.MAX_ANALYZED_PETS then
+                    table.insert(analyzedPets, analysis)
+                    currentAnalysis = analysis
+                    
+                    WindUI:Notify({
+                        Title = "Analysis Complete!",
+                        Content = "Found pet: " .. analysis.uuid .. " with " .. analysis.partCount .. " parts",
+                        Icon = "check-circle",
+                        Duration = 4
+                    })
+                    
+                    -- Update results tab
+                    updateResultsTab()
+                    
+                    -- Force refresh Results tab by selecting it
+                    spawn(function()
+                        wait(0.5)
+                        Window:SelectTab(2) -- Results tab
+                        wait(0.1)
+                        Window:SelectTab(1) -- Back to main tab
+                    end)
+                else
+                    WindUI:Notify({
+                        Title = "Pet Already Analyzed",
+                        Content = "This pet has already been analyzed",
+                        Icon = "info",
+                        Duration = 3
+                    })
+                end
+            else
+                WindUI:Notify({
+                    Title = "No Pet Found",
+                    Content = "No UUID pets found within " .. CONFIG.SEARCH_RADIUS .. " studs",
+                    Icon = "alert-triangle",
+                    Duration = 4
+                })
             end
+        end)
+    end
+})
+
+Tabs.MainTab:Button({
+    Title = "📋 Show Detailed Analysis",
+    Icon = "file-text",
+    Callback = function()
+        if currentAnalysis then
+            showDetailedAnalysis(currentAnalysis)
+        else
+            WindUI:Notify({
+                Title = "No Analysis Available",
+                Content = "Please analyze a pet first",
+                Icon = "alert-triangle",
+                Duration = 3
+            })
         end
-    end)
-    
-    char.ChildRemoved:Connect(function(child)
-        if child:IsA("Tool") and child == currentTool then
-            if isPet(child) then
-                logEvent("HAND_REMOVED", child.Name)
+    end
+})
+
+Tabs.MainTab:Divider()
+
+Tabs.MainTab:Paragraph({
+    Title = "Hand Tool Analysis",
+    Desc = "Analyze the tool currently equipped in your hand",
+    Image = "tool",
+    Color = "Orange"
+})
+
+Tabs.MainTab:Button({
+    Title = "🔧 Analyze Hand Pet",
+    Icon = "tool",
+    Callback = function()
+        WindUI:Notify({
+            Title = "Analyzing Hand Tool...",
+            Content = "Searching for tool in player's hand",
+            Icon = "tool",
+            Duration = 2
+        })
+        
+        spawn(function()
+            local handTool = findHandTool()
+            if handTool then
+                local analysis = analyzeHandTool(handTool)
+                currentHandAnalysis = analysis
+                
+                WindUI:Notify({
+                    Title = "Hand Tool Analysis Complete!",
+                    Content = string.format("Tool: %s with %d parts, %d meshes, %d scripts", 
+                        analysis.toolName, analysis.partCount, analysis.meshCount, analysis.scriptCount),
+                    Icon = "check-circle",
+                    Duration = 4
+                })
+            else
+                WindUI:Notify({
+                    Title = "No Tool Found",
+                    Content = "No tool found in player's hand. Equip a tool first.",
+                    Icon = "alert-triangle",
+                    Duration = 4
+                })
             end
-            currentTool = nil
+        end)
+    end
+})
+
+Tabs.MainTab:Button({
+    Title = "📄 Show Detailed Analysis Hand",
+    Icon = "file-text",
+    Callback = function()
+        if currentHandAnalysis then
+            showHandToolDetailedAnalysis(currentHandAnalysis)
+        else
+            WindUI:Notify({
+                Title = "No Hand Tool Analysis",
+                Content = "Please analyze a hand tool first",
+                Icon = "alert-triangle",
+                Duration = 3
+            })
         end
-    end)
+    end
+})
+
+Tabs.MainTab:Divider()
+
+-- Dynamic stats paragraph that updates
+local function updateMainTabStats()
+    Tabs.MainTab:Paragraph({
+        Title = "Quick Stats",
+        Desc = "Analyzed Pets: " .. #analyzedPets .. "/" .. CONFIG.MAX_ANALYZED_PETS,
+        Image = "bar-chart",
+        Color = "Green"
+    })
 end
 
--- Запуск мониторинга
-if character then
-    monitorCharacter(character)
-end
+updateMainTabStats()
 
-player.CharacterAdded:Connect(monitorCharacter)
+-- Settings Tab Implementation
+Tabs.SettingsTab:Paragraph({
+    Title = "Analysis Settings",
+    Desc = "Configure search parameters and limits",
+    Image = "settings",
+    Color = "Purple"
+})
 
--- Простые команды в чате
-player.Chatted:Connect(function(message)
-    local msg = message:lower()
-    
-    if msg == "/petreport" or msg == "/report" then
-        print("\n=== PET ANALYSIS REPORT ===")
-        print("Total events:", #petEvents)
-        
-        for i, event in ipairs(petEvents) do
-            print(string.format("\n[%d] %s - %s (%.2f)", i, event.type, event.pet, event.time))
-            
-            if event.details.handleSize then
-                print("  Handle Size:", event.details.handleSize)
-            end
-            if event.details.handlePosition then
-                print("  Handle Position:", event.details.handlePosition)
-            end
-            if event.details.relativeToTorso then
-                print("  Relative to Torso:", event.details.relativeToTorso)
-            end
-            if event.details.rightGripC0 then
-                print("  RightGrip C0:", event.details.rightGripC0)
-                print("  RightGrip C1:", event.details.rightGripC1)
-            end
-            if event.details.meshId then
-                print("  Mesh ID:", event.details.meshId)
-            end
-        end
-        print("=== END REPORT ===\n")
-        
-    elseif msg == "/petclear" or msg == "/clear" then
-        petEvents = {}
-        print("Pet analysis log cleared!")
-        
-    elseif msg == "/pethelp" or msg == "/help" then
-        print("\n=== PET ANALYZER COMMANDS ===")
-        print("/report or /petreport - Show analysis report")
-        print("/clear or /petclear - Clear analysis log")
-        print("/help or /pethelp - Show this help")
-        print("=============================\n")
+Tabs.SettingsTab:Slider({
+    Title = "Search Radius (Studs)",
+    Value = {
+        Min = 50,
+        Max = 500,
+        Default = CONFIG.SEARCH_RADIUS
+    },
+    Callback = function(value)
+        CONFIG.SEARCH_RADIUS = value
+        WindUI:Notify({
+            Title = "Search Radius Updated",
+            Content = "Now searching within " .. value .. " studs",
+            Icon = "target",
+            Duration = 2
+        })
     end
-end)
+})
 
--- Статус каждые 10 секунд
-spawn(function()
-    while true do
-        wait(10)
-        print(string.format("Pet Analyzer Status: %d events recorded, Current tool: %s", 
-              #petEvents, currentTool and currentTool.Name or "None"))
+Tabs.SettingsTab:Slider({
+    Title = "Max Analyzed Pets",
+    Value = {
+        Min = 5,
+        Max = 50,
+        Default = CONFIG.MAX_ANALYZED_PETS
+    },
+    Callback = function(value)
+        CONFIG.MAX_ANALYZED_PETS = value
+        WindUI:Notify({
+            Title = "Pet Limit Updated",
+            Content = "Can now store up to " .. value .. " analyzed pets",
+            Icon = "list",
+            Duration = 2
+        })
     end
-end)
+})
 
-print("=== ANALYZER READY ===")
-print("Commands: /report, /clear, /help")
-print("Create a pet and take it in your hands to start analysis!")
+Tabs.SettingsTab:Button({
+    Title = "Clear All Data",
+    Icon = "trash-2",
+    Callback = function()
+        analyzedPets = {}
+        currentAnalysis = nil
+        WindUI:Notify({
+            Title = "Data Cleared",
+            Content = "All analyzed pet data has been cleared",
+            Icon = "trash-2",
+            Duration = 3
+        })
+        updateResultsTab()
+    end
+})
+
+-- Initialize results tab
+updateResultsTab()
+
+print("✅ Pet Analyzer with WindUI loaded successfully!")
