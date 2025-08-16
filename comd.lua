@@ -1,466 +1,662 @@
--- 🔍 PET CREATION ANALYZER v1.0
--- Анализирует процесс создания визуального питомца
--- Отслеживает: Backpack → Handle → Позиционирование
+-- 🎯 PET CREATOR - Генератор питомцев по данным
+-- Создает новую модель питомца с UUID именем на основе данных из PetGenerator.lua
+-- Размещает питомца рядом с игроком в Workspace
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local backpack = player.Backpack
-local playerGui = player:WaitForChild("PlayerGui")
 
-print("🔍 === PET CREATION ANALYZER v1.0 ===")
-print("🎯 Отслеживаем: Backpack → Handle → Позиционирование")
+print("🎯 === PET CREATOR - ГЕНЕРАТОР ПИТОМЦЕВ ===")
+print("=" .. string.rep("=", 50))
 
--- === СИСТЕМЫ ЛОГИРОВАНИЯ ===
-local analysisLog = {}
-local petCreationEvents = {}
-local currentHandleTool = nil
-
--- Функция логирования
-local function log(category, message, data)
-    local entry = {
-        time = tick(),
-        category = category,
-        message = message,
-        data = data or {}
-    }
-    table.insert(analysisLog, entry)
-    print(string.format("[%.3f] [%s] %s", entry.time, category, message))
-    if data and next(data) then
-        for key, value in pairs(data) do
-            print(string.format("  └─ %s: %s", key, tostring(value)))
-        end
-    end
-end
-
--- Функция анализа Tool
-local function analyzeTool(tool)
-    if not tool or not tool:IsA("Tool") then return nil end
+-- Полные данные питомца (из PetGenerator.lua)
+local PET_DATA = {
+    ["PrimaryPart"] = "RootPart",
+    ["ModelSize"] = Vector3.new(2.70, 2.80, 2.42),
+    ["ModelPosition"] = Vector3.new(34.18, 1.32, -116.14),
+    ["TotalParts"] = 15,
+    ["TotalMeshes"] = 1,
+    ["TotalMotor6D"] = 14,
+    ["TotalHumanoids"] = 0,
+    ["TotalAttachments"] = 0,
+    ["TotalScripts"] = 0,
     
-    local info = {
-        name = tool.Name,
-        parent = tool.Parent and tool.Parent.Name or "nil",
-        handle = nil
-    }
-    
-    local handle = tool:FindFirstChild("Handle")
-    if handle and handle:IsA("BasePart") then
-        info.handle = {
-            size = tostring(handle.Size),
-            position = tostring(handle.Position),
-            cframe = tostring(handle.CFrame),
-            anchored = handle.Anchored,
-            transparency = handle.Transparency
+    ["Meshes"] = {
+        [1] = {name = "MouthEnd", type = "MeshPart", parent = "MODEL", meshId = "rbxassetid://134824845323237"}
+    },
+
+    ["Motor6D"] = {
+        [1] = {
+            name = "Mouth", 
+            part0 = "Jaw", 
+            part1 = "Mouth",
+            c0 = CFrame.new(0.113, 0.000, -0.000, 0.000, 1.000, 0.000, 1.000, 0.000, 0.000, 0.000, 0.000, -1.000),
+            c1 = CFrame.new(0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(-0.000, -0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000)
+        },
+        [2] = {
+            name = "MouthEnd", 
+            part0 = "Jaw", 
+            part1 = "MouthEnd",
+            c0 = CFrame.new(0.113, -0.204, -0.000, 0.000, 0.000, -1.000, 0.000, 1.000, 0.000, 1.000, 0.000, 0.000),
+            c1 = CFrame.new(0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.000, -0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000)
+        },
+        [3] = {
+            name = "Head", 
+            part0 = "Torso", 
+            part1 = "Head",
+            c0 = CFrame.new(0.226, 0.181, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(-0.633, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.000, 0.000, 0.000, 0.985, -0.090, 0.146, 0.097, 0.995, -0.036, -0.142, 0.050, 0.989)
+        },
+        [4] = {
+            name = "BackLegL", 
+            part0 = "Torso", 
+            part1 = "BackLegL",
+            c0 = CFrame.new(-0.226, -0.091, 0.452, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.362, 0.181, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.064, -0.037, 0.032, 0.997, 0.077, -0.030, -0.080, 0.988, -0.130, 0.019, 0.132, 0.991)
+        },
+        [5] = {
+            name = "FrontLegL", 
+            part0 = "Torso", 
+            part1 = "FrontLegL",
+            c0 = CFrame.new(-0.226, 0.633, 0.362, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.362, 0.181, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.127, 0.096, 0.037, 0.991, 0.134, -0.005, -0.133, 0.979, -0.157, -0.017, 0.156, 0.988)
+        },
+        [6] = {
+            name = "FrontLegR", 
+            part0 = "Torso", 
+            part1 = "FrontLegR",
+            c0 = CFrame.new(-0.226, 0.633, -0.362, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.362, 0.181, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.137, 0.069, -0.032, 0.984, 0.171, 0.040, -0.175, 0.943, 0.282, 0.011, -0.285, 0.959)
+        },
+        [7] = {
+            name = "BackLegR", 
+            part0 = "Torso", 
+            part1 = "BackLegR",
+            c0 = CFrame.new(-0.226, -0.091, -0.452, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.362, 0.181, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.069, -0.059, -0.014, 0.995, 0.091, 0.037, -0.098, 0.950, 0.297, -0.008, -0.300, 0.954)
+        },
+        [8] = {
+            name = "Tail", 
+            part0 = "Torso", 
+            part1 = "Tail",
+            c0 = CFrame.new(-0.330, -0.543, -0.000, 0.940, -0.340, 0.000, 0.340, 0.940, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.038, 0.371, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(-0.000, 0.000, 0.000, 0.989, 0.045, -0.140, -0.036, 0.997, 0.064, 0.143, -0.058, 0.988)
+        },
+        [9] = {
+            name = "RightEye", 
+            part0 = "Head", 
+            part1 = "RightEye",
+            c0 = CFrame.new(0.068, 0.656, -0.407, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.045, 0.004, 0.045, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000)
+        },
+        [10] = {
+            name = "LeftEye", 
+            part0 = "Head", 
+            part1 = "LeftEye",
+            c0 = CFrame.new(0.068, 0.656, 0.407, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.045, 0.004, 0.045, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000)
+        },
+        [11] = {
+            name = "LeftEar", 
+            part0 = "Head", 
+            part1 = "LeftEar",
+            c0 = CFrame.new(0.416, 0.271, 0.565, 0.500, -0.000, -0.866, 0.000, 1.000, -0.000, 0.866, 0.000, 0.500),
+            c1 = CFrame.new(-0.157, 0.000, -0.090, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(0.000, 0.000, 0.000, 0.996, 0.079, -0.038, -0.076, 0.994, 0.077, 0.044, -0.074, 0.996)
+        },
+        [12] = {
+            name = "RightEar", 
+            part0 = "Head", 
+            part1 = "RightEar",
+            c0 = CFrame.new(0.376, 0.271, -0.635, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.000, 0.000, 0.181, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(-0.000, 0.000, -0.000, 0.985, 0.110, 0.131, -0.096, 0.990, -0.102, -0.141, 0.088, 0.986)
+        },
+        [13] = {
+            name = "Jaw", 
+            part0 = "Head", 
+            part1 = "Jaw",
+            c0 = CFrame.new(-0.317, 0.452, -0.000, 0.000, 1.000, 0.000, 1.000, 0.000, 0.000, 0.000, 0.000, -1.000),
+            c1 = CFrame.new(-0.271, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(-0.000, -0.000, -0.000, 0.994, -0.109, 0.003, 0.109, 0.993, 0.036, -0.006, -0.036, 0.999)
+        },
+        [14] = {
+            name = "Torso", 
+            part0 = "RootPart", 
+            part1 = "Torso",
+            c0 = CFrame.new(0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            c1 = CFrame.new(0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000),
+            transform = CFrame.new(-0.092, 0.000, 0.000, 0.994, -0.112, 0.012, 0.112, 0.993, -0.029, -0.009, 0.030, 1.000)
         }
-        
-        -- Анализируем Mesh
-        for _, child in pairs(handle:GetChildren()) do
-            if child:IsA("SpecialMesh") then
-                info.handle.mesh = {
-                    meshId = child.MeshId,
-                    textureId = child.TextureId,
-                    scale = tostring(child.Scale)
-                }
-            end
-        end
-    end
-    
-    return info
-end
+    },
 
--- === МОНИТОРИНГ BACKPACK ===
-log("SYSTEM", "🎒 Запуск мониторинга Backpack")
+    ["Parts"] = {
+        [1] = {
+            name = "RightEar", 
+            type = "UnionOperation", 
+            size = Vector3.new(0.79, 0.54, 0.64), 
+            material = "Plastic",
+            color = Color3.new(0.580, 0.400, 0.298),
+            brickColor = "Red flip/flop",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.93, 1.87, -117.13),
+            rotation = Vector3.new(-68.63, -70.78, 27.23),
+            relativeCFrame = CFrame.new(0.875, 0.735, -0.920, 0.949, -0.078, 0.307, 0.120, 0.985, -0.120, -0.293, 0.151, 0.944),
+            reflectance = 0.00
+        },
+        [2] = {
+            name = "LeftEar", 
+            type = "UnionOperation", 
+            size = Vector3.new(0.39, 0.54, 0.86), 
+            material = "Plastic",
+            color = Color3.new(0.580, 0.400, 0.298),
+            brickColor = "Red flip/flop",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(33.41, 2.18, -117.04),
+            rotation = Vector3.new(80.50, -36.52, 173.12),
+            relativeCFrame = CFrame.new(1.186, 0.649, 0.606, 0.603, -0.094, -0.793, -0.020, 0.991, -0.133, 0.798, 0.096, 0.595),
+            reflectance = 0.00
+        },
+        [3] = {
+            name = "Jaw", 
+            type = "UnionOperation", 
+            size = Vector3.new(0.18, 0.63, 0.81), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.00, 1.30, -117.38),
+            rotation = Vector3.new(114.78, 81.98, -120.37),
+            relativeCFrame = CFrame.new(0.303, 0.983, 0.012, -0.093, 0.988, -0.127, 0.993, 0.101, 0.058, 0.071, -0.120, -0.990),
+            reflectance = 0.00
+        },
+        [4] = {
+            name = "Mouth", 
+            type = "UnionOperation", 
+            size = Vector3.new(0.36, 0.05, 0.23), 
+            material = "Plastic",
+            color = Color3.new(0.106, 0.165, 0.208),
+            brickColor = "Black",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(33.99, 1.29, -117.49),
+            rotation = Vector3.new(-65.22, -81.98, 30.37),
+            relativeCFrame = CFrame.new(0.292, 1.095, 0.020, 0.988, -0.093, 0.127, 0.101, 0.993, -0.058, -0.120, 0.071, 0.990),
+            reflectance = 0.00
+        },
+        [5] = {
+            name = "Torso", 
+            type = "Part", 
+            size = Vector3.new(0.45, 1.27, 1.27), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.01, 0.90, -116.40),
+            rotation = Vector3.new(-22.19, -88.21, 74.23),
+            relativeCFrame = CFrame.new(-0.092, 0.000, 0.000, 0.994, -0.112, 0.012, 0.112, 0.993, -0.029, -0.009, 0.030, 1.000),
+            reflectance = 0.00
+        },
+        [6] = {
+            name = "Head", 
+            type = "Part", 
+            size = Vector3.new(1.27, 1.27, 1.45), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.10, 1.72, -116.73),
+            rotation = Vector3.new(-73.30, -80.30, 28.65),
+            relativeCFrame = CFrame.new(0.725, 0.338, -0.090, 0.966, -0.200, 0.161, 0.211, 0.976, -0.048, -0.148, 0.081, 0.986),
+            reflectance = 0.00
+        },
+        [7] = {
+            name = "Tail", 
+            type = "Part", 
+            size = Vector3.new(0.36, 1.40, 0.36), 
+            material = "Plastic",
+            color = Color3.new(0.580, 0.400, 0.298),
+            brickColor = "Red flip/flop",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.02, 0.75, -115.46),
+            rotation = Vector3.new(76.84, -81.59, -169.30),
+            relativeCFrame = CFrame.new(-0.244, -0.931, -0.009, 0.904, -0.403, -0.142, 0.402, 0.915, -0.033, 0.144, -0.027, 0.989),
+            reflectance = 0.00
+        },
+        [8] = {
+            name = "LeftEye", 
+            type = "Part", 
+            size = Vector3.new(0.32, 0.05, 0.18), 
+            material = "Plastic",
+            color = Color3.new(0.106, 0.165, 0.208),
+            brickColor = "Black",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(33.62, 1.77, -117.38),
+            rotation = Vector3.new(-73.30, -80.30, 28.65),
+            relativeCFrame = CFrame.new(0.774, 0.984, 0.393, 0.966, -0.200, 0.161, 0.211, 0.976, -0.048, -0.148, 0.081, 0.986),
+            reflectance = 0.00
+        },
+        [9] = {
+            name = "RightEye", 
+            type = "Part", 
+            size = Vector3.new(0.32, 0.05, 0.18), 
+            material = "Plastic",
+            color = Color3.new(0.106, 0.165, 0.208),
+            brickColor = "Black",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.42, 1.64, -117.42),
+            rotation = Vector3.new(-73.30, -80.30, 28.65),
+            relativeCFrame = CFrame.new(0.643, 1.024, -0.410, 0.966, -0.200, 0.161, 0.211, 0.976, -0.048, -0.148, 0.081, 0.986),
+            reflectance = 0.00
+        },
+        [10] = {
+            name = "BackLegL", 
+            type = "UnionOperation", 
+            size = Vector3.new(0.72, 0.90, 0.72), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(33.56, 0.41, -116.05),
+            rotation = Vector3.new(1.19, -80.74, 93.04),
+            relativeCFrame = CFrame.new(-0.590, -0.348, 0.449, 0.999, -0.033, -0.003, 0.032, 0.986, -0.161, 0.009, 0.161, 0.987),
+            reflectance = 0.00
+        },
+        [11] = {
+            name = "BackLegR", 
+            type = "UnionOperation", 
+            size = Vector3.new(0.72, 0.90, 0.72), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.43, 0.40, -116.06),
+            rotation = Vector3.new(-176.93, -74.20, -85.95),
+            relativeCFrame = CFrame.new(-0.596, -0.332, -0.413, 1.000, -0.019, 0.015, 0.015, 0.962, 0.272, -0.019, -0.272, 0.962),
+            reflectance = 0.00
+        },
+        [12] = {
+            name = "FrontLegR", 
+            type = "UnionOperation", 
+            size = Vector3.new(0.72, 0.72, 0.54), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.34, 0.36, -116.94),
+            rotation = Vector3.new(-175.72, -75.06, -89.37),
+            relativeCFrame = CFrame.new(-0.636, 0.548, -0.324, 0.998, 0.061, 0.019, -0.064, 0.964, 0.257, -0.003, -0.258, 0.966),
+            reflectance = 0.00
+        },
+        [13] = {
+            name = "FrontLegL", 
+            type = "UnionOperation", 
+            size = Vector3.new(0.72, 0.72, 0.54), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(33.61, 0.36, -116.93),
+            rotation = Vector3.new(-7.61, -79.25, 81.07),
+            relativeCFrame = CFrame.new(-0.634, 0.531, 0.398, 0.999, 0.025, 0.025, -0.020, 0.983, -0.185, -0.029, 0.184, 0.982),
+            reflectance = 0.00
+        },
+        [14] = {
+            name = "RootPart", 
+            type = "Part", 
+            size = Vector3.new(0.45, 1.27, 1.27), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(34.01, 1.00, -116.40),
+            rotation = Vector3.new(-90.00, -90.00, 0.00),
+            relativeCFrame = CFrame.new(34.013, 0.995, -116.395, 0.000, 0.000, -1.000, 1.000, -0.000, 0.000, -0.000, -1.000, -0.000),
+            reflectance = 0.00
+        },
+        [15] = {
+            name = "ColourSpot", 
+            type = "Part", 
+            size = Vector3.new(0.58, 0.42, 0.56), 
+            material = "Plastic",
+            color = Color3.new(0.992, 0.788, 0.506),
+            brickColor = "Pastel brown",
+            transparency = 0.00,
+            canCollide = false,
+            position = Vector3.new(33.68, 2.04, -117.21),
+            rotation = Vector3.new(106.70, 80.30, -28.65),
+            relativeCFrame = CFrame.new(1.049, 0.811, 0.333, 0.966, 0.200, -0.161, 0.211, -0.976, 0.048, -0.148, -0.081, -0.986),
+            reflectance = 0.00
+        }
+    }
+}
 
-backpack.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") then
-        wait(0.1)
-        local toolInfo = analyzeTool(child)
-        log("BACKPACK", "✅ НОВЫЙ TOOL: " .. child.Name, toolInfo)
-        
-        -- Проверяем питомца
-        if child.Name:find("KG") or child.Name:find("Dragonfly") or 
-           child.Name:find("%{") or child.Name:find("Pet") then
-            log("PET_DETECTION", "🐾 ПИТОМЕЦ В BACKPACK: " .. child.Name, toolInfo)
-            table.insert(petCreationEvents, {
-                timestamp = tick(),
-                phase = "BACKPACK_ADDED",
-                petName = child.Name,
-                toolInfo = toolInfo
-            })
-        end
-        
-        -- Отслеживаем когда покидает Backpack
-        child.AncestryChanged:Connect(function()
-            if child.Parent ~= backpack then
-                log("BACKPACK", "📤 Tool покинул Backpack: " .. child.Name, {
-                    newParent = child.Parent and child.Parent.Name or "nil"
-                })
-            end
-        end)
-    end
-end)
-
--- === МОНИТОРИНГ HANDLE ===
-log("SYSTEM", "🤲 Запуск мониторинга Handle")
-
-local function monitorCharacter(char)
-    if not char then return end
-    
-    char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            wait(0.1)
-            currentHandleTool = child
-            local analysis = analyzeTool(child)
-            
-            log("HANDLE", "⚡ TOOL ЭКИПИРОВАН: " .. child.Name, analysis)
-            
-            -- Проверяем питомца
-            if child.Name:find("KG") or child.Name:find("Dragonfly") or 
-               child.Name:find("%{") or child.Name:find("Pet") then
-                
-                log("PET_DETECTION", "🐾 ПИТОМЕЦ В РУКЕ: " .. child.Name, analysis)
-                
-                table.insert(petCreationEvents, {
-                    timestamp = tick(),
-                    phase = "HANDLE_EQUIPPED",
-                    petName = child.Name,
-                    analysis = analysis
-                })
-                
-                -- Анализируем позиционирование
-                local handle = child:FindFirstChild("Handle")
-                if handle then
-                    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-                    if torso then
-                        local relativePos = torso.CFrame:PointToObjectSpace(handle.Position)
-                        log("POSITION", "📍 Относительная позиция Handle", {
-                            relativePosition = tostring(relativePos),
-                            handleCFrame = tostring(handle.CFrame)
-                        })
-                    end
-                end
-                
-                -- Анализируем RightGrip
-                local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
-                if rightArm then
-                    local rightGrip = rightArm:FindFirstChild("RightGrip")
-                    if rightGrip then
-                        log("GRIP", "🔗 RightGrip найден", {
-                            c0 = tostring(rightGrip.C0),
-                            c1 = tostring(rightGrip.C1),
-                            part0 = rightGrip.Part0 and rightGrip.Part0.Name or "nil",
-                            part1 = rightGrip.Part1 and rightGrip.Part1.Name or "nil"
-                        })
-                    end
-                end
-            end
-        end
+-- === ФУНКЦИЯ ГЕНЕРАЦИИ UUID ===
+local function generateUUID()
+    local template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+    return string.gsub(template, '[xy]', function (c)
+        local v = (c == 'x') and math.random(0, 0xf) or math.random(8, 0xb)
+        return string.format('%x', v)
     end)
-    
-    char.ChildRemoved:Connect(function(child)
-        if child:IsA("Tool") and child == currentHandleTool then
-            log("HANDLE", "📤 TOOL СНЯТ: " .. child.Name)
-            currentHandleTool = nil
-        end
-    end)
 end
 
-if character then
-    monitorCharacter(character)
-end
-
-player.CharacterAdded:Connect(monitorCharacter)
-
--- === ФУНКЦИЯ ОТЧЕТА ===
-local function generateReport()
-    print("\n" .. "=" .. string.rep("=", 50))
-    print("📊 === ОТЧЕТ О СОЗДАНИИ ПИТОМЦА ===")
-    print("=" .. string.rep("=", 50))
-    
-    if #petCreationEvents == 0 then
-        print("❌ Событий создания питомца не обнаружено")
-        return
+-- === ФУНКЦИЯ ПОЛУЧЕНИЯ ПОЗИЦИИ ИГРОКА ===
+local function getPlayerPosition()
+    local playerChar = player.Character
+    if not playerChar then
+        print("❌ Персонаж игрока не найден!")
+        return nil
     end
-    
-    for i, event in ipairs(petCreationEvents) do
-        print(string.format("\n🔸 Событие %d: %s", i, event.phase))
-        print(string.format("   ⏰ Время: %.3f", event.timestamp))
-        print(string.format("   🐾 Питомец: %s", event.petName))
-        
-        if event.toolInfo and event.toolInfo.handle then
-            print("   📦 Handle Info:")
-            print(string.format("      Size: %s", event.toolInfo.handle.size))
-            print(string.format("      Position: %s", event.toolInfo.handle.position))
-        end
+
+    local hrp = playerChar:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        print("❌ HumanoidRootPart не найден!")
+        return nil
     end
-    
-    print("\n" .. "=" .. string.rep("=", 50))
+
+    return hrp.Position
 end
 
--- === GUI ===
-local function createGUI()
-    local success, errorMsg = pcall(function()
-        -- Ждем загрузки PlayerGui
-        local playerGui = player:WaitForChild("PlayerGui", 10)
-        if not playerGui then
-            error("PlayerGui не найден!")
-        end
-        
-        local oldGui = playerGui:FindFirstChild("PetAnalyzerGUI")
-        if oldGui then oldGui:Destroy() end
-        
-        wait(0.1) -- Небольшая пауза
-        
-        local screenGui = Instance.new("ScreenGui")
-        screenGui.Name = "PetAnalyzerGUI"
-        screenGui.ResetOnSpawn = false
-        screenGui.DisplayOrder = 100 -- Поверх других GUI
-        screenGui.Parent = playerGui
-        
-        print("🎨 Создаю ScreenGui:", screenGui.Name)
-        
-        -- Главная рамка
-        local mainFrame = Instance.new("Frame")
-        mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 350, 0, 300)
-        mainFrame.Position = UDim2.new(0, 10, 0, 10)
-        mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        mainFrame.BorderSizePixel = 2
-        mainFrame.BorderColor3 = Color3.fromRGB(0, 150, 255)
-        mainFrame.Active = true
-        mainFrame.Draggable = true
-        mainFrame.Parent = screenGui
-        
-        print("🎨 Создаю MainFrame:", mainFrame.Name)
-        
-        -- Заголовок
-        local titleFrame = Instance.new("Frame")
-        titleFrame.Name = "TitleFrame"
-        titleFrame.Size = UDim2.new(1, 0, 0, 50)
-        titleFrame.Position = UDim2.new(0, 0, 0, 0)
-        titleFrame.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
-        titleFrame.BorderSizePixel = 0
-        titleFrame.Parent = mainFrame
-        
-        local titleLabel = Instance.new("TextLabel")
-        titleLabel.Name = "TitleLabel"
-        titleLabel.Size = UDim2.new(1, -10, 1, -10)
-        titleLabel.Position = UDim2.new(0, 5, 0, 5)
-        titleLabel.BackgroundTransparency = 1
-        titleLabel.Text = "Pet Creation Analyzer v1.0"
-        titleLabel.TextColor3 = Color3.white
-        titleLabel.TextSize = 18
-        titleLabel.Font = Enum.Font.SourceSansBold
-        titleLabel.TextXAlignment = Enum.TextXAlignment.Center
-        titleLabel.Parent = titleFrame
-        
-        print("🎨 Создаю TitleLabel:", titleLabel.Text)
-        
-        -- Статус
-        local statusLabel = Instance.new("TextLabel")
-        statusLabel.Name = "StatusLabel"
-        statusLabel.Size = UDim2.new(1, -20, 0, 25)
-        statusLabel.Position = UDim2.new(0, 10, 0, 60)
-        statusLabel.BackgroundTransparency = 1
-        statusLabel.Text = "✅ Анализатор активен - ожидание питомца..."
-        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-        statusLabel.TextSize = 14
-        statusLabel.Font = Enum.Font.SourceSans
-        statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-        statusLabel.Parent = mainFrame
-        
-        -- Счетчики
-        local logCountLabel = Instance.new("TextLabel")
-        logCountLabel.Name = "LogCountLabel"
-        logCountLabel.Size = UDim2.new(1, -20, 0, 20)
-        logCountLabel.Position = UDim2.new(0, 10, 0, 90)
-        logCountLabel.BackgroundTransparency = 1
-        logCountLabel.Text = "📝 Записей в логе: 0"
-        logCountLabel.TextColor3 = Color3.white
-        logCountLabel.TextSize = 12
-        logCountLabel.Font = Enum.Font.SourceSans
-        logCountLabel.TextXAlignment = Enum.TextXAlignment.Left
-        logCountLabel.Parent = mainFrame
-        
-        local petCountLabel = Instance.new("TextLabel")
-        petCountLabel.Name = "PetCountLabel"
-        petCountLabel.Size = UDim2.new(1, -20, 0, 20)
-        petCountLabel.Position = UDim2.new(0, 10, 0, 115)
-        petCountLabel.BackgroundTransparency = 1
-        petCountLabel.Text = "🐾 События питомцев: 0"
-        petCountLabel.TextColor3 = Color3.white
-        petCountLabel.TextSize = 12
-        petCountLabel.Font = Enum.Font.SourceSans
-        petCountLabel.TextXAlignment = Enum.TextXAlignment.Left
-        petCountLabel.Parent = mainFrame
-        
-        local currentToolLabel = Instance.new("TextLabel")
-        currentToolLabel.Name = "CurrentToolLabel"
-        currentToolLabel.Size = UDim2.new(1, -20, 0, 20)
-        currentToolLabel.Position = UDim2.new(0, 10, 0, 140)
-        currentToolLabel.BackgroundTransparency = 1
-        currentToolLabel.Text = "🤲 В руке: Нет"
-        currentToolLabel.TextColor3 = Color3.white
-        currentToolLabel.TextSize = 12
-        currentToolLabel.Font = Enum.Font.SourceSans
-        currentToolLabel.TextXAlignment = Enum.TextXAlignment.Left
-        currentToolLabel.Parent = mainFrame
-        
-        -- Кнопка создания отчета
-        local reportButton = Instance.new("TextButton")
-        reportButton.Name = "ReportButton"
-        reportButton.Size = UDim2.new(1, -20, 0, 35)
-        reportButton.Position = UDim2.new(0, 10, 0, 170)
-        reportButton.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-        reportButton.BorderSizePixel = 1
-        reportButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
-        reportButton.Text = "Создать отчет о питомце"
-        reportButton.TextColor3 = Color3.white
-        reportButton.TextSize = 14
-        reportButton.Font = Enum.Font.SourceSansBold
-        reportButton.Parent = mainFrame
-        
-        print("🎨 Создаю ReportButton:", reportButton.Text)
-        
-        -- Кнопка очистки лога
-        local clearButton = Instance.new("TextButton")
-        clearButton.Name = "ClearButton"
-        clearButton.Size = UDim2.new(0.48, 0, 0, 30)
-        clearButton.Position = UDim2.new(0, 10, 0, 215)
-        clearButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
-        clearButton.BorderSizePixel = 1
-        clearButton.BorderColor3 = Color3.fromRGB(255, 150, 0)
-        clearButton.Text = "Очистить"
-        clearButton.TextColor3 = Color3.white
-        clearButton.TextSize = 12
-        clearButton.Font = Enum.Font.SourceSansBold
-        clearButton.Parent = mainFrame
-        
-        print("🎨 Создаю ClearButton:", clearButton.Text)
-        
-        -- Кнопка закрытия
-        local closeButton = Instance.new("TextButton")
-        closeButton.Name = "CloseButton"
-        closeButton.Size = UDim2.new(0.48, 0, 0, 30)
-        closeButton.Position = UDim2.new(0.52, 0, 0, 215)
-        closeButton.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-        closeButton.BorderSizePixel = 1
-        closeButton.BorderColor3 = Color3.fromRGB(255, 0, 0)
-        closeButton.Text = "Закрыть"
-        closeButton.TextColor3 = Color3.white
-        closeButton.TextSize = 12
-        closeButton.Font = Enum.Font.SourceSansBold
-        closeButton.Parent = mainFrame
-        
-        print("🎨 Создаю CloseButton:", closeButton.Text)
-        
-        -- Информационная панель
-        local infoLabel = Instance.new("TextLabel")
-        infoLabel.Name = "InfoLabel"
-        infoLabel.Size = UDim2.new(1, -20, 0, 40)
-        infoLabel.Position = UDim2.new(0, 10, 0, 250)
-        infoLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-        infoLabel.BorderSizePixel = 1
-        infoLabel.BorderColor3 = Color3.fromRGB(100, 100, 100)
-        infoLabel.Text = "Создайте питомца и возьмите в руки для анализа"
-        infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        infoLabel.TextSize = 11
-        infoLabel.Font = Enum.Font.SourceSans
-        infoLabel.TextXAlignment = Enum.TextXAlignment.Center
-        infoLabel.TextYAlignment = Enum.TextYAlignment.Center
-        infoLabel.TextWrapped = true
-        infoLabel.Parent = mainFrame
-        
-        print("🎨 Создаю InfoLabel:", infoLabel.Text)
-        
-        -- === ОБРАБОТЧИКИ СОБЫТИЙ ===
-        reportButton.MouseButton1Click:Connect(function()
-            print("🖱️ Нажата кнопка отчета")
-            reportButton.Text = "Создание отчета..."
-            reportButton.BackgroundColor3 = Color3.fromRGB(100, 100, 0)
-            
-            spawn(function()
-                wait(0.5)
-                generateReport()
-                reportButton.Text = "Создать отчет о питомце"
-                reportButton.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-            end)
-        end)
-        
-        clearButton.MouseButton1Click:Connect(function()
-            print("🖱️ Нажата кнопка очистки")
-            clearButton.Text = "Очистка..."
-            clearButton.BackgroundColor3 = Color3.fromRGB(100, 50, 0)
-            
-            spawn(function()
-                analysisLog = {}
-                petCreationEvents = {}
-                log("SYSTEM", "Лог очищен")
-                wait(1)
-                clearButton.Text = "Очистить"
-                clearButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
-            end)
-        end)
-        
-        closeButton.MouseButton1Click:Connect(function()
-            print("🖱️ Нажата кнопка закрытия")
-            screenGui:Destroy()
-        end)
-        
-        -- === ОБНОВЛЕНИЕ ИНТЕРФЕЙСА ===
-        spawn(function()
-            while screenGui and screenGui.Parent do
-                wait(1)
-                
-                -- Обновляем счетчики
-                if logCountLabel and logCountLabel.Parent then
-                    logCountLabel.Text = "📝 Записей в логе: " .. #analysisLog
-                end
-                
-                if petCountLabel and petCountLabel.Parent then
-                    petCountLabel.Text = "🐾 События питомцев: " .. #petCreationEvents
-                end
-                
-                if currentToolLabel and currentToolLabel.Parent then
-                    if currentHandleTool then
-                        currentToolLabel.Text = "🤲 В руке: " .. currentHandleTool.Name
-                        currentToolLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-                    else
-                        currentToolLabel.Text = "🤲 В руке: Нет"
-                        currentToolLabel.TextColor3 = Color3.white
-                    end
-                end
-                
-                -- Обновляем статус
-                if statusLabel and statusLabel.Parent then
-                    if #petCreationEvents > 0 then
-                        statusLabel.Text = "✅ Анализатор активен - найдено событий: " .. #petCreationEvents
-                        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-                    else
-                        statusLabel.Text = "⏳ Анализатор активен - ожидание питомца..."
-                        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
-                    end
-                end
+-- === ФУНКЦИЯ СОЗДАНИЯ ЧАСТИ С ПРАВИЛЬНЫМ ПОЗИЦИОНИРОВАНИЕМ ===
+local function createPart(partData, model)
+    local part = nil
+    
+    -- Создаем нужный тип части
+    if partData.type == "Part" then
+        part = Instance.new("Part")
+    elseif partData.type == "UnionOperation" then
+        -- Для UnionOperation создаем обычный Part (так как UnionOperation нельзя создать через скрипт)
+        part = Instance.new("Part")
+        part.Shape = Enum.PartType.Block
+    elseif partData.type == "MeshPart" then
+        part = Instance.new("MeshPart")
+        -- Устанавливаем MeshId если есть в данных мешей
+        for _, meshData in pairs(PET_DATA.Meshes) do
+            if meshData.name == partData.name then
+                part.MeshId = meshData.meshId
+                break
             end
-        end)
-        
-        log("GUI", "✅ GUI интерфейс создан успешно")
-        return true
-    end)
+        end
+    else
+        print("⚠️ Неизвестный тип части:", partData.type)
+        part = Instance.new("Part")
+    end
     
-    if not success then
-        log("GUI", "❌ Ошибка создания GUI: " .. tostring(errorMsg))
+    -- Настраиваем свойства части
+    part.Name = partData.name
+    part.Size = partData.size
+    part.Material = Enum.Material[partData.material] or Enum.Material.Plastic
+    part.Color = partData.color
+    part.BrickColor = BrickColor.new(partData.brickColor)
+    part.Transparency = partData.transparency
+    part.CanCollide = partData.canCollide
+    part.Reflectance = partData.reflectance
+    
+    -- ИСПОЛЬЗУЕМ ПРАВИЛЬНЫЙ relativeCFrame ИЗ ДАННЫХ!
+    if partData.relativeCFrame then
+        part.CFrame = partData.relativeCFrame
+        print("✅ Создана часть:", partData.name, "(" .. partData.type .. ") - используется relativeCFrame")
+    else
+        -- Fallback к старому методу если relativeCFrame отсутствует
+        local rotationCFrame = CFrame.Angles(
+            math.rad(partData.rotation.X),
+            math.rad(partData.rotation.Y),
+            math.rad(partData.rotation.Z)
+        )
+        part.CFrame = CFrame.new(partData.position) * rotationCFrame
+        print("⚠️ Создана часть:", partData.name, "(" .. partData.type .. ") - fallback позиционирование")
+    end
+    
+    part.Parent = model
+    return part
+end
+
+-- === ФУНКЦИЯ СОЗДАНИЯ MOTOR6D С ПОЛНЫМИ ДАННЫМИ ===
+local function createMotor6D(motorData, model)
+    local motor = Instance.new("Motor6D")
+    motor.Name = motorData.name
+    
+    -- Находим части для соединения
+    local part0 = model:FindFirstChild(motorData.part0)
+    local part1 = model:FindFirstChild(motorData.part1)
+    
+    if part0 and part1 then
+        motor.Part0 = part0
+        motor.Part1 = part1
+        
+        -- УСТАНАВЛИВАЕМ ПРАВИЛЬНЫЕ C0, C1, TRANSFORM ИЗ ДАННЫХ!
+        if motorData.c0 then
+            motor.C0 = motorData.c0
+        end
+        if motorData.c1 then
+            motor.C1 = motorData.c1
+        end
+        if motorData.transform then
+            motor.Transform = motorData.transform
+        end
+        
+        motor.Parent = part0 -- Motor6D обычно находится в Part0
+        
+        print("✅ Создан Motor6D:", motorData.name, "(" .. motorData.part0 .. " -> " .. motorData.part1 .. ") с полными данными")
+        return motor
+    else
+        print("❌ Не найдены части для Motor6D:", motorData.name)
+        if not part0 then print("  - Не найден Part0:", motorData.part0) end
+        if not part1 then print("  - Не найден Part1:", motorData.part1) end
+        motor:Destroy()
+        return nil
+    end
+end
+
+-- === ФУНКЦИЯ ПОЗИЦИОНИРОВАНИЯ МОДЕЛИ РЯДОМ С ИГРОКОМ ===
+local function positionModelNearPlayer(model, playerPosition)
+    if not model.PrimaryPart then
+        print("❌ PrimaryPart не установлен!")
         return false
     end
+    
+    -- Позиционируем модель рядом с игроком (5 единиц справа)
+    local targetPosition = playerPosition + Vector3.new(5, 0, 0)
+    
+    -- Устанавливаем позицию PrimaryPart в целевую позицию
+    model:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+    
+    print("📍 Модель позиционирована рядом с игроком")
+    print("  Позиция игрока:", playerPosition)
+    print("  Позиция модели:", targetPosition)
     
     return true
 end
 
-createGUI()
+-- === ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ПИТОМЦА ===
+local function createPetFromData()
+    print("\n🎯 === СОЗДАНИЕ ПИТОМЦА ИЗ ДАННЫХ ===")
+    
+    -- Шаг 1: Генерируем UUID имя
+    local uuid = generateUUID()
+    local petName = "{" .. uuid .. "}"
+    print("🔑 Сгенерирован UUID:", petName)
+    
+    -- Шаг 2: Получаем позицию игрока
+    local playerPosition = getPlayerPosition()
+    if not playerPosition then
+        return nil
+    end
+    print("📍 Позиция игрока:", playerPosition)
+    
+    -- Шаг 3: Создаем модель
+    local petModel = Instance.new("Model")
+    petModel.Name = petName
+    petModel.Parent = Workspace
+    print("📦 Создана модель:", petName)
+    
+    -- Шаг 4: Создаем все части
+    print("\n🧩 === СОЗДАНИЕ ЧАСТЕЙ ===")
+    local createdParts = {}
+    
+    for i, partData in pairs(PET_DATA.Parts) do
+        local part = createPart(partData, petModel)
+        if part then
+            createdParts[partData.name] = part
+        end
+    end
+    
+    print("✅ Создано частей:", #PET_DATA.Parts)
+    
+    -- Шаг 5: Устанавливаем PrimaryPart
+    local primaryPart = petModel:FindFirstChild(PET_DATA.PrimaryPart)
+    if primaryPart then
+        petModel.PrimaryPart = primaryPart
+        print("✅ PrimaryPart установлен:", PET_DATA.PrimaryPart)
+    else
+        print("❌ PrimaryPart не найден:", PET_DATA.PrimaryPart)
+    end
+    
+    -- Шаг 6: Создаем Motor6D соединения
+    print("\n🔗 === СОЗДАНИЕ MOTOR6D СОЕДИНЕНИЙ ===")
+    local createdMotors = 0
+    
+    for i, motorData in pairs(PET_DATA.Motor6D) do
+        local motor = createMotor6D(motorData, petModel)
+        if motor then
+            createdMotors = createdMotors + 1
+        end
+    end
+    
+    print("✅ Создано Motor6D соединений:", createdMotors .. "/" .. #PET_DATA.Motor6D)
+    
+    -- Шаг 7: Позиционируем модель рядом с игроком
+    print("\n📍 === ПОЗИЦИОНИРОВАНИЕ ===")
+    local positionSuccess = positionModelNearPlayer(petModel, playerPosition)
+    
+    if positionSuccess then
+        print("\n🎉 === ПИТОМЕЦ УСПЕШНО СОЗДАН ===")
+        print("✅ UUID имя:", petName)
+        print("✅ Всего частей:", #PET_DATA.Parts)
+        print("✅ Motor6D соединений:", createdMotors)
+        print("✅ Позиция: рядом с игроком")
+        print("✅ Модель размещена в Workspace")
+        
+        return petModel
+    else
+        print("❌ Ошибка позиционирования!")
+        petModel:Destroy()
+        return nil
+    end
+end
 
-log("SYSTEM", "✅ Pet Creation Analyzer запущен!")
-log("SYSTEM", "💡 Создайте питомца и возьмите его в руки для анализа")
+-- === СОЗДАНИЕ GUI ===
+local function createGUI()
+    local success, errorMsg = pcall(function()
+        local playerGui = player:WaitForChild("PlayerGui")
+        
+        -- Удаляем старый GUI если есть
+        local oldGui = playerGui:FindFirstChild("PetCreatorGUI")
+        if oldGui then
+            oldGui:Destroy()
+            wait(0.1)
+        end
+        
+        -- Создаем новый GUI
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "PetCreatorGUI"
+        screenGui.Parent = playerGui
+        
+        local frame = Instance.new("Frame")
+        frame.Name = "MainFrame"
+        frame.Size = UDim2.new(0, 280, 0, 80)
+        frame.Position = UDim2.new(0, 50, 0, 50)
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        frame.BorderSizePixel = 2
+        frame.BorderColor3 = Color3.fromRGB(0, 255, 255) -- Голубая рамка
+        frame.Parent = screenGui
+        
+        -- Заголовок
+        local title = Instance.new("TextLabel")
+        title.Name = "Title"
+        title.Size = UDim2.new(1, 0, 0, 25)
+        title.Position = UDim2.new(0, 0, 0, 5)
+        title.BackgroundTransparency = 1
+        title.Text = "🎯 PET CREATOR"
+        title.TextColor3 = Color3.fromRGB(0, 255, 255)
+        title.TextSize = 14
+        title.Font = Enum.Font.SourceSansBold
+        title.Parent = frame
+        
+        -- Кнопка создания питомца
+        local createButton = Instance.new("TextButton")
+        createButton.Name = "CreatePetButton"
+        createButton.Size = UDim2.new(0, 260, 0, 40)
+        createButton.Position = UDim2.new(0, 10, 0, 30)
+        createButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        createButton.BorderSizePixel = 0
+        createButton.Text = "🐾 Создать питомца"
+        createButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+        createButton.TextSize = 16
+        createButton.Font = Enum.Font.SourceSansBold
+        createButton.Parent = frame
+        
+        -- Обработчик кнопки
+        createButton.MouseButton1Click:Connect(function()
+            createButton.Text = "⏳ Создаю питомца..."
+            createButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+            
+            spawn(function()
+                local success, result = pcall(function()
+                    return createPetFromData()
+                end)
+                
+                if success and result then
+                    createButton.Text = "✅ Питомец создан!"
+                    createButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                    wait(3)
+                    createButton.Text = "🐾 Создать питомца"
+                    createButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                else
+                    print("❌ Ошибка создания питомца:", result or "Неизвестная ошибка")
+                    createButton.Text = "❌ Ошибка! Попробуйте снова"
+                    createButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                    wait(3)
+                    createButton.Text = "🐾 Создать питомца"
+                    createButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                end
+            end)
+        end)
+        
+        print("✅ GUI создан успешно!")
+    end)
+    
+    if not success then
+        print("❌ Ошибка создания GUI:", errorMsg)
+    end
+end
+
+-- === ЗАПУСК СКРИПТА ===
+print("🚀 Запуск PET CREATOR...")
+createGUI()
+print("💡 Нажмите кнопку 'Создать питомца' для генерации нового питомца!")
