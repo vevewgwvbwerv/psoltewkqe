@@ -226,6 +226,7 @@ local function analyzeHandTool(tool)
         -- Добавляем анализ Motor6D с анимационными данными
         elseif obj:IsA("Motor6D") then
             analysis.motor6dCount = analysis.motor6dCount + 1
+            print("🔧 Found Motor6D:", obj.Name, "C0:", obj.C0, "C1:", obj.C1, "Transform:", obj.Transform)
             table.insert(analysis.motor6ds, {
                 name = obj.Name,
                 part0 = obj.Part0 and obj.Part0.Name or "None",
@@ -438,9 +439,23 @@ local function generateHandToolDetailText(analysis)
     if #analysis.motor6ds > 0 then
         text = text .. '\n\n    ["Motor6D"] = {'
         for i, motor in ipairs(analysis.motor6ds) do
-            local c0x, c0y, c0z, c0r00, c0r01, c0r02, c0r10, c0r11, c0r12, c0r20, c0r21, c0r22 = motor.c0:GetComponents()
-            local c1x, c1y, c1z, c1r00, c1r01, c1r02, c1r10, c1r11, c1r12, c1r20, c1r21, c1r22 = motor.c1:GetComponents()
-            local tx, ty, tz, tr00, tr01, tr02, tr10, tr11, tr12, tr20, tr21, tr22 = motor.transform:GetComponents()
+            print("🔧 Processing Motor6D in text generation:", motor.name, "has C0:", motor.c0 ~= nil, "has C1:", motor.c1 ~= nil, "has Transform:", motor.transform ~= nil)
+            
+            -- Безопасное получение компонентов CFrame
+            local c0x, c0y, c0z, c0r00, c0r01, c0r02, c0r10, c0r11, c0r12, c0r20, c0r21, c0r22 = 0,0,0,1,0,0,0,1,0,0,0,1
+            local c1x, c1y, c1z, c1r00, c1r01, c1r02, c1r10, c1r11, c1r12, c1r20, c1r21, c1r22 = 0,0,0,1,0,0,0,1,0,0,0,1
+            local tx, ty, tz, tr00, tr01, tr02, tr10, tr11, tr12, tr20, tr21, tr22 = 0,0,0,1,0,0,0,1,0,0,0,1
+            
+            if motor.c0 then
+                c0x, c0y, c0z, c0r00, c0r01, c0r02, c0r10, c0r11, c0r12, c0r20, c0r21, c0r22 = motor.c0:GetComponents()
+            end
+            if motor.c1 then
+                c1x, c1y, c1z, c1r00, c1r01, c1r02, c1r10, c1r11, c1r12, c1r20, c1r21, c1r22 = motor.c1:GetComponents()
+            end
+            if motor.transform then
+                tx, ty, tz, tr00, tr01, tr02, tr10, tr11, tr12, tr20, tr21, tr22 = motor.transform:GetComponents()
+            end
+            
             text = text .. string.format([[
         [%d] = {
             name = "%s", 
@@ -587,6 +602,12 @@ local function generateHandToolDetailText(analysis)
     end
     
     text = text .. "\n}"
+    
+    -- Проверяем длину текста и предупреждаем о возможном обрезании
+    if #text > 200000 then
+        print("⚠️ Warning: Generated text is", #text, "characters long - may be truncated by clipboard")
+    end
+    
     return text
 end
 
@@ -640,7 +661,13 @@ local function analyzePetModel(model)
             table.insert(analysis.motor6ds, {
                 name = obj.Name,
                 part0 = obj.Part0 and obj.Part0.Name or "None",
-                part1 = obj.Part1 and obj.Part1.Name or "None"
+                part1 = obj.Part1 and obj.Part1.Name or "None",
+                c0 = obj.C0,
+                c1 = obj.C1,
+                transform = obj.Transform,
+                currentAngle = obj.CurrentAngle or 0,
+                desiredAngle = obj.DesiredAngle or 0,
+                maxVelocity = obj.MaxVelocity or 0
             })
             
         elseif obj:IsA("Humanoid") then
@@ -654,6 +681,12 @@ local function analyzePetModel(model)
             
         elseif obj:IsA("BasePart") then
             analysis.partCount = analysis.partCount + 1
+            -- Вычисляем относительный CFrame относительно PrimaryPart
+            local relativeCFrame = obj.CFrame
+            if model.PrimaryPart and model.PrimaryPart ~= obj then
+                relativeCFrame = model.PrimaryPart.CFrame:Inverse() * obj.CFrame
+            end
+            
             table.insert(analysis.parts, {
                 name = obj.Name,
                 type = obj.ClassName,
@@ -664,6 +697,8 @@ local function analyzePetModel(model)
                 canCollide = obj.CanCollide,
                 position = obj.Position,
                 rotation = obj.Rotation,
+                cframe = obj.CFrame,
+                relativeCFrame = relativeCFrame,
                 brickColor = obj.BrickColor.Name,
                 reflectance = obj.Reflectance
             })
@@ -775,19 +810,59 @@ local function generateDetailText(analysis)
     end
     text = text .. "\n    },\n"
     
-    -- Добавление Motor6D
+    -- Добавление Motor6D с полными анимационными данными
     text = text .. '\n    ["Motor6D"] = {'
     for i, motor in ipairs(analysis.motor6ds) do
+        -- Безопасное получение компонентов CFrame
+        local c0x, c0y, c0z, c0r00, c0r01, c0r02, c0r10, c0r11, c0r12, c0r20, c0r21, c0r22 = 0,0,0,1,0,0,0,1,0,0,0,1
+        local c1x, c1y, c1z, c1r00, c1r01, c1r02, c1r10, c1r11, c1r12, c1r20, c1r21, c1r22 = 0,0,0,1,0,0,0,1,0,0,0,1
+        local tx, ty, tz, tr00, tr01, tr02, tr10, tr11, tr12, tr20, tr21, tr22 = 0,0,0,1,0,0,0,1,0,0,0,1
+        
+        if motor.c0 then
+            c0x, c0y, c0z, c0r00, c0r01, c0r02, c0r10, c0r11, c0r12, c0r20, c0r21, c0r22 = motor.c0:GetComponents()
+        end
+        if motor.c1 then
+            c1x, c1y, c1z, c1r00, c1r01, c1r02, c1r10, c1r11, c1r12, c1r20, c1r21, c1r22 = motor.c1:GetComponents()
+        end
+        if motor.transform then
+            tx, ty, tz, tr00, tr01, tr02, tr10, tr11, tr12, tr20, tr21, tr22 = motor.transform:GetComponents()
+        end
+        
         text = text .. string.format([[
-        [%d] = {name = "%s", part0 = "%s", part1 = "%s"}]], 
-            i, motor.name, motor.part0, motor.part1)
+        [%d] = {
+            name = "%s", 
+            part0 = "%s", 
+            part1 = "%s",
+            c0 = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
+            c1 = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
+            transform = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
+            currentAngle = %.3f,
+            desiredAngle = %.3f,
+            maxVelocity = %.3f
+        }]], 
+            i, motor.name, motor.part0, motor.part1,
+            c0x, c0y, c0z, c0r00, c0r01, c0r02, c0r10, c0r11, c0r12, c0r20, c0r21, c0r22,
+            c1x, c1y, c1z, c1r00, c1r01, c1r02, c1r10, c1r11, c1r12, c1r20, c1r21, c1r22,
+            tx, ty, tz, tr00, tr01, tr02, tr10, tr11, tr12, tr20, tr21, tr22,
+            motor.currentAngle, motor.desiredAngle, motor.maxVelocity)
         if i < #analysis.motor6ds then text = text .. "," end
     end
     text = text .. "\n    },\n"
     
-    -- Добавление частей
+    -- Добавление частей с полными CFrame данными
     text = text .. '\n    ["Parts"] = {'
     for i, part in ipairs(analysis.parts) do
+        -- Безопасное получение компонентов CFrame
+        local px, py, pz, pr00, pr01, pr02, pr10, pr11, pr12, pr20, pr21, pr22 = 0,0,0,1,0,0,0,1,0,0,0,1
+        local rx, ry, rz, rr00, rr01, rr02, rr10, rr11, rr12, rr20, rr21, rr22 = 0,0,0,1,0,0,0,1,0,0,0,1
+        
+        if part.cframe then
+            px, py, pz, pr00, pr01, pr02, pr10, pr11, pr12, pr20, pr21, pr22 = part.cframe:GetComponents()
+        end
+        if part.relativeCFrame then
+            rx, ry, rz, rr00, rr01, rr02, rr10, rr11, rr12, rr20, rr21, rr22 = part.relativeCFrame:GetComponents()
+        end
+        
         text = text .. string.format([[
         [%d] = {
             name = "%s", 
@@ -800,6 +875,8 @@ local function generateDetailText(analysis)
             canCollide = %s,
             position = Vector3.new(%.2f, %.2f, %.2f),
             rotation = Vector3.new(%.2f, %.2f, %.2f),
+            cframe = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
+            relativeCFrame = CFrame.new(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f),
             reflectance = %.2f
         }]], 
             i, part.name, part.type, 
@@ -811,6 +888,8 @@ local function generateDetailText(analysis)
             tostring(part.canCollide),
             part.position.X, part.position.Y, part.position.Z,
             part.rotation.X, part.rotation.Y, part.rotation.Z,
+            px, py, pz, pr00, pr01, pr02, pr10, pr11, pr12, pr20, pr21, pr22,
+            rx, ry, rz, rr00, rr01, rr02, rr10, rr11, rr12, rr20, rr21, rr22,
             part.reflectance)
         if i < #analysis.parts then text = text .. "," end
     end
@@ -853,6 +932,12 @@ local function generateDetailText(analysis)
     end
     
     text = text .. "\n}"
+    
+    -- Проверяем длину текста и предупреждаем о возможном обрезании
+    if #text > 200000 then
+        print("⚠️ Warning: Generated text is", #text, "characters long - may be truncated by clipboard")
+    end
+    
     return text
 end
 
@@ -984,16 +1069,93 @@ function showDetailedAnalysis(analysis)
                 Title = "Copy to Clipboard",
                 Icon = "copy",
                 Callback = function()
-                    pcall(function()
-                        if setclipboard then
-                            setclipboard(detailText)
-                        else
-                            game:GetService("GuiService"):SetClipboard(detailText)
+                    -- Многоэтапное копирование для длинных текстов
+                    local maxClipboardSize = 15000  -- Временно уменьшаем для тестирования
+                    local textLength = #detailText
+                    
+                    print(string.format("🔍 Debug Pet: Text length = %d, Max size = %d", textLength, maxClipboardSize))
+                    
+                    if textLength > maxClipboardSize then
+                        -- Разбиваем на части и копируем поэтапно
+                        local totalParts = math.ceil(textLength / maxClipboardSize)
+                        
+                        -- Создаем popup с кнопками для каждой части
+                        local buttons = {}
+                        
+                        for i = 1, totalParts do
+                            local startPos = (i - 1) * maxClipboardSize + 1
+                            local endPos = math.min(i * maxClipboardSize, textLength)
+                            local partText = string.sub(detailText, startPos, endPos)
+                            
+                            table.insert(buttons, {
+                                Title = string.format("Copy Part %d/%d", i, totalParts),
+                                Icon = "copy",
+                                Callback = function()
+                                    pcall(function()
+                                        if setclipboard then
+                                            setclipboard(partText)
+                                        else
+                                            game:GetService("GuiService"):SetClipboard(partText)
+                                        end
+                                    end)
+                                    
+                                    WindUI:Notify({
+                                        Title = string.format("Part %d Copied!", i),
+                                        Content = string.format("Copied part %d/%d (%d chars)", i, totalParts, #partText),
+                                        Icon = "copy",
+                                        Duration = 3
+                                    })
+                                end
+                            })
                         end
-                    end)
+                        
+                        table.insert(buttons, {
+                            Title = "Close",
+                            Callback = function() end
+                        })
+                        
+                        WindUI:Popup({
+                            Title = "📋 Multi-Part Copy",
+                            Icon = "layers",
+                            Content = string.format("Text is %d chars long, split into %d parts of ~%d chars each. Copy each part separately:", textLength, totalParts, maxClipboardSize),
+                            Buttons = buttons
+                        })
+                        
+                    else
+                        -- Обычное копирование для коротких текстов
+                        pcall(function()
+                            if setclipboard then
+                                setclipboard(detailText)
+                            else
+                                game:GetService("GuiService"):SetClipboard(detailText)
+                            end
+                        end)
+                        
+                        WindUI:Notify({
+                            Title = "Copied!",
+                            Content = "Analysis data copied to clipboard",
+                            Icon = "copy",
+                            Duration = 3
+                        })
+                    end
                     
                     print("📋 Pet Analysis Data:")
-                    print(detailText)
+                    -- Разбиваем длинный текст на части для консоли
+                    local maxChunkSize = 15000
+                    local textLength = #detailText
+                    if textLength > maxChunkSize then
+                        local chunks = math.ceil(textLength / maxChunkSize)
+                        print(string.format("📄 Analysis too long (%d chars), splitting into %d parts:", textLength, chunks))
+                        for i = 1, chunks do
+                            local startPos = (i - 1) * maxChunkSize + 1
+                            local endPos = math.min(i * maxChunkSize, textLength)
+                            local chunk = string.sub(detailText, startPos, endPos)
+                            print(string.format("--- Part %d/%d ---", i, chunks))
+                            print(chunk)
+                        end
+                    else
+                        print(detailText)
+                    end
                     
                     WindUI:Notify({
                         Title = "Copied!",
@@ -1053,11 +1215,26 @@ Complete analysis data has been copied to clipboard and printed to console.]],
                     end)
                     
                     print("📋 Pet Analysis Data:")
-                    print(detailText)
+                    -- Разбиваем длинный текст на части для консоли
+                    local maxChunkSize = 15000
+                    local textLength = #detailText
+                    if textLength > maxChunkSize then
+                        local chunks = math.ceil(textLength / maxChunkSize)
+                        print(string.format("📄 Analysis too long (%d chars), splitting into %d parts:", textLength, chunks))
+                        for i = 1, chunks do
+                            local startPos = (i - 1) * maxChunkSize + 1
+                            local endPos = math.min(i * maxChunkSize, textLength)
+                            local chunk = string.sub(detailText, startPos, endPos)
+                            print(string.format("--- Part %d/%d ---", i, chunks))
+                            print(chunk)
+                        end
+                    else
+                        print(detailText)
+                    end
                     
                     WindUI:Notify({
                         Title = "Copied!",
-                        Content = "Full analysis data copied to clipboard",
+                        Content = "Full pet analysis data copied to clipboard",
                         Icon = "copy",
                         Duration = 3
                     })
@@ -1120,13 +1297,75 @@ Complete analysis data with CFrame animations, Motor6D data, and all child objec
                 Title = "📋 Copy Full Tool Data",
                 Icon = "copy",
                 Callback = function()
-                    pcall(function()
-                        if setclipboard then
-                            setclipboard(detailText)
-                        else
-                            game:GetService("GuiService"):SetClipboard(detailText)
+                    -- Многоэтапное копирование для длинных текстов
+                    local maxClipboardSize = 15000  -- Временно уменьшаем для тестирования
+                    local textLength = #detailText
+                    
+                    print(string.format("🔍 Debug Tool: Text length = %d, Max size = %d", textLength, maxClipboardSize))
+                    
+                    if textLength > maxClipboardSize then
+                        -- Разбиваем на части и копируем поэтапно
+                        local totalParts = math.ceil(textLength / maxClipboardSize)
+                        
+                        -- Создаем popup с кнопками для каждой части
+                        local buttons = {}
+                        
+                        for i = 1, totalParts do
+                            local startPos = (i - 1) * maxClipboardSize + 1
+                            local endPos = math.min(i * maxClipboardSize, textLength)
+                            local partText = string.sub(detailText, startPos, endPos)
+                            
+                            table.insert(buttons, {
+                                Title = string.format("Copy Part %d/%d", i, totalParts),
+                                Icon = "copy",
+                                Callback = function()
+                                    pcall(function()
+                                        if setclipboard then
+                                            setclipboard(partText)
+                                        else
+                                            game:GetService("GuiService"):SetClipboard(partText)
+                                        end
+                                    end)
+                                    
+                                    WindUI:Notify({
+                                        Title = string.format("Part %d Copied!", i),
+                                        Content = string.format("Copied part %d/%d (%d chars)", i, totalParts, #partText),
+                                        Icon = "copy",
+                                        Duration = 3
+                                    })
+                                end
+                            })
                         end
-                    end)
+                        
+                        table.insert(buttons, {
+                            Title = "Close",
+                            Callback = function() end
+                        })
+                        
+                        WindUI:Popup({
+                            Title = "📋 Multi-Part Copy Tool",
+                            Icon = "layers",
+                            Content = string.format("Tool analysis is %d chars long, split into %d parts of ~%d chars each. Copy each part separately:", textLength, totalParts, maxClipboardSize),
+                            Buttons = buttons
+                        })
+                        
+                    else
+                        -- Обычное копирование для коротких текстов
+                        pcall(function()
+                            if setclipboard then
+                                setclipboard(detailText)
+                            else
+                                game:GetService("GuiService"):SetClipboard(detailText)
+                            end
+                        end)
+                        
+                        WindUI:Notify({
+                            Title = "Copied!",
+                            Content = "Full hand tool analysis data copied to clipboard",
+                            Icon = "copy",
+                            Duration = 3
+                        })
+                    end
                     
                     print("🔧 Hand Tool Analysis Data:")
                     -- Разбиваем длинный текст на части для консоли
@@ -1358,13 +1597,19 @@ Tabs.MainTab:Button({
         spawn(function()
             local handTool = findHandTool()
             if handTool then
+                print("🔧 Analyzing hand tool:", handTool.Name)
                 local analysis = analyzeHandTool(handTool)
                 currentHandAnalysis = analysis
                 
+                print("🔧 Analysis complete. Motor6D count:", analysis.motor6dCount)
+                for i, motor in ipairs(analysis.motor6ds) do
+                    print("Motor", i, ":", motor.name, "C0 exists:", motor.c0 ~= nil, "C1 exists:", motor.c1 ~= nil)
+                end
+                
                 WindUI:Notify({
                     Title = "Hand Tool Analysis Complete!",
-                    Content = string.format("Tool: %s with %d parts, %d meshes, %d scripts", 
-                        analysis.toolName, analysis.partCount, analysis.meshCount, analysis.scriptCount),
+                    Content = string.format("Tool: %s with %d parts, %d meshes, %d Motor6D, %d scripts", 
+                        analysis.toolName, analysis.partCount, analysis.meshCount, analysis.motor6dCount, analysis.scriptCount),
                     Icon = "check-circle",
                     Duration = 4
                 })
