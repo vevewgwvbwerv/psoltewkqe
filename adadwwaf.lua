@@ -1,13 +1,797 @@
--- ⚡ МГНОВЕННАЯ ВИЗУАЛЬНАЯ ЗАМЕНА - Быстрая подмена модели питомца
-print("⚡ Запуск системы мгновенной визуальной замены...")
+-- Безопасная загрузка WindUI
+local WindUI
+local success1, result1 = pcall(function()
+    return loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+end)
 
+if success1 then
+    WindUI = result1
+    print("✅ WindUI loaded successfully")
+else
+    error("❌ Failed to load WindUI: " .. tostring(result1))
+end
+
+
+function gradient(text, startColor, endColor)
+    local result = ""
+    local length = #text
+
+    for i = 1, length do
+        local t = (i - 1) / math.max(length - 1, 1)
+        local r = math.floor((startColor.R + (endColor.R - startColor.R) * t) * 255)
+        local g = math.floor((startColor.G + (endColor.G - startColor.G) * t) * 255)
+        local b = math.floor((startColor.B + (endColor.B - startColor.B) * t) * 255)
+
+        local char = text:sub(i, i)
+        result = result .. '<font color="rgb(' .. r .. ", " .. g .. ", " .. b .. ')">' .. char .. "</font>"
+    end
+
+    return result
+end
+
+-- Egg ESP Data
+local PetData = {
+    ["Common Egg"] = {
+        ["Golden Lab"] = 33.33,
+        ["Dog"] = 33.33,
+        ["Bunny"] = 33.33
+    },
+    ["Uncommon Egg"] = {
+        ["Black Bunny"] = 25,
+        ["Chicken"] = 25,
+        ["Cat"] = 25,
+        ["Deer"] = 25
+    },
+    ["Rare Egg"] = {
+        ["Orange Tabby"] = 33.33,
+        ["Spotted Deer"] = 25,
+        ["Pig"] = 16.67,
+        ["Rooster"] = 16.67,
+        ["Monkey"] = 8.33
+    },
+    ["Legendary Egg"] = {
+        ["Cow"] = 42.55,
+        ["Silver Monkey"] = 42.55,
+        ["Sea Otter"] = 10.64,
+        ["Turtle"] = 2.13,
+        ["Polar Bear"] = 2.13
+    },
+    ["Mythical Egg"] = {
+        ["Grey Mouse"] = 35.71,
+        ["Brown Mouse"] = 26.79,
+        ["Squirrel"] = 26.79,
+        ["Red Giant Ant"] = 8.93,
+        ["Red Fox"] = 1.79
+    },
+    ["Bug Egg"] = {
+        ["Snail"] = 40,
+        ["Giant Ant"] = 30,
+        ["Caterpillar"] = 25,
+        ["Praying Mantis"] = 4,
+        ["Dragonfly"] = 1
+    },
+    ["Night Egg"] = {
+        ["Hedgehog"] = 47,
+        ["Mole"] = 23.5,
+        ["Frog"] = 17.63,
+        ["Echo Frog"] = 8.23,
+        ["Night Owl"] = 3.53,
+        ["Raccoon"] = 0.12
+    },
+    ["Premium Night Egg"] = {
+        ["Hedgehog"] = 49,
+        ["Mole"] = 22,
+        ["Frog"] = 14,
+        ["Echo Frog"] = 10,
+        ["Night Owl"] = 4,
+        ["Raccoon"] = 1
+    },
+    ["Bee Egg"] = {
+        ["Bee"] = 65,
+        ["Honey Bee"] = 25,
+        ["Bear Bee"] = 5,
+        ["Petal Bee"] = 4,
+        ["Queen Bee (Pet)"] = 1
+    },
+    ["Anti Bee Egg"] = {
+        ["Wasp"] = 55,
+        ["Tarantula Hawk"] = 30,
+        ["Moth"] = 13.75,
+        ["Butterfly"] = 1,
+        ["Disco Bee"] = 0.25
+    },
+    ["Common Summer Egg"] = {
+        ["Starfish"] = 50,
+        ["Seagull"] = 25,
+        ["Crab"] = 25
+    },
+    ["Rare Summer Egg"] = {
+        ["Flamingo"] = 30,
+        ["Toucan"] = 25,
+        ["Sea Turtle"] = 20,
+        ["Orangutan"] = 15,
+        ["Seal"] = 10
+    },
+    ["Paradise Egg"] = {
+        ["Ostrich"] = 40,
+        ["Peacock"] = 30,
+        ["Capybara"] = 21,
+        ["Scarlet Macaw"] = 8,
+        ["Mimic Octopus"] = 1
+    },
+    ["Oasis Egg"] = {
+        ["Meerkat"] = 45,
+        ["Sand Snake"] = 34.5,
+        ["Axolotl"] = 15,
+        ["Hyacinth Macaw"] = 5,
+        ["Fennec Fox"] = 0.5
+    },
+    ["Premium Oasis Egg"] = {
+        ["Meerkat"] = 45,
+        ["Sand Snake"] = 34.5,
+        ["Axolotl"] = 15,
+        ["Hyacinth Macaw"] = 5,
+        ["Fennec Fox"] = 0.5
+    },
+    ["Dinosaur Egg"] = {
+        ["Raptor"] = 35,
+        ["Triceratops"] = 32.5,
+        ["Stegosaurus"] = 28,
+        ["Pterodactyl"] = 3,
+        ["Brontosaurus"] = 1,
+        ["T-Rex"] = 0.5
+    },
+    ["Primal Egg"] = {
+        ["Parasaurolophus"] = 35,
+        ["Iguanodon"] = 32.5,
+        ["Pachycephalosaurus"] = 28,
+        ["Dilophosaurus"] = 3,
+        ["Ankylosaurus"] = 1,
+        ["Spinosaurus"] = 0.5
+    },
+    ["Premium Primal Egg"] = {
+        ["Parasaurolophus"] = 35,
+        ["Iguanodon"] = 32.5,
+        ["Pachycephalosaurus"] = 28,
+        ["Dilophosaurus"] = 3,
+        ["Ankylosaurus"] = 1,
+        ["Spinosaurus"] = 0.5
+    },
+    ["Zen Egg"] = {
+        ["Shiba Inu"] = 40,
+        ["Nihonzaru"] = 31,
+        ["Tanuki"] = 20.82,
+        ["Tanchozuru"] = 4.6,
+        ["Kappa"] = 3.5,
+        ["Kitsune"] = 0.08
+    },
+    ["Gourmet Egg"] = {
+        ["Bagel Bunny"] = 50,
+        ["Pancake Mole"] = 38,
+        ["Sushi Bear"] = 7,
+        ["Spaghetti Sloth"] = 4,
+        ["French Fry Ferret"] = 1
+    }
+}
+
+-- Egg ESP Variables
+local EggVisuals = {}
+local VisualsEnabled = false
+local AutoRerollEnabled = false
+local RerollSpeed = 0.5
+local SelectedPet = ""
+local AutoRerollConnection
+local PausedEggs = {}
+local SavedPredictions = {}
+
+-- Egg ESP Functions
+local function getRandomPet(eggName)
+    local pets = PetData[eggName]
+    if not pets then return "Unknown Pet" end
+    local totalWeight = 0
+    local weightedPets = {}
+    for petName, chance in pairs(pets) do
+        totalWeight = totalWeight + chance
+        table.insert(weightedPets, {name = petName, weight = chance})
+    end
+    local randomValue = math.random() * totalWeight
+    local currentWeight = 0
+    for _, petData in pairs(weightedPets) do
+        currentWeight = currentWeight + petData.weight
+        if randomValue <= currentWeight then
+            return petData.name
+        end
+    end
+    return weightedPets[1].name
+end
+
+local function findPlayerFarm()
+    local player = game.Players.LocalPlayer
+    if not workspace:FindFirstChild("Farm") then return nil end
+    local playerName = player.Name
+    for _, farm in pairs(workspace.Farm:GetChildren()) do
+        if farm.Name == "Farm" and farm:FindFirstChild("Important") then
+            local important = farm.Important
+            local data = important:FindFirstChild("Data")
+            if data and data:FindFirstChild("Owner") then
+                local ownerValue = data.Owner.Value
+                if tostring(ownerValue) == playerName then
+                    return farm
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function createEggVisual(egg)
+    local eggName = egg:GetAttribute("EggName") or "Unknown Egg"
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+    highlight.OutlineTransparency = 0
+    highlight.Parent = egg
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 150, 0, 50)
+    billboard.Adornee = egg
+    billboard.AlwaysOnTop = true
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.Parent = workspace
+
+    local eggId = tostring(egg)
+    local petName
+    if SavedPredictions[eggId] then
+        petName = SavedPredictions[eggId]
+    else
+        petName = getRandomPet(eggName)
+        SavedPredictions[eggId] = petName
+    end
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = petName
+    textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+    textLabel.TextStrokeTransparency = 0
+    textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextSize = 14
+    textLabel.TextScaled = false
+    textLabel.TextWrapped = true
+    textLabel.Visible = false
+    textLabel.Parent = billboard
+
+    return {
+        highlight = highlight,
+        billboard = billboard,
+        textLabel = textLabel,
+        eggName = eggName,
+        eggId = eggId
+    }
+end
+
+local function updateEggVisuals()
+    if not VisualsEnabled then return end
+    local playerFarm = findPlayerFarm()
+    if not playerFarm then
+        WindUI:Notify({
+            Title = "Farm Not Found",
+            Content = "Could not locate your farm",
+            Icon = "alert-triangle",
+            Duration = 3
+        })
+        return
+    end
+    
+    local important = playerFarm:FindFirstChild("Important")
+    if not important then return end
+    
+    local objectsPhysical = important:FindFirstChild("Objects_Physical")
+    if not objectsPhysical then return end
+
+    for _, visual in pairs(EggVisuals) do
+        if visual.highlight then visual.highlight:Destroy() end
+        if visual.billboard then visual.billboard:Destroy() end
+    end
+    EggVisuals = {}
+
+    local totalEggs = 0
+    local readyEggs = 0
+    local playerEggs = 0
+    local player = game.Players.LocalPlayer
+
+    for _, obj in pairs(objectsPhysical:GetChildren()) do
+        if obj.Name == "PetEgg" then
+            totalEggs = totalEggs + 1
+            local isReady = obj:GetAttribute("READY")
+            if isReady then
+                readyEggs = readyEggs + 1
+            end
+            local owner = obj:GetAttribute("OWNER")
+            if owner == player.Name then
+                playerEggs = playerEggs + 1
+                EggVisuals[obj] = createEggVisual(obj)
+            end
+        end
+    end
+
+    WindUI:Notify({
+        Title = "Egg ESP Active",
+        Content = "Found " .. playerEggs .. " eggs | " .. readyEggs .. " ready",
+        Icon = "eye",
+        Duration = 3
+    })
+end
+
+local function rerollPredictions()
+    for egg, visual in pairs(EggVisuals) do
+        if not PausedEggs[egg] and visual.textLabel and visual.eggName and visual.eggId then
+            local newPet = getRandomPet(visual.eggName)
+            visual.textLabel.Text = newPet
+            visual.textLabel.Visible = true
+            SavedPredictions[visual.eggId] = newPet
+            if SelectedPet ~= "" and newPet == SelectedPet then
+                PausedEggs[egg] = true
+                WindUI:Notify({
+                    Title = "Target Pet Found!",
+                    Content = "Found " .. SelectedPet .. " prediction!",
+                    Icon = "target",
+                    Duration = 4
+                })
+            end
+        end
+    end
+end
+
+local function toggleVisuals(state)
+    VisualsEnabled = state
+    if state then
+        updateEggVisuals()
+    else
+        for _, visual in pairs(EggVisuals) do
+            if visual.highlight then visual.highlight:Destroy() end
+            if visual.billboard then visual.billboard:Destroy() end
+        end
+        EggVisuals = {}
+        PausedEggs = {}
+    end
+end
+
+local function handleAutoReroll()
+    if AutoRerollConnection then
+        AutoRerollConnection:Disconnect()
+    end
+    if AutoRerollEnabled and VisualsEnabled then
+        AutoRerollConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            wait(RerollSpeed)
+            rerollPredictions()
+        end)
+    end
+end
+
+local Confirmed = false
+
+WindUI:Popup(
+    {
+        Title = "Loaded!!! Egg ESP & Instant Replacement",
+        Icon = "eye",
+        IconThemed = true,
+        Content = "This is an " ..
+            gradient("Egg ESP System", Color3.fromHex("#FF6B6B"), Color3.fromHex("#4ECDC4")) ..
+                " with " .. gradient("Instant Pet Replacement", Color3.fromHex("#00FF87"), Color3.fromHex("#60EFFF")) .. " for GaG",
+        Buttons = {
+            {
+                Title = "Cancel",
+                Callback = function()
+                end,
+                Variant = "Secondary"
+            },
+            {
+                Title = "Continue",
+                Icon = "arrow-right",
+                Callback = function()
+                    Confirmed = true
+                end,
+                Variant = "Primary"
+            }
+        }
+    }
+)
+
+repeat
+    wait()
+until Confirmed
+
+local Window =
+    WindUI:CreateWindow(
+    {
+        Title = "Egg ESP & Instant Replacement",
+        Icon = "eye",
+        IconThemed = true,
+        Author = "ROBLOXESP Integration",
+        Folder = "EggESP",
+        Size = UDim2.fromOffset(420, 350),
+        Transparent = false,
+        Theme = "Dark",
+        User = {
+            Enabled = true,
+            Callback = function()
+            end,
+            Anonymous = false
+        },
+        SideBarWidth = 150,
+        ScrollBarEnabled = true
+    }
+)
+
+Window:EditOpenButton(
+    {
+        Title = "Open Spawner",
+        Icon = "sparkles",
+        CornerRadius = UDim.new(0, 12),
+        StrokeThickness = 2,
+        Color = ColorSequence.new(Color3.fromHex("FF6B6B"), Color3.fromHex("4ECDC4")),
+        Draggable = true
+    }
+)
+
+local Tabs = {}
+
+-- Create main sections
+do
+    Tabs.ESPSection =
+        Window:Section(
+        {
+            Title = "Egg ESP Tools",
+            Icon = "eye",
+            Opened = true
+        }
+    )
+
+    Tabs.ReplacementSection =
+        Window:Section(
+        {
+            Title = "Instant Replacement",
+            Icon = "zap",
+            Opened = true
+        }
+    )
+
+    -- ESP Tab
+    Tabs.EggESPTab =
+        Tabs.ESPSection:Tab(
+        {
+            Title = "Egg ESP",
+            Icon = "eye",
+            Desc = "Predicts ur egg u can even change them"
+        }
+    )
+
+    -- Instant Replacement Tab
+    Tabs.ReplacementTab =
+        Tabs.ReplacementSection:Tab(
+        {
+            Title = "Instant Replace",
+            Icon = "zap",
+            Desc = "Instant pet replacement system"
+        }
+    )
+end
+
+Window:SelectTab(1)
+
+-- Egg ESP Tab Implementation
+Tabs.EggESPTab:Paragraph(
+    {
+        Title = "Egg ESP System",
+        Desc = "Pet Prediction | Made by DonCalderone",
+        Image = "eye",
+        Color = "Red"
+    }
+)
+
+Tabs.EggESPTab:Toggle(
+    {
+        Title = "Enable Egg ESP",
+        Value = false,
+        Callback = function(enabled)
+            toggleVisuals(enabled)
+            if enabled then
+                WindUI:Notify({
+                    Title = "Egg ESP Enabled",
+                    Content = "Red highlights and predictions active",
+                    Icon = "eye",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "Egg ESP Disabled",
+                    Content = "All visuals have been removed",
+                    Icon = "eye-off",
+                    Duration = 3
+                })
+            end
+        end
+    }
+)
+
+Tabs.EggESPTab:Button(
+    {
+        Title = "Reroll Predictions",
+        Icon = "refresh-cw",
+        Callback = function()
+            if VisualsEnabled then
+                PausedEggs = {}
+                rerollPredictions()
+                WindUI:Notify({
+                    Title = "Predictions Rerolled",
+                    Content = "All egg predictions have been updated",
+                    Icon = "refresh-cw",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "ESP Not Active",
+                    Content = "Please enable Egg ESP first!",
+                    Icon = "alert-triangle",
+                    Duration = 3
+                })
+            end
+        end
+    }
+)
+
+Tabs.EggESPTab:Toggle(
+    {
+        Title = "Auto Reroll",
+        Value = false,
+        Callback = function(enabled)
+            AutoRerollEnabled = enabled
+            handleAutoReroll()
+            WindUI:Notify({
+                Title = "Auto Reroll " .. (enabled and "Enabled" or "Disabled"),
+                Content = "Predictions will " .. (enabled and "auto-update" or "stop updating"),
+                Icon = enabled and "play" or "pause",
+                Duration = 3
+            })
+        end
+    }
+)
+
+Tabs.EggESPTab:Slider(
+    {
+        Title = "Reroll Speed",
+        Value = {
+            Min = 1,
+            Max = 10,
+            Default = 1
+        },
+        Callback = function(value)
+            RerollSpeed = value * 0.5
+            if value == 1 then RerollSpeed = 0.25 end
+            if AutoRerollEnabled then handleAutoReroll() end
+        end
+    }
+)
+
+Tabs.EggESPTab:Input(
+    {
+        Title = "Target Pet (Case Sensitive)",
+        Value = "",
+        InputIcon = "target",
+        Placeholder = "Enter pet name to pause on (e.g., Kitsune, T-Rex)",
+        Callback = function(input)
+            SelectedPet = input
+            PausedEggs = {}
+            WindUI:Notify({
+                Title = "Target Set",
+                Content = "Will pause when " .. (input ~= "" and input or "any pet") .. " is found",
+                Icon = "target",
+                Duration = 3
+            })
+        end
+    }
+)
+
+Tabs.EggESPTab:Divider()
+
+Tabs.EggESPTab:Paragraph(
+    {
+        Title = "How to Use Egg ESP",
+        Desc = "1. Enable Egg ESP to see red highlights\n2. Use Reroll to change predictions\n3. Set Target Pet to auto-pause\n4. Auto Reroll continuously updates predictions",
+        Image = "info",
+        Color = "Blue"
+    }
+)
+
+
+-- Instant Replacement Tab Implementation
+Tabs.ReplacementTab:Paragraph(
+    {
+        Title = "Instant Pet Replacement",
+        Desc = "Advanced pet replacement system with instant visual swapping",
+        Image = "zap",
+        Color = "Purple"
+    }
+)
+
+Tabs.ReplacementTab:Toggle(
+    {
+        Title = "Enable ESP System",
+        Value = true,
+        Callback = function(enabled)
+            espEnabled = enabled
+            if enabled then
+                scanForEggs()
+                WindUI:Notify({
+                    Title = "ESP System Enabled",
+                    Content = "Scanning for eggs and enabling ESP",
+                    Icon = "eye",
+                    Duration = 3
+                })
+            else
+                -- Clear all ESP
+                for egg, data in pairs(displayedEggs) do
+                    if data.gui then
+                        data.gui:Destroy()
+                    end
+                end
+                displayedEggs = {}
+                WindUI:Notify({
+                    Title = "ESP System Disabled",
+                    Content = "All ESP visuals removed",
+                    Icon = "eye-off",
+                    Duration = 3
+                })
+            end
+        end
+    }
+)
+
+Tabs.ReplacementTab:Button(
+    {
+        Title = "Randomize Pet Predictions",
+        Icon = "shuffle",
+        Callback = function()
+            randomizePets()
+            WindUI:Notify({
+                Title = "Predictions Randomized",
+                Content = "All pet predictions have been updated",
+                Icon = "shuffle",
+                Duration = 3
+            })
+        end
+    }
+)
+
+Tabs.ReplacementTab:Toggle(
+    {
+        Title = "Enable Instant Replacement",
+        Value = true,
+        Callback = function(enabled)
+            replacementActive = enabled
+            if enabled then
+                WindUI:Notify({
+                    Title = "Instant Replacement Enabled",
+                    Content = "Pets will be instantly replaced when spawned",
+                    Icon = "zap",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "Instant Replacement Disabled",
+                    Content = "Pet replacement system paused",
+                    Icon = "pause",
+                    Duration = 3
+                })
+            end
+        end
+    }
+)
+
+Tabs.ReplacementTab:Button(
+    {
+        Title = "View Replacement Log",
+        Icon = "list",
+        Callback = function()
+            WindUI:Notify({
+                Title = "Replacement Log",
+                Content = "Total replacements: " .. #replacementLog .. " (Check console for details)",
+                Icon = "list",
+                Duration = 4
+            })
+            print("\n⚡ REPLACEMENT LOG:")
+            for i, entry in ipairs(replacementLog) do
+                print("✅ " .. entry.original .. " → " .. entry.target .. " (" .. entry.method .. ")")
+            end
+            print("📊 Total replacements: " .. #replacementLog)
+        end
+    }
+)
+
+Tabs.ReplacementTab:Button(
+    {
+        Title = "Cache Pet Models",
+        Icon = "download",
+        Callback = function()
+            cachePetModels()
+            WindUI:Notify({
+                Title = "Models Cached",
+                Content = "Pet models have been cached for faster replacement",
+                Icon = "download",
+                Duration = 3
+            })
+        end
+    }
+)
+
+Tabs.ReplacementTab:Divider()
+
+Tabs.ReplacementTab:Paragraph(
+    {
+        Title = "How Instant Replacement Works",
+        Desc = "1. Enable ESP to see egg predictions\n2. Enable Instant Replacement\n3. When you hatch an egg, the pet will be instantly replaced with the predicted one\n4. All original attributes are preserved",
+        Image = "info",
+        Color = "Blue"
+    }
+)
+
+-- Window close handler
+Window:OnClose(
+    function()
+        -- Clean up ESP visuals on close
+        if AutoRerollConnection then
+            AutoRerollConnection:Disconnect()
+        end
+        
+        for _, visual in pairs(EggVisuals) do
+            if visual.highlight then visual.highlight:Destroy() end
+            if visual.billboard then visual.billboard:Destroy() end
+        end
+        
+        EggVisuals = {}
+        PausedEggs = {}
+        SavedPredictions = {}
+        
+        -- Clean up replacement system
+        for egg, data in pairs(displayedEggs) do
+            if data.gui then
+                data.gui:Destroy()
+            end
+        end
+        displayedEggs = {}
+        replacementLog = {}
+        petModels = {}
+    end
+)
+
+-- Initialize Instant Replacement System
+print("⚡ Initializing Instant Replacement System...")
+cachePetModels()
+scanForEggs()
+setupInstantMonitoring()
+
+-- Global variables for external access
+_G.InstantReplacer = {
+    espEnabled = espEnabled,
+    replacementActive = replacementActive,
+    displayedEggs = displayedEggs,
+    replacementLog = replacementLog,
+    petModels = petModels,
+    instantReplacePet = instantReplacePet
+}
+
+
+-- ⚡ ROBLOXESP INTEGRATION - Variables and Functions
 local players = game:GetService("Players")
 local workspace = game:GetService("Workspace")
 local replicatedStorage = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")
 local localPlayer = players.LocalPlayer
 
--- Настройки
+-- Настройки для системы замены
 local espEnabled = true
 local replacementActive = true
 
@@ -410,446 +1194,11 @@ workspace.ChildAdded:Connect(function(child)
     end
 end)
 
--- 🎨 СОВРЕМЕННОЕ КРАСИВОЕ GUI
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-
--- Создание главного GUI
-local gui = Instance.new("ScreenGui")
-gui.Name = "ModernInstantReplacerGUI"
-gui.ResetOnSpawn = false
-gui.Parent = localPlayer:WaitForChild("PlayerGui")
-
--- Главная рамка с современным дизайном
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 280, 0, 340)
-mainFrame.Position = UDim2.new(0, 20, 0, 20)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Parent = gui
-
--- Закругленные углы для главной рамки
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 12)
-mainCorner.Parent = mainFrame
-
--- Градиентный фон
-local gradient = Instance.new("UIGradient")
-gradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 45, 65)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 25, 35))
-}
-gradient.Rotation = 45
-gradient.Parent = mainFrame
-
--- Тень для главной рамки
-local shadow = Instance.new("Frame")
-shadow.Name = "Shadow"
-shadow.Size = UDim2.new(1, 6, 1, 6)
-shadow.Position = UDim2.new(0, -3, 0, -3)
-shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-shadow.BackgroundTransparency = 0.7
-shadow.BorderSizePixel = 0
-shadow.ZIndex = -1
-shadow.Parent = mainFrame
-
-local shadowCorner = Instance.new("UICorner")
-shadowCorner.CornerRadius = UDim.new(0, 15)
-shadowCorner.Parent = shadow
-
--- Заголовок с эффектами
-local titleFrame = Instance.new("Frame")
-titleFrame.Name = "TitleFrame"
-titleFrame.Size = UDim2.new(1, 0, 0, 50)
-titleFrame.Position = UDim2.new(0, 0, 0, 0)
-titleFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 85)
-titleFrame.BorderSizePixel = 0
-titleFrame.Parent = mainFrame
-
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 12)
-titleCorner.Parent = titleFrame
-
--- Градиент для заголовка
-local titleGradient = Instance.new("UIGradient")
-titleGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 80, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 120, 255))
-}
-titleGradient.Rotation = 90
-titleGradient.Parent = titleFrame
-
--- Текст заголовка
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "TitleLabel"
-titleLabel.Size = UDim2.new(1, -40, 1, 0)
-titleLabel.Position = UDim2.new(0, 40, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "EGG RANDOMIZER V2"
-titleLabel.TextColor3 = Color3.new(1, 1, 1)
-titleLabel.TextSize = 16
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = titleFrame
-
--- Иконка в заголовке
-local titleIcon = Instance.new("TextLabel")
-titleIcon.Name = "TitleIcon"
-titleIcon.Size = UDim2.new(0, 30, 0, 30)
-titleIcon.Position = UDim2.new(0, 10, 0, 10)
-titleIcon.BackgroundTransparency = 1
-titleIcon.Text = "🥚"
-titleIcon.TextColor3 = Color3.new(1, 1, 1)
-titleIcon.TextSize = 20
-titleIcon.Font = Enum.Font.Gotham
-titleIcon.Parent = titleFrame
-
--- Кнопка минимизации
-local minimizeButton = Instance.new("TextButton")
-minimizeButton.Name = "MinimizeButton"
-minimizeButton.Size = UDim2.new(0, 30, 0, 30)
-minimizeButton.Position = UDim2.new(1, -40, 0, 10)
-minimizeButton.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-minimizeButton.BorderSizePixel = 0
-minimizeButton.Text = "−"
-minimizeButton.TextColor3 = Color3.new(1, 1, 1)
-minimizeButton.TextSize = 18
-minimizeButton.Font = Enum.Font.GothamBold
-minimizeButton.Parent = titleFrame
-
-local minimizeCorner = Instance.new("UICorner")
-minimizeCorner.CornerRadius = UDim.new(0, 15)
-minimizeCorner.Parent = minimizeButton
-
--- Контейнер для кнопок
-local buttonsFrame = Instance.new("Frame")
-buttonsFrame.Name = "ButtonsFrame"
-buttonsFrame.Size = UDim2.new(1, -20, 1, -70)
-buttonsFrame.Position = UDim2.new(0, 10, 0, 60)
-buttonsFrame.BackgroundTransparency = 1
-buttonsFrame.Parent = mainFrame
-
--- Функция создания современной кнопки
-local function createModernButton(name, text, position, size, color1, color2, icon)
-    local button = Instance.new("TextButton")
-    button.Name = name
-    button.Size = size or UDim2.new(1, 0, 0, 45)
-    button.Position = position
-    button.BackgroundColor3 = color1
-    button.BorderSizePixel = 0
-    button.Text = ""
-    button.Parent = buttonsFrame
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = button
-    
-    local buttonGradient = Instance.new("UIGradient")
-    buttonGradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, color1),
-        ColorSequenceKeypoint.new(1, color2)
-    }
-    buttonGradient.Rotation = 45
-    buttonGradient.Parent = button
-    
-    -- Иконка кнопки
-    local buttonIcon = Instance.new("TextLabel")
-    buttonIcon.Name = "Icon"
-    buttonIcon.Size = UDim2.new(0, 25, 0, 25)
-    buttonIcon.Position = UDim2.new(0, 10, 0, 10)
-    buttonIcon.BackgroundTransparency = 1
-    buttonIcon.Text = icon or "🔹"
-    buttonIcon.TextColor3 = Color3.new(1, 1, 1)
-    buttonIcon.TextSize = 16
-    buttonIcon.Font = Enum.Font.Gotham
-    buttonIcon.Parent = button
-    
-    -- Текст кнопки
-    local buttonText = Instance.new("TextLabel")
-    buttonText.Name = "Text"
-    buttonText.Size = UDim2.new(1, -45, 1, 0)
-    buttonText.Position = UDim2.new(0, 40, 0, 0)
-    buttonText.BackgroundTransparency = 1
-    buttonText.Text = text
-    buttonText.TextColor3 = Color3.new(1, 1, 1)
-    buttonText.TextSize = 14
-    buttonText.Font = Enum.Font.GothamSemibold
-    buttonText.TextXAlignment = Enum.TextXAlignment.Left
-    buttonText.Parent = button
-    
-    -- Статус индикатор
-    local statusIndicator = Instance.new("Frame")
-    statusIndicator.Name = "StatusIndicator"
-    statusIndicator.Size = UDim2.new(0, 8, 0, 8)
-    statusIndicator.Position = UDim2.new(1, -15, 0, 18)
-    statusIndicator.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-    statusIndicator.BorderSizePixel = 0
-    statusIndicator.Parent = button
-    
-    local statusCorner = Instance.new("UICorner")
-    statusCorner.CornerRadius = UDim.new(0, 4)
-    statusCorner.Parent = statusIndicator
-    
-    -- Анимация при наведении
-    button.MouseEnter:Connect(function()
-        local tween = TweenService:Create(button, TweenInfo.new(0.2), {Size = UDim2.new(1, 5, 0, 50)})
-        tween:Play()
-    end)
-    
-    button.MouseLeave:Connect(function()
-        local tween = TweenService:Create(button, TweenInfo.new(0.2), {Size = size or UDim2.new(1, 0, 0, 45)})
-        tween:Play()
-    end)
-    
-    return button, buttonText, statusIndicator
-end
-
--- Создание кнопок
-local espButton, espText, espStatus = createModernButton(
-    "ESPButton", "ESP SYSTEM", 
-    UDim2.new(0, 0, 0, 0), 
-    UDim2.new(1, 0, 0, 45),
-    Color3.fromRGB(100, 200, 100), Color3.fromRGB(50, 150, 50), "👁️"
-)
-
-local randomizeButton, randomizeText, randomizeStatus = createModernButton(
-    "RandomizeButton", "RANDOMIZE PETS", 
-    UDim2.new(0, 0, 0, 55), 
-    UDim2.new(1, 0, 0, 45),
-    Color3.fromRGB(100, 100, 200), Color3.fromRGB(50, 50, 150), "🎲"
-)
-
-local replaceButton, replaceText, replaceStatus = createModernButton(
-    "ReplaceButton", "INSTANT REPLACE", 
-    UDim2.new(0, 0, 0, 110), 
-    UDim2.new(1, 0, 0, 45),
-    Color3.fromRGB(200, 100, 200), Color3.fromRGB(150, 50, 150), "⚡"
-)
-
-local logButton, logText, logStatus = createModernButton(
-    "LogButton", "VIEW REPLACEMENTS", 
-    UDim2.new(0, 0, 0, 165), 
-    UDim2.new(1, 0, 0, 45),
-    Color3.fromRGB(200, 150, 50), Color3.fromRGB(150, 100, 25), "📊"
-)
-
--- Статистика внизу
-local statsFrame = Instance.new("Frame")
-statsFrame.Name = "StatsFrame"
-statsFrame.Size = UDim2.new(1, -20, 0, 30)
-statsFrame.Position = UDim2.new(0, 10, 1, -60)
-statsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-statsFrame.BorderSizePixel = 0
-statsFrame.Parent = mainFrame
-
-local statsCorner = Instance.new("UICorner")
-statsCorner.CornerRadius = UDim.new(0, 6)
-statsCorner.Parent = statsFrame
-
-local statsLabel = Instance.new("TextLabel")
-statsLabel.Name = "StatsLabel"
-statsLabel.Size = UDim2.new(1, -10, 1, 0)
-statsLabel.Position = UDim2.new(0, 5, 0, 0)
-statsLabel.BackgroundTransparency = 1
-statsLabel.Text = "📈 Replacements: 0 | 🥚 Eggs: 0 | ⚡ Active"
-statsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-statsLabel.TextSize = 11
-statsLabel.Font = Enum.Font.Gotham
-statsLabel.TextXAlignment = Enum.TextXAlignment.Left
-statsLabel.Parent = statsFrame
-
--- Подпись автора
-local authorFrame = Instance.new("Frame")
-authorFrame.Name = "AuthorFrame"
-authorFrame.Size = UDim2.new(1, -20, 0, 20)
-authorFrame.Position = UDim2.new(0, 10, 1, -30)
-authorFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-authorFrame.BorderSizePixel = 0
-authorFrame.Parent = mainFrame
-
-local authorCorner = Instance.new("UICorner")
-authorCorner.CornerRadius = UDim.new(0, 4)
-authorCorner.Parent = authorFrame
-
-local authorGradient = Instance.new("UIGradient")
-authorGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 60)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 30))
-}
-authorGradient.Rotation = 90
-authorGradient.Parent = authorFrame
-
-local authorLabel = Instance.new("TextLabel")
-authorLabel.Name = "AuthorLabel"
-authorLabel.Size = UDim2.new(1, -10, 1, 0)
-authorLabel.Position = UDim2.new(0, 5, 0, 0)
-authorLabel.BackgroundTransparency = 1
-authorLabel.Text = "made by TW2LOCK"
-authorLabel.TextColor3 = Color3.fromRGB(150, 150, 170)
-authorLabel.TextSize = 10
-authorLabel.Font = Enum.Font.GothamSemibold
-authorLabel.TextXAlignment = Enum.TextXAlignment.Center
-authorLabel.Parent = authorFrame
-
--- Улучшенная система перетаскивания для мобильных устройств
-local dragging = false
-local dragStart = nil
-local startPos = nil
-
-local function updateDrag(input)
-    if dragging then
-        local delta = input.Position - dragStart
-        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end
-
-titleFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-titleFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        updateDrag(input)
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        updateDrag(input)
-    end
-end)
-
--- Функция обновления статистики
-local function updateStats()
-    local eggCount = 0
-    for _ in pairs(displayedEggs) do
-        eggCount = eggCount + 1
-    end
-    
-    local status = replacementActive and "⚡ Active" or "⏸️ Paused"
-    statsLabel.Text = string.format("📈 Replacements: %d | 🥚 Eggs: %d | %s", #replacementLog, eggCount, status)
-end
-
--- Функция анимации кнопки при нажатии
-local function animateButtonPress(button)
-    local originalSize = button.Size
-    local tween1 = TweenService:Create(button, TweenInfo.new(0.1), {Size = UDim2.new(originalSize.X.Scale - 0.02, originalSize.X.Offset, originalSize.Y.Scale, originalSize.Y.Offset - 2)})
-    local tween2 = TweenService:Create(button, TweenInfo.new(0.1), {Size = originalSize})
-    
-    tween1:Play()
-    tween1.Completed:Connect(function()
-        tween2:Play()
-    end)
-end
-
--- Обработчики событий кнопок
-espButton.MouseButton1Click:Connect(function()
-    animateButtonPress(espButton)
-    toggleESP()
-    if espEnabled then
-        espText.Text = "ESP SYSTEM (ON)"
-        espStatus.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-    else
-        espText.Text = "ESP SYSTEM (OFF)"
-        espStatus.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-    end
-    updateStats()
-end)
-
-randomizeButton.MouseButton1Click:Connect(function()
-    animateButtonPress(randomizeButton)
-    randomizePets()
-    updateStats()
-end)
-
-replaceButton.MouseButton1Click:Connect(function()
-    animateButtonPress(replaceButton)
-    replacementActive = not replacementActive
-    if replacementActive then
-        replaceText.Text = "INSTANT REPLACE (ON)"
-        replaceStatus.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-        print("⚡ Замена включена")
-    else
-        replaceText.Text = "INSTANT REPLACE (OFF)"
-        replaceStatus.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-        print("⏸️ Замена выключена")
-    end
-    updateStats()
-end)
-
-logButton.MouseButton1Click:Connect(function()
-    animateButtonPress(logButton)
-    print("\n⚡ ЛОГ МГНОВЕННЫХ ЗАМЕН:")
-    for i, entry in ipairs(replacementLog) do
-        print("✅ " .. entry.original .. " → " .. entry.target .. " (" .. entry.method .. ")")
-    end
-    print("📊 Всего замен: " .. #replacementLog)
-    updateStats()
-end)
-
--- Функция минимизации/разворачивания
-local isMinimized = false
-minimizeButton.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    
-    if isMinimized then
-        local tween = TweenService:Create(mainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 280, 0, 50)})
-        tween:Play()
-        minimizeButton.Text = "+"
-        buttonsFrame.Visible = false
-        statsFrame.Visible = false
-        authorFrame.Visible = false
-    else
-        local tween = TweenService:Create(mainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 280, 0, 340)})
-        tween:Play()
-        minimizeButton.Text = "−"
-        buttonsFrame.Visible = true
-        statsFrame.Visible = true
-        authorFrame.Visible = true
-    end
-end)
-
--- Инициализация статистики
-updateStats()
-
--- Периодическое обновление статистики
-spawn(function()
-    while wait(2) do
-        updateStats()
-    end
-end)
-
--- Запуск системы
-cachePetModels()
-scanForEggs()
-setupInstantMonitoring()
-
--- Глобальные переменные
-_G.InstantReplacer = {
-    espEnabled = espEnabled,
-    replacementActive = replacementActive,
-    displayedEggs = displayedEggs,
-    replacementLog = replacementLog,
-    petModels = petModels,
-    instantReplacePet = instantReplacePet
-}
-
-print("⚡ МГНОВЕННЫЙ ЗАМЕНИТЕЛЬ ЗАГРУЖЕН!")
-print("🔥 Особенности:")
-print("   - Кэширование моделей для скорости")
-print("   - Мгновенная замена без задержек")
-print("   - Тройной мониторинг (workspace, NPCS, heartbeat)")
-print("   - Полное сохранение атрибутов")
-print("⚡ Теперь замена должна быть МГНОВЕННОЙ!")
+print("✅ EGG ESP & INSTANT REPLACEMENT LOADED!")
+print("🔥 Features:")
+print("   - Advanced Egg ESP with predictions")
+print("   - Instant pet replacement system")
+print("   - Model caching for maximum performance")
+print("   - Randomize egg predictions")
+print("   - Triple monitoring system")
+print("⚡ Pure ESP system ready!")
